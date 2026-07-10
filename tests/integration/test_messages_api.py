@@ -25,6 +25,25 @@ class FakeModelClient:
             model=self.model,
             prompt_tokens=20,
             completion_tokens=15,
+            api_response={
+                "id": "chatcmpl-integration-test",
+                "object": "chat.completion",
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {
+                            "role": "assistant",
+                            "content": "## 工作流方案\n\n使用 Bronze、Silver、Gold 三层。",
+                        },
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {
+                    "prompt_tokens": 20,
+                    "completion_tokens": 15,
+                    "total_tokens": 35,
+                },
+            },
         )
 
 

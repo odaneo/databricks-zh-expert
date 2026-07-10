@@ -10,6 +10,7 @@ from databricks_zh_expert.core.config import Settings
 from databricks_zh_expert.db.session import Database
 from databricks_zh_expert.llm.client import ModelClient
 from databricks_zh_expert.llm.litellm_client import LiteLLMModelClient
+from databricks_zh_expert.observability.model_trace import ModelTraceSink
 
 
 def get_app_settings(request: Request) -> Settings:
@@ -34,8 +35,13 @@ def get_model_client(
     return LiteLLMModelClient(settings)
 
 
+def get_model_trace_sink(request: Request) -> ModelTraceSink:
+    return cast(ModelTraceSink, request.app.state.model_trace_sink)
+
+
 def get_chat_service(
     repository: Annotated[ChatRepository, Depends(get_chat_repository)],
     model_client: Annotated[ModelClient, Depends(get_model_client)],
+    trace_sink: Annotated[ModelTraceSink, Depends(get_model_trace_sink)],
 ) -> ChatService:
-    return ChatService(repository, model_client)
+    return ChatService(repository, model_client, trace_sink)

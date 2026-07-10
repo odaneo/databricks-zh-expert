@@ -2,6 +2,9 @@ from dataclasses import dataclass
 from typing import Literal, Protocol
 
 ModelRole = Literal["system", "user", "assistant"]
+type JsonScalar = str | int | float | bool | None
+type JsonValue = JsonScalar | list[JsonValue] | dict[str, JsonValue]
+type JsonObject = dict[str, JsonValue]
 
 
 @dataclass(frozen=True, slots=True)
@@ -17,6 +20,7 @@ class ModelResult:
     model: str
     prompt_tokens: int | None
     completion_tokens: int | None
+    api_response: JsonObject
 
 
 class ModelClient(Protocol):

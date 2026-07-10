@@ -16,6 +16,11 @@ from databricks_zh_expert.core.runtime import (
     selector_event_loop_factory,
 )
 from databricks_zh_expert.db.session import Database
+from databricks_zh_expert.observability.model_trace import (
+    JsonlModelTraceSink,
+    ModelTraceSink,
+    NullModelTraceSink,
+)
 
 ServerRunner = Callable[..., Any]
 
@@ -48,9 +53,15 @@ def run(
 def create_app(
     settings: Settings | None = None,
     database: Database | None = None,
+    model_trace_sink: ModelTraceSink | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
     database = database or Database(settings.database_url)
+    model_trace_sink = model_trace_sink or (
+        JsonlModelTraceSink(settings.model_trace_path)
+        if settings.model_trace_enabled
+        else NullModelTraceSink()
+    )
     configure_logging(settings.log_level)
 
     app = FastAPI(
@@ -61,6 +72,7 @@ def create_app(
     )
     app.state.settings = settings
     app.state.database = database
+    app.state.model_trace_sink = model_trace_sink
     register_exception_handlers(app)
     app.include_router(health_router)
     app.include_router(chat_router)

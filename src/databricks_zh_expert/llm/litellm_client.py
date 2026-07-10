@@ -1,13 +1,34 @@
-from collections.abc import Awaitable, Callable
+import logging
+from collections.abc import Awaitable, Callable, Mapping
+from datetime import date, datetime
+from enum import Enum
 from typing import Any
+from uuid import UUID
 
 import litellm
 
 from databricks_zh_expert.core.config import Settings
 from databricks_zh_expert.core.errors import AppError
-from databricks_zh_expert.llm.client import ModelMessage, ModelResult
+from databricks_zh_expert.llm.client import JsonObject, JsonValue, ModelMessage, ModelResult
 
 CompletionFunction = Callable[..., Awaitable[Any]]
+logger = logging.getLogger(__name__)
+SENSITIVE_RESPONSE_FIELDS = frozenset(
+    {
+        "access_token",
+        "api_key",
+        "apikey",
+        "authorization",
+        "cookie",
+        "headers",
+        "id_token",
+        "password",
+        "refresh_token",
+        "secret",
+        "set_cookie",
+        "token",
+    }
+)
 
 
 class LiteLLMModelClient:
@@ -40,12 +61,22 @@ class LiteLLMModelClient:
 
         content = self._read_content(response)
         usage = getattr(response, "usage", None)
+        prompt_tokens = self._read_usage(usage, "prompt_tokens")
+        completion_tokens = self._read_usage(usage, "completion_tokens")
         return ModelResult(
             content=content,
             provider=self.provider,
             model=self.model,
-            prompt_tokens=self._read_usage(usage, "prompt_tokens"),
-            completion_tokens=self._read_usage(usage, "completion_tokens"),
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            api_response=self._read_api_response(
+                response,
+                api_key=api_key,
+                model=self.model,
+                content=content,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+            ),
         )
 
     def _get_api_key(self) -> str:
@@ -97,3 +128,118 @@ class LiteLLMModelClient:
             return None
         value = getattr(usage, field, None)
         return value if isinstance(value, int) else None
+
+    @classmethod
+    def _read_api_response(
+        cls,
+        response: Any,
+        *,
+        api_key: str,
+        model: str,
+        content: str,
+        prompt_tokens: int | None,
+        completion_tokens: int | None,
+    ) -> JsonObject:
+        try:
+            payload = cls._response_payload(response)
+            sanitized = cls._sanitize_json_value(payload, api_key)
+            if isinstance(sanitized, dict):
+                choices = sanitized.get("choices")
+                if isinstance(choices, list) and choices:
+                    return sanitized
+        except Exception:
+            pass
+
+        logger.warning("模型响应 Trace 归一化失败，已使用安全回退结构。")
+        return cls._fallback_api_response(
+            model=model,
+            content=content,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+        )
+
+    @staticmethod
+    def _fallback_api_response(
+        *,
+        model: str,
+        content: str,
+        prompt_tokens: int | None,
+        completion_tokens: int | None,
+    ) -> JsonObject:
+        total_tokens = (
+            prompt_tokens + completion_tokens
+            if prompt_tokens is not None and completion_tokens is not None
+            else None
+        )
+        return {
+            "object": "chat.completion",
+            "model": model,
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {"role": "assistant", "content": content},
+                    "finish_reason": None,
+                }
+            ],
+            "usage": {
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": total_tokens,
+            },
+            "trace_metadata": {"response_normalization": "fallback"},
+        }
+
+    @staticmethod
+    def _response_payload(response: Any) -> Any:
+        if isinstance(response, Mapping):
+            return response
+
+        model_dump = getattr(response, "model_dump", None)
+        if callable(model_dump):
+            return model_dump()
+
+        attributes = getattr(response, "__dict__", None)
+        return attributes if isinstance(attributes, dict) else {}
+
+    @classmethod
+    def _sanitize_json_value(cls, value: Any, api_key: str) -> JsonValue:
+        if value is None or isinstance(value, bool | int | float):
+            return value
+        if isinstance(value, str):
+            return value.replace(api_key, "[REDACTED]") if api_key else value
+        if isinstance(value, datetime | date):
+            return value.isoformat()
+        if isinstance(value, UUID):
+            return str(value)
+        if isinstance(value, Enum):
+            return cls._sanitize_json_value(value.value, api_key)
+        if isinstance(value, Mapping):
+            sanitized: JsonObject = {}
+            for raw_key, raw_value in value.items():
+                key = str(raw_key)
+                if cls._is_sensitive_field(key):
+                    continue
+                sanitized[key] = cls._sanitize_json_value(raw_value, api_key)
+            return sanitized
+        if isinstance(value, list | tuple):
+            return [cls._sanitize_json_value(item, api_key) for item in value]
+
+        model_dump = getattr(value, "model_dump", None)
+        if callable(model_dump):
+            return cls._sanitize_json_value(model_dump(), api_key)
+
+        attributes = getattr(value, "__dict__", None)
+        if isinstance(attributes, dict):
+            return cls._sanitize_json_value(attributes, api_key)
+        return None
+
+    @staticmethod
+    def _is_sensitive_field(field: str) -> bool:
+        normalized = field.casefold().replace("-", "_")
+        return (
+            normalized.startswith("_")
+            or normalized in SENSITIVE_RESPONSE_FIELDS
+            or normalized.endswith("_headers")
+            or normalized.endswith(("_authorization", "_password", "_secret", "_token"))
+            or "api_key" in normalized
+        )

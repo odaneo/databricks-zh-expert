@@ -1,4 +1,5 @@
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -19,6 +20,8 @@ class Settings(BaseSettings):
     app_port: int
     log_level: str
     model_request_timeout_seconds: int
+    model_trace_enabled: bool
+    model_trace_path: Path
     default_model: str
     database_url: str
     postgres_schema: str

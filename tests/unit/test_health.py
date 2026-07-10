@@ -7,6 +7,10 @@ from sqlalchemy.exc import SQLAlchemyError
 import databricks_zh_expert.main as main_module
 from databricks_zh_expert.api.dependencies import get_db_session
 from databricks_zh_expert.db.session import Database
+from databricks_zh_expert.observability.model_trace import (
+    JsonlModelTraceSink,
+    NullModelTraceSink,
+)
 
 create_app = main_module.create_app
 
@@ -89,6 +93,28 @@ def test_app_factory_uses_injected_settings(settings_factory) -> None:
     app = create_app(settings=settings)
 
     assert app.title == "自定义测试 Agent"
+
+
+def test_app_factory_uses_null_trace_sink_when_disabled(settings_factory) -> None:
+    app = create_app(settings=settings_factory(model_trace_enabled=False))
+
+    assert isinstance(app.state.model_trace_sink, NullModelTraceSink)
+
+
+def test_app_factory_uses_configured_jsonl_trace_sink_when_enabled(
+    settings_factory,
+    tmp_path,
+) -> None:
+    trace_path = tmp_path / "model-calls.jsonl"
+    app = create_app(
+        settings=settings_factory(
+            model_trace_enabled=True,
+            model_trace_path=trace_path,
+        )
+    )
+
+    assert isinstance(app.state.model_trace_sink, JsonlModelTraceSink)
+    assert app.state.model_trace_sink.path == trace_path
 
 
 @pytest.mark.asyncio

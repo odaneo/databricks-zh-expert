@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from time import perf_counter
 from typing import cast
 from uuid import UUID
@@ -6,7 +7,11 @@ from uuid import UUID
 from databricks_zh_expert.chat.repository import ChatRepository
 from databricks_zh_expert.core.errors import AppError
 from databricks_zh_expert.db.models import Message, ModelCall
-from databricks_zh_expert.llm.client import ModelClient, ModelMessage, ModelRole
+from databricks_zh_expert.llm.client import JsonObject, ModelClient, ModelMessage, ModelRole
+from databricks_zh_expert.observability.model_trace import (
+    ModelCallTrace,
+    ModelTraceSink,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -21,9 +26,11 @@ class ChatService:
         self,
         repository: ChatRepository,
         model_client: ModelClient,
+        trace_sink: ModelTraceSink,
     ) -> None:
         self.repository = repository
         self.model_client = model_client
+        self.trace_sink = trace_sink
 
     async def send_message(
         self,
@@ -60,7 +67,7 @@ class ChatService:
             model_result = await self.model_client.complete(model_messages)
         except Exception as error:
             latency_ms = self._elapsed_milliseconds(started_at)
-            await self.repository.create_model_call(
+            model_call = await self.repository.create_model_call(
                 session_id=session_id,
                 provider=self.model_client.provider,
                 model=self.model_client.model,
@@ -69,6 +76,12 @@ class ChatService:
                 latency_ms=latency_ms,
                 success=False,
                 error_message=self._safe_error_summary(error),
+            )
+            await self._write_trace(
+                model_call=model_call,
+                input_messages=model_messages,
+                response=None,
+                error=self._safe_trace_error(error),
             )
             if isinstance(error, AppError) and error.code == "model_not_configured":
                 raise
@@ -95,10 +108,44 @@ class ChatService:
             success=True,
             error_message=None,
         )
+        await self._write_trace(
+            model_call=model_call,
+            input_messages=model_messages,
+            response=model_result.api_response,
+            error=None,
+        )
         return SendMessageResult(
             user_message=user_message,
             assistant_message=assistant_message,
             model_call=model_call,
+        )
+
+    async def _write_trace(
+        self,
+        *,
+        model_call: ModelCall,
+        input_messages: list[ModelMessage],
+        response: JsonObject | None,
+        error: JsonObject | None,
+    ) -> None:
+        await self.trace_sink.write(
+            ModelCallTrace(
+                model_call_id=model_call.id,
+                session_id=model_call.session_id,
+                recorded_at=datetime.now(UTC),
+                provider=model_call.provider,
+                latency_ms=model_call.latency_ms,
+                success=model_call.success,
+                request={
+                    "model": model_call.model,
+                    "messages": [
+                        {"role": message.role, "content": message.content}
+                        for message in input_messages
+                    ],
+                },
+                response=response,
+                error=error,
+            )
         )
 
     @staticmethod
@@ -110,3 +157,18 @@ class ChatService:
         if isinstance(error, AppError):
             return f"{type(error).__name__}: {error.code}"[:500]
         return f"{type(error).__name__}: 模型调用异常。"[:500]
+
+    @staticmethod
+    def _safe_trace_error(error: Exception) -> JsonObject:
+        if isinstance(error, AppError):
+            message = error.message
+            code = error.code
+        else:
+            message = "模型调用失败，请稍后重试。"
+            code = "model_request_failed"
+        return {
+            "message": message,
+            "type": type(error).__name__,
+            "param": None,
+            "code": code,
+        }

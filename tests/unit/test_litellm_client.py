@@ -1,3 +1,5 @@
+import json
+import logging
 from types import SimpleNamespace
 from typing import Any
 
@@ -40,15 +42,51 @@ async def test_completion_maps_request_and_response_without_network_access(
     settings_factory,
 ) -> None:
     captured: dict[str, Any] = {}
+    api_key = "local-test-key"
 
-    async def fake_completion(**kwargs: Any) -> SimpleNamespace:
+    class FakeResponse(SimpleNamespace):
+        def model_dump(self) -> dict[str, Any]:
+            return {
+                "id": "chatcmpl-test",
+                "object": "chat.completion",
+                "created": 1767225600,
+                "model": "deepseek-chat",
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {
+                            "role": "assistant",
+                            "content": "## 回答\n\n测试完成。",
+                            "reasoning_content": "先检查需求。",
+                        },
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {
+                    "prompt_tokens": 10,
+                    "completion_tokens": 6,
+                    "total_tokens": 16,
+                    "completion_tokens_details": {"reasoning_tokens": 2},
+                },
+                "provider_extension": {
+                    "trace_id": "safe-provider-trace",
+                    "access_token": api_key,
+                    "client_secret": "provider-client-secret",
+                    "proxy_authorization": "provider-proxy-authorization",
+                    "session_token": "provider-session-token",
+                },
+                "response_headers": {"authorization": f"Bearer {api_key}"},
+                "_hidden_params": {"api_key": api_key},
+            }
+
+    async def fake_completion(**kwargs: Any) -> FakeResponse:
         captured.update(kwargs)
-        return SimpleNamespace(
+        return FakeResponse(
             choices=[SimpleNamespace(message=SimpleNamespace(content="## 回答\n\n测试完成。"))],
             usage=SimpleNamespace(prompt_tokens=10, completion_tokens=6),
         )
 
-    settings = settings_factory(deepseek_api_key="local-test-key")
+    settings = settings_factory(deepseek_api_key=api_key)
     client = LiteLLMModelClient(settings=settings, completion=fake_completion)
 
     result = await client.complete([ModelMessage(role="user", content="生成 Markdown")])
@@ -64,6 +102,83 @@ async def test_completion_maps_request_and_response_without_network_access(
     assert result.model == "deepseek/deepseek-v4-flash"
     assert result.prompt_tokens == 10
     assert result.completion_tokens == 6
+    assert result.api_response == {
+        "id": "chatcmpl-test",
+        "object": "chat.completion",
+        "created": 1767225600,
+        "model": "deepseek-chat",
+        "choices": [
+            {
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": "## 回答\n\n测试完成。",
+                    "reasoning_content": "先检查需求。",
+                },
+                "finish_reason": "stop",
+            }
+        ],
+        "usage": {
+            "prompt_tokens": 10,
+            "completion_tokens": 6,
+            "total_tokens": 16,
+            "completion_tokens_details": {"reasoning_tokens": 2},
+        },
+        "provider_extension": {"trace_id": "safe-provider-trace"},
+    }
+    assert api_key not in json.dumps(result.api_response, ensure_ascii=False)
+    assert "provider-client-secret" not in json.dumps(result.api_response)
+    assert "provider-proxy-authorization" not in json.dumps(result.api_response)
+    assert "provider-session-token" not in json.dumps(result.api_response)
+
+
+@pytest.mark.asyncio
+async def test_completion_uses_safe_fallback_when_response_normalization_fails(
+    settings_factory,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    class BrokenDumpResponse(SimpleNamespace):
+        def model_dump(self) -> dict[str, Any]:
+            raise RuntimeError("归一化异常中包含 local-test-key")
+
+    async def fake_completion(**kwargs: Any) -> BrokenDumpResponse:
+        del kwargs
+        return BrokenDumpResponse(
+            choices=[SimpleNamespace(message=SimpleNamespace(content="模型回答仍然有效。"))],
+            usage=SimpleNamespace(prompt_tokens=2, completion_tokens=3),
+        )
+
+    client = LiteLLMModelClient(
+        settings=settings_factory(deepseek_api_key="local-test-key"),
+        completion=fake_completion,
+    )
+
+    with caplog.at_level(logging.WARNING):
+        result = await client.complete([ModelMessage(role="user", content="测试回退")])
+
+    assert result.content == "模型回答仍然有效。"
+    assert result.api_response == {
+        "object": "chat.completion",
+        "model": "deepseek/deepseek-v4-flash",
+        "choices": [
+            {
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": "模型回答仍然有效。",
+                },
+                "finish_reason": None,
+            }
+        ],
+        "usage": {
+            "prompt_tokens": 2,
+            "completion_tokens": 3,
+            "total_tokens": 5,
+        },
+        "trace_metadata": {"response_normalization": "fallback"},
+    }
+    assert "模型响应 Trace 归一化失败" in caplog.text
+    assert "local-test-key" not in caplog.text
 
 
 @pytest.mark.asyncio

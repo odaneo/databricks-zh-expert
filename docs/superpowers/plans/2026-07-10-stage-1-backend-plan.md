@@ -1384,6 +1384,118 @@ git commit -m "docs: add stage one local development workflow"
 
 ---
 
+### 任务 8：增加开发期本地模型调用 Trace
+
+**文件：**
+
+- 创建：`src/databricks_zh_expert/observability/__init__.py`
+- 创建：`src/databricks_zh_expert/observability/model_trace.py`
+- 更新：`src/databricks_zh_expert/core/config.py`
+- 更新：`src/databricks_zh_expert/llm/client.py`
+- 更新：`src/databricks_zh_expert/llm/litellm_client.py`
+- 更新：`src/databricks_zh_expert/chat/service.py`
+- 更新：`src/databricks_zh_expert/api/dependencies.py`
+- 更新：`src/databricks_zh_expert/main.py`
+- 更新：`.env.example`
+- 更新：`.gitignore`
+- 更新：`tests/conftest.py`
+- 创建：`tests/unit/test_model_trace.py`
+- 更新：`tests/unit/test_litellm_client.py`
+- 更新：`tests/unit/test_chat_service.py`
+- 更新：`tests/integration/test_messages_api.py`
+
+**接口：**
+
+- `ModelTraceSink.write(trace: ModelCallTrace) -> None`：provider 无关的异步 Trace 接口。
+- `JsonlModelTraceSink`：以 UTF-8 JSONL 写入完整模型输入输出。
+- `NullModelTraceSink`：关闭 Trace 时使用，不创建文件。
+- 环境变量：`MODEL_TRACE_ENABLED`、`MODEL_TRACE_PATH`。
+- JSONL 每行使用版本化的 OpenAI Chat Completions 兼容超集，顶层固定为
+  `schema_version`、`protocol`、`trace`、`request`、`response`、`error`。
+
+- [x] **步骤 1：先写本地 Trace 失败测试**
+
+测试必须验证：成功调用记录完整 `input_messages` 和 `output`；失败调用记录输入、失败状态和安全错误摘要；记录包含 `model_call_id`、`session_id`、provider、model、token 和耗时；JSONL 在中文 Windows 环境使用 UTF-8。
+
+- [x] **步骤 2：运行测试并确认失败**
+
+```powershell
+uv run --locked pytest tests/unit/test_model_trace.py tests/unit/test_chat_service.py -v
+```
+
+预期：Trace 类型、writer 和 ChatService 第三个依赖尚不存在，因此失败。
+
+- [x] **步骤 3：实现 provider 无关的 TraceSink**
+
+`ModelCallTrace` 使用不可变 dataclass；`JsonlModelTraceSink` 使用单例级 `asyncio.Lock` 串行追加一行 JSON，目录按需创建。日志不得包含 API Key 或原始异常文本；文件写入异常只写应用警告，不得让聊天请求失败。
+
+- [x] **步骤 4：通过依赖注入接入 ChatService**
+
+`ChatService` 在数据库 `model_call` 创建成功后写 Trace，使日志中的 `model_call_id` 可与数据库关联。成功记录完整输出，失败记录 `output=null`。输入在 `ModelClient.complete()` 调用前固定为实际发送的最近 20 条消息，不从数据库事后重建。
+
+- [x] **步骤 5：增加环境开关和 Git 忽略**
+
+`.env.example` 增加：
+
+```dotenv
+MODEL_TRACE_ENABLED=true
+MODEL_TRACE_PATH=.local/logs/model-calls.jsonl
+```
+
+测试 Settings 默认关闭 Trace；`.gitignore` 忽略 `.local/`。README 不增加本功能说明。
+
+- [x] **步骤 6：执行真实 DeepSeek Trace 冒烟测试**
+
+启动应用并发送一条消息，确认 `.local/logs/model-calls.jsonl` 新增一条成功记录，输入和输出可解析，`model_call_id` 存在，文件中不包含 `DEEPSEEK_API_KEY` 的值。冒烟会话完成后从开发数据库清理。
+
+- [x] **步骤 7：运行完整质量门禁**
+
+```powershell
+uv run --locked ruff format --check .
+uv run --locked ruff check .
+uv run --locked pyright
+uv run --locked pytest --cov=databricks_zh_expert --cov-report=term-missing
+```
+
+- [x] **步骤 8：先写 API 兼容超集格式的失败测试**
+
+测试必须验证：`request` 与 OpenAI Chat Completions 请求体一致；`response` 保留标准字段、
+token 明细和供应商扩展字段；成功时 `error=null`，失败时 `response=null`；LiteLLM 私有字段、
+响应头、API Key、访问令牌等敏感数据不得进入日志。
+
+- [x] **步骤 9：运行定向测试并确认失败**
+
+```powershell
+uv run --locked pytest tests/unit/test_model_trace.py tests/unit/test_litellm_client.py tests/unit/test_chat_service.py -v
+```
+
+预期：现有扁平 Trace 类型和 `ModelResult` 尚不支持新结构，因此失败。
+
+- [x] **步骤 10：实现安全的 API 响应归一化**
+
+`ModelResult` 增加 provider 无关的 JSON 响应对象。LiteLLM 客户端从实际响应生成可序列化对象，
+递归移除私有字段、认证信息和响应头，并保留 `choices`、`usage`、`reasoning_content` 等安全字段。
+若响应归一化失败，则使用带明确标记的安全兼容结构，不得让已成功的模型回答失败。
+
+- [x] **步骤 11：将 ChatService 映射到版本化 Trace**
+
+成功调用写入完整 `request` 和脱敏后的 `response`；失败调用写入 OpenAI 风格的安全 `error`
+对象。Trace 元数据继续保留数据库关联 ID、供应商、耗时和成功状态。
+
+- [x] **步骤 12：重新执行真实 DeepSeek 冒烟与完整质量门禁**
+
+只向现有本地 JSONL 追加一条新格式记录，验证格式、完整输入输出及密钥脱敏；随后重新运行
+Alembic、Ruff、Pyright、pytest 和覆盖率检查。
+
+- [x] **步骤 13：建议提交点**
+
+```powershell
+git add .gitignore .env.example src tests docs/superpowers/plans
+git commit -m "feat: add local model call tracing"
+```
+
+---
+
 ## 阶段 1 验收清单
 
 - [x] 宿主机只新增 uv，没有全局安装项目 Python 包。
@@ -1396,8 +1508,8 @@ git commit -m "docs: add stage one local development workflow"
 - [x] 开发数据库和测试数据库分离。
 - [x] Alembic 已启用 vector 扩展并创建三张业务表。
 - [x] `/health` 和 `/health/live` 能检测应用存活，`/health/ready` 能检测数据库状态。
-- [ ] 会话创建、列表、详情和消息发送 API 可用。
-- [ ] 一轮真实聊天会保存两条消息和一条 model_call。
+- [x] 会话创建、列表、详情和消息发送 API 可用。
+- [x] 一轮真实聊天会保存两条消息和一条 model_call。
 - [x] 单元测试不连接真实模型。
 - [x] 集成测试拒绝连接非 `_test` 数据库。
 - [x] pytest、覆盖率、ruff 和 Pyright 质量门禁通过。

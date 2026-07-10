@@ -9,6 +9,7 @@ from databricks_zh_expert.chat.service import ChatService
 from databricks_zh_expert.core.errors import AppError
 from databricks_zh_expert.db.models import ChatSession, Message, ModelCall
 from databricks_zh_expert.llm.client import ModelClient, ModelMessage, ModelResult
+from databricks_zh_expert.observability.model_trace import ModelCallTrace, ModelTraceSink
 
 NOW = datetime(2026, 1, 1, tzinfo=UTC)
 
@@ -124,17 +125,50 @@ class FakeModelClient:
             model=self.model,
             prompt_tokens=12,
             completion_tokens=8,
+            api_response={
+                "id": "chatcmpl-test",
+                "object": "chat.completion",
+                "created": 1767225600,
+                "model": "deepseek-chat",
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {
+                            "role": "assistant",
+                            "content": "这是一个 Markdown 回答。",
+                        },
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {
+                    "prompt_tokens": 12,
+                    "completion_tokens": 8,
+                    "total_tokens": 20,
+                },
+            },
         )
+
+
+class FakeModelTraceSink:
+    def __init__(self) -> None:
+        self.traces: list[ModelCallTrace] = []
+
+    async def write(self, trace: ModelCallTrace) -> None:
+        self.traces.append(trace)
 
 
 def build_service(
     repository: FakeChatRepository,
     model_client: FakeModelClient,
-) -> ChatService:
-    return ChatService(
+    trace_sink: FakeModelTraceSink | None = None,
+) -> tuple[ChatService, FakeModelTraceSink]:
+    trace_sink = trace_sink or FakeModelTraceSink()
+    service = ChatService(
         cast(ChatRepository, repository),
         cast(ModelClient, model_client),
+        cast(ModelTraceSink, trace_sink),
     )
+    return service, trace_sink
 
 
 @pytest.mark.asyncio
@@ -146,7 +180,7 @@ async def test_send_message_persists_reply_and_model_call() -> None:
     ]
     repository = FakeChatRepository(session, historical_messages)
     model_client = FakeModelClient(repository)
-    service = build_service(repository, model_client)
+    service, trace_sink = build_service(repository, model_client)
 
     result = await service.send_message(session.id, "设计一个销售工作流")
 
@@ -163,6 +197,54 @@ async def test_send_message_persists_reply_and_model_call() -> None:
     ]
     assert result.model_call.success is True
     assert result.model_call.latency_ms >= 0
+    trace = trace_sink.traces[0]
+    assert trace.model_call_id == result.model_call.id
+    assert trace.session_id == session.id
+    assert trace.request == {
+        "model": "deepseek/deepseek-v4-flash",
+        "messages": [
+            {"role": message.role, "content": message.content}
+            for message in model_client.received_messages
+        ],
+    }
+    assert trace.response == {
+        "id": "chatcmpl-test",
+        "object": "chat.completion",
+        "created": 1767225600,
+        "model": "deepseek-chat",
+        "choices": [
+            {
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": "这是一个 Markdown 回答。",
+                },
+                "finish_reason": "stop",
+            }
+        ],
+        "usage": {
+            "prompt_tokens": 12,
+            "completion_tokens": 8,
+            "total_tokens": 20,
+        },
+    }
+    assert trace.error is None
+    assert trace.success is True
+
+
+@pytest.mark.asyncio
+async def test_send_message_trace_uses_exact_messages_sent_to_model() -> None:
+    session = make_session()
+    repository = FakeChatRepository(session)
+    model_client = FakeModelClient(repository)
+    service, trace_sink = build_service(repository, model_client)
+
+    await service.send_message(session.id, "设计一个销售工作流")
+
+    assert trace_sink.traces[0].request["messages"] == [
+        {"role": message.role, "content": message.content}
+        for message in model_client.received_messages
+    ]
 
 
 @pytest.mark.asyncio
@@ -173,7 +255,7 @@ async def test_send_message_records_safe_failure_without_assistant_message() -> 
         repository,
         error=RuntimeError("请求失败，密钥是 sk-sensitive-value"),
     )
-    service = build_service(repository, model_client)
+    service, trace_sink = build_service(repository, model_client)
 
     with pytest.raises(AppError) as error:
         await service.send_message(session.id, "测试失败")
@@ -183,6 +265,17 @@ async def test_send_message_records_safe_failure_without_assistant_message() -> 
     assert repository.model_calls[0].success is False
     assert repository.model_calls[0].error_message is not None
     assert "sk-sensitive-value" not in repository.model_calls[0].error_message
+    trace = trace_sink.traces[0]
+    assert trace.model_call_id == repository.model_calls[0].id
+    assert trace.response is None
+    assert trace.success is False
+    assert trace.error == {
+        "message": "模型调用失败，请稍后重试。",
+        "type": "RuntimeError",
+        "param": None,
+        "code": "model_request_failed",
+    }
+    assert "sk-sensitive-value" not in str(trace.error)
 
 
 @pytest.mark.asyncio
@@ -194,7 +287,7 @@ async def test_send_message_preserves_model_not_configured_error() -> None:
         message="当前模型尚未配置 API 密钥。",
         status_code=503,
     )
-    service = build_service(
+    service, trace_sink = build_service(
         repository,
         FakeModelClient(repository, error=expected_error),
     )
@@ -204,6 +297,12 @@ async def test_send_message_preserves_model_not_configured_error() -> None:
 
     assert error.value is expected_error
     assert repository.model_calls[0].success is False
+    assert trace_sink.traces[0].error == {
+        "message": "当前模型尚未配置 API 密钥。",
+        "type": "AppError",
+        "param": None,
+        "code": "model_not_configured",
+    }
 
 
 @pytest.mark.asyncio
@@ -211,7 +310,7 @@ async def test_send_message_rejects_missing_session_before_persisting() -> None:
     missing_session_id = uuid4()
     repository = FakeChatRepository(None)
     model_client = FakeModelClient(repository)
-    service = build_service(repository, model_client)
+    service, trace_sink = build_service(repository, model_client)
 
     with pytest.raises(AppError) as error:
         await service.send_message(missing_session_id, "不会保存")
@@ -219,3 +318,4 @@ async def test_send_message_rejects_missing_session_before_persisting() -> None:
     assert error.value.code == "session_not_found"
     assert repository.messages == []
     assert repository.model_calls == []
+    assert trace_sink.traces == []

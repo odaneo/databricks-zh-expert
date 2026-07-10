@@ -12,6 +12,8 @@ REQUIRED_SETTINGS = {
     "app_port": 8000,
     "log_level": "INFO",
     "model_request_timeout_seconds": 60,
+    "model_trace_enabled": False,
+    "model_trace_path": ".local/logs/model-calls.jsonl",
     "default_model": "deepseek/deepseek-v4-flash",
     "database_url": (
         "postgresql+psycopg://databricks_agent:databricks_agent_dev@localhost:5432/databricks_agent"
@@ -28,6 +30,8 @@ def _clear_deployment_environment(monkeypatch: pytest.MonkeyPatch) -> None:
         "APP_PORT",
         "LOG_LEVEL",
         "MODEL_REQUEST_TIMEOUT_SECONDS",
+        "MODEL_TRACE_ENABLED",
+        "MODEL_TRACE_PATH",
         "DEFAULT_MODEL",
         "DATABASE_URL",
         "POSTGRES_SCHEMA",
@@ -56,6 +60,8 @@ def test_deployment_settings_are_required(
         ("app_port",),
         ("log_level",),
         ("model_request_timeout_seconds",),
+        ("model_trace_enabled",),
+        ("model_trace_path",),
         ("default_model",),
         ("database_url",),
         ("postgres_schema",),
@@ -74,6 +80,8 @@ def test_deployment_settings_can_come_from_environment(
     monkeypatch.setenv("APP_PORT", "9000")
     monkeypatch.setenv("LOG_LEVEL", "WARNING")
     monkeypatch.setenv("MODEL_REQUEST_TIMEOUT_SECONDS", "30")
+    monkeypatch.setenv("MODEL_TRACE_ENABLED", "true")
+    monkeypatch.setenv("MODEL_TRACE_PATH", ".local/custom/model-calls.jsonl")
     monkeypatch.setenv("DEFAULT_MODEL", "openai/gpt-5.5")
     monkeypatch.setenv(
         "DATABASE_URL",
@@ -91,6 +99,8 @@ def test_deployment_settings_can_come_from_environment(
     assert settings.app_port == 9000
     assert settings.log_level == "WARNING"
     assert settings.model_request_timeout_seconds == 30
+    assert settings.model_trace_enabled is True
+    assert settings.model_trace_path == Path(".local/custom/model-calls.jsonl")
     assert settings.default_model == "openai/gpt-5.5"
     assert settings.database_url.endswith("/test_database")
     assert settings.postgres_schema == "test_schema"
