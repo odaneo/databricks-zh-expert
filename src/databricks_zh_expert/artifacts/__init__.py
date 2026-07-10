@@ -1,0 +1,1 @@
+"""Markdown artifact package."""

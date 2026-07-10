@@ -84,6 +84,7 @@
 | `httpx` | `0.28.1` | FastAPI API 测试客户端 |
 | `pytest-cov` | `7.1.0` | 覆盖率报告 |
 | `ruff` | `0.15.21` | 格式化和静态检查 |
+| `pyright` | `1.1.411` | Pylance 等价的项目级类型检查 |
 
 阶段 1 不安装 LlamaIndex 和 Python `pgvector` 包。Docker 数据库已包含 pgvector 扩展，初始迁移只执行 `CREATE EXTENSION IF NOT EXISTS vector`；Python 侧真正定义向量字段时，再在阶段 4 加入 `pgvector` 包。
 
@@ -142,11 +143,13 @@ databricks-zh-expert/
 
 阶段 1 配置分为：
 
-1. 应用配置：`APP_ENV`、`APP_HOST`、`APP_PORT`、`LOG_LEVEL`。
-2. 数据库配置：`POSTGRES_DB`、`POSTGRES_USER`、`POSTGRES_PASSWORD`、`POSTGRES_PORT`、`DATABASE_URL`、`TEST_DATABASE_URL`。
+1. 应用配置：`APP_NAME`、`APP_ENV`、`APP_HOST`、`APP_PORT`、`LOG_LEVEL`。
+2. 数据库配置：Compose 使用 `POSTGRES_DB`、`POSTGRES_USER`、`POSTGRES_PASSWORD`、`POSTGRES_PORT`；应用只读取 `DATABASE_URL` 和 `POSTGRES_SCHEMA`。
 3. 模型配置：`DEFAULT_MODEL`、`MODEL_REQUEST_TIMEOUT_SECONDS`、`OPENAI_API_KEY`、`DEEPSEEK_API_KEY`。
 
-`pydantic-settings` 在应用启动时进行类型和必填项校验。API 密钥允许为空，因此健康检查和数据库功能可以在没有模型密钥时启动；调用聊天接口时，如果当前模型所需密钥为空，返回明确的 `model_not_configured` 错误。
+应用运行所读取的 `APP_NAME`、`APP_ENV`、`APP_HOST`、`APP_PORT`、`LOG_LEVEL`、`MODEL_REQUEST_TIMEOUT_SECONDS`、`DEFAULT_MODEL`、`DATABASE_URL` 和 `POSTGRES_SCHEMA` 都是必填部署配置，不在 Python 代码中提供回退值。`pydantic-settings` 在应用启动时进行类型和必填项校验；操作系统环境变量优先于 `.env`。API 密钥允许为空，因此健康检查和数据库功能可以在没有模型密钥时启动；调用聊天接口时，如果当前模型所需密钥为空，返回明确的 `model_not_configured` 错误。
+
+应用使用可注入的 `create_app(settings)` 工厂，不在模块导入时创建全局 FastAPI 实例。项目启动命令通过 `run()` 读取 `APP_HOST`、`APP_PORT` 和 `LOG_LEVEL` 并以 Uvicorn factory 模式启动，避免运行参数同时散落在代码、`.env` 和命令行中。
 
 ## 8. Docker 与数据库
 
@@ -228,7 +231,7 @@ POST /api/chat/sessions/{session_id}/messages
 4. 执行 `docker compose up -d`。
 5. 执行 Alembic 迁移。
 6. 启动 FastAPI。
-7. 执行测试和 ruff。
+7. 执行测试、ruff 和 Pyright。
 
 ## 14. 完成标准
 
@@ -240,7 +243,7 @@ POST /api/chat/sessions/{session_id}/messages
 6. 五个阶段 1 API 可通过 Swagger 或 HTTP 客户端调用。
 7. 一轮聊天能持久化 user message、assistant message 和 model_call。
 8. 没有真实模型密钥时，测试仍可全部运行。
-9. `pytest`、覆盖率和 ruff 检查通过。
+9. `pytest`、覆盖率、ruff 和 Pyright 检查通过。
 10. README 包含从环境检查到关闭 Docker 的完整 PowerShell 命令。
 
 ## 15. 版本来源

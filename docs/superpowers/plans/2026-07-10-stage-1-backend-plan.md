@@ -6,7 +6,7 @@
 
 **架构：** FastAPI 和 Python 依赖运行在 Windows 宿主机的项目 `.venv` 中，PostgreSQL 18 + pgvector 0.8.5 单独运行在 Docker 中。HTTP 路由通过 ChatService、Repository 和 ModelClient 窄接口访问数据库及 LiteLLM，外部模型调用期间不保持数据库事务。
 
-**技术栈：** Python 3.12.10、uv 0.11.28、FastAPI 0.139.0、Uvicorn 0.51.0、Pydantic 2.13.4、SQLAlchemy 2.0.51、psycopg 3.3.4、Alembic 1.18.5、LiteLLM 1.91.1、PostgreSQL 18、pgvector 0.8.5、pytest 9.1.1、ruff 0.15.21。
+**技术栈：** Python 3.12.10、uv 0.11.28、FastAPI 0.139.0、Uvicorn 0.51.0、Pydantic 2.13.4、SQLAlchemy 2.0.51、psycopg 3.3.4、Alembic 1.18.5、LiteLLM 1.91.1、PostgreSQL 18、pgvector 0.8.5、pytest 9.1.1、ruff 0.15.21、Pyright 1.1.411。
 
 ## 全局约束
 
@@ -21,6 +21,7 @@
 9. 阶段 1 不安装 LlamaIndex 和 Python `pgvector` 包。
 10. 所有测试必须能够在没有真实 OpenAI 或 DeepSeek 密钥的情况下运行。
 11. 所有说明文档和用户可见错误信息使用中文；代码标识符和 API 字段使用英文。
+12. 每次修改 Python 代码后，完成当前任务前必须运行 `uv run --locked ruff format --check src tests`、`uv run --locked ruff check src tests`、`uv run --locked pyright` 和 `uv run --locked pytest`；仅修改文档时不强制运行 Pyright 和 pytest。
 
 ---
 
@@ -143,6 +144,7 @@ dependencies = [
 [dependency-groups]
 dev = [
     "httpx==0.28.1",
+    "pyright==1.1.411",
     "pytest==9.1.1",
     "pytest-asyncio==1.4.0",
     "pytest-cov==7.1.0",
@@ -168,6 +170,14 @@ source = ["databricks_zh_expert"]
 [tool.coverage.report]
 fail_under = 80
 show_missing = true
+
+[tool.pyright]
+include = ["src", "tests"]
+exclude = [".venv"]
+pythonVersion = "3.12"
+typeCheckingMode = "basic"
+venvPath = "."
+venv = ".venv"
 
 [tool.ruff]
 line-length = 100
@@ -267,6 +277,7 @@ POSTGRES_DB=databricks_agent
 POSTGRES_USER=databricks_agent
 POSTGRES_PASSWORD=databricks_agent_dev
 POSTGRES_PORT=5432
+POSTGRES_SCHEMA=databricks_agent
 DATABASE_URL=postgresql+psycopg://databricks_agent:databricks_agent_dev@localhost:5432/databricks_agent
 TEST_DATABASE_URL=postgresql+psycopg://databricks_agent:databricks_agent_dev@localhost:5432/databricks_agent_test
 
@@ -302,10 +313,11 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_SCHEMA: ${POSTGRES_SCHEMA:-databricks_agent}
     ports:
       - "${POSTGRES_PORT}:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres18_data:/var/lib/postgresql
       - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
@@ -315,8 +327,10 @@ services:
       start_period: 10s
 
 volumes:
-  postgres_data:
+  postgres18_data:
 ```
+
+应用数据不使用默认 `public` schema。初始化脚本创建 `databricks_agent` schema，将应用用户的默认 `search_path` 设置为 `databricks_agent, pg_catalog`，并把 `pgvector` 扩展安装到 `databricks_agent` schema。
 
 - [ ] **步骤 4：由用户创建本地 `.env`**
 
@@ -380,7 +394,7 @@ git commit -m "chore: add postgres pgvector compose service"
 
 - 产出：`Settings` 和缓存函数 `get_settings() -> Settings`。
 - 产出：`get_db() -> AsyncIterator[AsyncSession]`。
-- 产出：`create_app() -> FastAPI` 和模块级 `app`。
+- 产出：`create_app(settings: Settings | None = None) -> FastAPI` 和读取运行配置的 `run()`。
 - 产出：`GET /health`，数据库正常返回 200，数据库异常返回 503。
 
 - [ ] **步骤 1：先写配置失败测试**
@@ -396,22 +410,35 @@ from databricks_zh_expert.core.config import Settings
 def test_settings_use_expected_defaults() -> None:
     settings = Settings(
         _env_file=None,
+        app_name="Databricks 中文专家 Agent",
+        app_env="development",
+        app_host="127.0.0.1",
+        app_port=8000,
+        log_level="INFO",
+        model_request_timeout_seconds=60,
+        default_model="deepseek/deepseek-v4-flash",
         database_url="postgresql+psycopg://user:pass@localhost:5432/app",
-        test_database_url="postgresql+psycopg://user:pass@localhost:5432/app_test",
+        postgres_schema="app",
     )
 
     assert settings.app_host == "127.0.0.1"
     assert settings.app_port == 8000
-    assert settings.default_model == "deepseek/deepseek-v4-flash"
     assert settings.model_request_timeout_seconds == 60
-    assert settings.deepseek_api_key == SecretStr("")
+    assert settings.deepseek_api_key is None
 
 
 def test_secret_is_masked_when_settings_are_rendered() -> None:
     settings = Settings(
         _env_file=None,
+        app_name="Databricks 中文专家 Agent",
+        app_env="development",
+        app_host="127.0.0.1",
+        app_port=8000,
+        log_level="INFO",
+        model_request_timeout_seconds=60,
+        default_model="deepseek/deepseek-v4-flash",
         database_url="postgresql+psycopg://user:pass@localhost:5432/app",
-        test_database_url="postgresql+psycopg://user:pass@localhost:5432/app_test",
+        postgres_schema="app",
         deepseek_api_key="real-secret",
     )
 
@@ -442,20 +469,21 @@ class Settings(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
+        env_ignore_empty=True,
         extra="ignore",
     )
 
-    app_name: str = "Databricks 中文专家 Agent"
-    app_env: str = "development"
-    app_host: str = "127.0.0.1"
-    app_port: int = 8000
-    log_level: str = "INFO"
+    app_name: str
+    app_env: str
+    app_host: str
+    app_port: int
+    log_level: str
+    model_request_timeout_seconds: int
+    default_model: str
     database_url: str
-    test_database_url: str
-    default_model: str = "deepseek/deepseek-v4-flash"
-    model_request_timeout_seconds: int = 60
-    openai_api_key: SecretStr = SecretStr("")
-    deepseek_api_key: SecretStr = SecretStr("")
+    postgres_schema: str
+    openai_api_key: SecretStr | None = None
+    deepseek_api_key: SecretStr | None = None
 
 
 @lru_cache
@@ -573,12 +601,13 @@ AppError(
 
 `main.py` 必须：
 
-1. 定义 `create_app() -> FastAPI`。
+1. 定义 `create_app(settings: Settings | None = None) -> FastAPI`，并把解析后的配置保存到 `app.state`。
 2. 注册 `AppError` exception handler，响应结构为 `{"code", "message", "details"}`。
 3. 注册 `RequestValidationError` handler，返回 HTTP 422、错误码 `validation_error` 和 Pydantic 错误明细。
 4. 注册 health router。
-5. 创建模块级 `app = create_app()`。
-6. 不在日志中输出 Settings 完整内容。
+5. 不创建模块级 `app`；定义 `run()`，以 Uvicorn factory 模式启动，并读取 `APP_HOST`、`APP_PORT` 和 `LOG_LEVEL`。
+6. FastAPI 版本统一读取包内 `__version__`。
+7. 不在日志中输出 Settings 完整内容。
 
 `tests/unit/test_health.py` 再增加一个请求校验测试，确认无效 API 请求使用统一的 `validation_error` 响应结构，而不是 FastAPI 默认的 `detail` 顶层结构。
 
@@ -1193,7 +1222,7 @@ uv run --locked ruff format --check src tests
 用户确认 `.env` 已填写 `DEEPSEEK_API_KEY`，启动服务：
 
 ```powershell
-uv run --locked uvicorn databricks_zh_expert.main:app --reload --host 127.0.0.1 --port 8000
+uv run --locked databricks-zh-expert
 ```
 
 另开 PowerShell：
@@ -1291,6 +1320,7 @@ uv lock --check
 uv sync --locked
 uv run --locked ruff format --check src tests
 uv run --locked ruff check src tests
+uv run --locked pyright
 uv run --locked pytest --cov=databricks_zh_expert --cov-report=term-missing
 ```
 
@@ -1298,8 +1328,9 @@ uv run --locked pytest --cov=databricks_zh_expert --cov-report=term-missing
 
 1. lockfile 与 `pyproject.toml` 一致。
 2. ruff 格式和 lint 均通过。
-3. pytest 全部通过。
-4. 分支覆盖率不低于 80%。
+3. Pyright 为 0 errors。
+4. pytest 全部通过。
+5. 分支覆盖率不低于 80%。
 
 - [ ] **步骤 5：执行运行状态检查**
 
@@ -1314,7 +1345,7 @@ uv run --locked python -c "from databricks_zh_expert import __version__; print(_
 - [ ] **步骤 6：启动应用并检查端点**
 
 ```powershell
-uv run --locked uvicorn databricks_zh_expert.main:app --reload --host 127.0.0.1 --port 8000
+uv run --locked databricks-zh-expert
 ```
 
 另开 PowerShell：
@@ -1361,7 +1392,7 @@ git commit -m "docs: add stage one local development workflow"
 - [ ] 一轮真实聊天会保存两条消息和一条 model_call。
 - [ ] 单元测试不连接真实模型。
 - [ ] 集成测试拒绝连接非 `_test` 数据库。
-- [ ] pytest、覆盖率和 ruff 质量门禁通过。
+- [ ] pytest、覆盖率、ruff 和 Pyright 质量门禁通过。
 - [ ] README 包含完整 PowerShell 初始化和运行指令。
 
 ## 阶段 1 不包含的内容

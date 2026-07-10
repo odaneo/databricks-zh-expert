@@ -6,7 +6,7 @@
 
 **架构：** 第一版采用“单体后端 + 简单 Web UI/API 调试”的结构，先把模型调用、会话保存、Prompt 模板、RAG 和 Markdown 交付物跑通。Agent 不直接操作 Databricks，不执行 SQL，不提交 Job，只负责生成建议、代码草稿、设计文档和引用来源。
 
-**技术栈：** Python 3.12.10、FastAPI、LiteLLM、PostgreSQL、pgvector、SQLAlchemy 2.x、Alembic、psycopg 3、LlamaIndex、pytest、ruff、Markdown。
+**技术栈：** Python 3.12.10、FastAPI、LiteLLM、PostgreSQL、pgvector、SQLAlchemy 2.x、Alembic、psycopg 3、LlamaIndex、pytest、ruff、Pyright、Markdown。
 
 ---
 
@@ -105,6 +105,7 @@ FastAPI Backend
 8. 预置知识库原文件是内容来源，保存在本地目录；PostgreSQL 保存文件路径、内容哈希、版本、Chunk、元数据和 Embedding。
 9. Demo 初期优先使用 pgvector 精确检索；数据量和性能测试证明有必要后，再增加 HNSW 索引。
 10. 如果未来 pgvector 成为明确瓶颈，可以引入 Qdrant 作为可重建的检索索引，但 PostgreSQL 仍保留权威元数据。
+11. 每次修改 Python 代码后，完成当前任务前必须运行 Ruff 格式检查、Ruff lint、Pyright 和 pytest；仅修改 Markdown 等文档时不强制运行 Pyright 和 pytest。
 
 ---
 
@@ -130,6 +131,7 @@ FastAPI Backend
 10. LiteLLM。
 11. pytest。
 12. ruff。
+13. Pyright。
 
 ### 产出
 
