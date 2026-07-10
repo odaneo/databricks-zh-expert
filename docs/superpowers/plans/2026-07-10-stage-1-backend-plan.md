@@ -35,6 +35,7 @@ src/databricks_zh_expert/api/chat.py             会话和消息路由
 src/databricks_zh_expert/core/config.py          .env 和环境变量配置
 src/databricks_zh_expert/core/errors.py          领域错误和 HTTP 映射
 src/databricks_zh_expert/core/logging.py         标准输出日志配置
+src/databricks_zh_expert/core/runtime.py         Windows 异步事件循环兼容配置
 src/databricks_zh_expert/db/base.py              SQLAlchemy DeclarativeBase
 src/databricks_zh_expert/db/session.py           Engine、SessionFactory 和依赖
 src/databricks_zh_expert/db/models.py            sessions/messages/model_calls 模型
@@ -46,7 +47,8 @@ src/databricks_zh_expert/llm/litellm_client.py    LiteLLM 生产适配器
 alembic/env.py                                    从 Settings 读取数据库 URL
 alembic/versions/0001_initial.py                  初始数据库迁移
 docker-compose.yml                                PostgreSQL + pgvector 服务
-docker/postgres/init/01-create-test-db.sql        创建独立测试数据库
+docker/postgres/init/01-initialize-app-schema.sh  初始化开发数据库 schema 和 pgvector
+docker/postgres/init/02-initialize-test-database.sh 创建并初始化独立测试数据库
 tests/conftest.py                                 测试数据库和依赖覆盖
 tests/unit/                                       不访问 Docker 和模型网络的测试
 tests/integration/                                使用测试 PostgreSQL 的测试
@@ -76,7 +78,7 @@ README.md                                         完整 PowerShell 操作说明
 - 产出：可导入的 `databricks_zh_expert` Python 包。
 - 后续依赖：所有后续命令都通过 `uv run --locked` 执行。
 
-- [ ] **步骤 1：确认宿主机已有环境**
+- [x] **步骤 1：确认宿主机已有环境**
 
 用户在 PowerShell 执行：
 
@@ -88,7 +90,7 @@ docker compose version
 
 预期：Python 输出 `Python 3.12.10`；Docker 和 Docker Compose 均输出版本号。任何一项失败都先修复本地环境，不进入下一步。
 
-- [ ] **步骤 2：安装固定版本 uv**
+- [x] **步骤 2：安装固定版本 uv**
 
 用户可以先检查官方安装脚本：
 
@@ -110,7 +112,7 @@ uv --version
 
 预期：输出 `uv 0.11.28`。uv 是唯一需要新增到用户环境的宿主机工具。
 
-- [ ] **步骤 3：写入 Python 版本文件**
+- [x] **步骤 3：写入 Python 版本文件**
 
 `.python-version` 的完整内容：
 
@@ -118,7 +120,7 @@ uv --version
 3.12.10
 ```
 
-- [ ] **步骤 4：创建项目清单**
+- [x] **步骤 4：创建项目清单**
 
 `pyproject.toml` 使用以下内容：
 
@@ -191,7 +193,7 @@ quote-style = "double"
 indent-style = "space"
 ```
 
-- [ ] **步骤 5：创建最小 Python 包和 README**
+- [x] **步骤 5：创建最小 Python 包和 README**
 
 `src/databricks_zh_expert/__init__.py`：
 
@@ -207,7 +209,7 @@ __version__ = "0.1.0"
 本项目是一个 Databricks 顾问型 Agent Demo。阶段 1 提供 FastAPI、PostgreSQL 会话持久化和最小模型调用。
 ```
 
-- [ ] **步骤 6：补充 Git 忽略规则**
+- [x] **步骤 6：补充 Git 忽略规则**
 
 确认 `.gitignore` 至少包含：
 
@@ -223,7 +225,7 @@ htmlcov/
 
 不要忽略 `.env.example`、`.python-version` 或 `uv.lock`。
 
-- [ ] **步骤 7：由用户生成锁文件和项目环境**
+- [x] **步骤 7：由用户生成锁文件和项目环境**
 
 用户在仓库根目录执行：
 
@@ -241,7 +243,7 @@ uv run --locked python --version
 3. `uv tree --depth 1` 显示 `pyproject.toml` 中的运行依赖和开发依赖。
 4. 全局 Python 环境没有被修改。
 
-- [ ] **步骤 8：建议提交点**
+- [x] **步骤 8：建议提交点**
 
 ```powershell
 git add .gitignore .python-version pyproject.toml uv.lock README.md src/databricks_zh_expert/__init__.py
@@ -256,7 +258,8 @@ git commit -m "chore: initialize uv python project"
 
 - 创建：`.env.example`
 - 创建：`docker-compose.yml`
-- 创建：`docker/postgres/init/01-create-test-db.sql`
+- 创建：`docker/postgres/init/01-initialize-app-schema.sh`
+- 创建：`docker/postgres/init/02-initialize-test-database.sh`
 
 **接口：**
 
@@ -264,7 +267,7 @@ git commit -m "chore: initialize uv python project"
 - 产出：测试数据库 `databricks_agent_test`，连接地址来自 `TEST_DATABASE_URL`。
 - 产出：Compose 服务名固定为 `postgres`。
 
-- [ ] **步骤 1：创建 `.env.example`**
+- [x] **步骤 1：创建 `.env.example`**
 
 ```dotenv
 APP_NAME=Databricks 中文专家 Agent
@@ -277,6 +280,7 @@ POSTGRES_DB=databricks_agent
 POSTGRES_USER=databricks_agent
 POSTGRES_PASSWORD=databricks_agent_dev
 POSTGRES_PORT=5432
+POSTGRES_TEST_DB=databricks_agent_test
 POSTGRES_SCHEMA=databricks_agent
 DATABASE_URL=postgresql+psycopg://databricks_agent:databricks_agent_dev@localhost:5432/databricks_agent
 TEST_DATABASE_URL=postgresql+psycopg://databricks_agent:databricks_agent_dev@localhost:5432/databricks_agent_test
@@ -289,17 +293,11 @@ DEEPSEEK_API_KEY=
 
 `DEFAULT_MODEL` 使用 LiteLLM 的 provider-qualified 名称；阶段 2 再增加面向业务的模型别名和白名单映射。
 
-- [ ] **步骤 2：创建测试数据库初始化脚本**
+- [x] **步骤 2：创建测试数据库初始化脚本**
 
-`docker/postgres/init/01-create-test-db.sql`：
+`02-initialize-test-database.sh` 使用 `POSTGRES_TEST_DB` 幂等创建测试数据库，并在其中创建 `databricks_agent` schema、设置角色级 `search_path`、安装 pgvector。脚本既可在空数据卷首次启动时自动执行，也可对现有数据卷手动重复执行。
 
-```sql
-CREATE DATABASE databricks_agent_test;
-```
-
-该脚本只在 Docker 数据卷首次初始化时执行。测试数据库名因此固定，不从 `.env` 动态生成。
-
-- [ ] **步骤 3：创建 Docker Compose 文件**
+- [x] **步骤 3：创建 Docker Compose 文件**
 
 `docker-compose.yml`：
 
@@ -313,6 +311,7 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_TEST_DB: ${POSTGRES_TEST_DB:-databricks_agent_test}
       POSTGRES_SCHEMA: ${POSTGRES_SCHEMA:-databricks_agent}
     ports:
       - "${POSTGRES_PORT}:5432"
@@ -330,9 +329,9 @@ volumes:
   postgres18_data:
 ```
 
-应用数据不使用默认 `public` schema。初始化脚本创建 `databricks_agent` schema，将应用用户的默认 `search_path` 设置为 `databricks_agent, pg_catalog`，并把 `pgvector` 扩展安装到 `databricks_agent` schema。
+开发数据库和测试数据库都不使用默认 `public` schema。初始化脚本创建 `databricks_agent` schema，将应用用户的默认 `search_path` 设置为 `databricks_agent, pg_catalog`，并把 `pgvector` 扩展安装到 `databricks_agent` schema。
 
-- [ ] **步骤 4：由用户创建本地 `.env`**
+- [x] **步骤 4：由用户创建本地 `.env`**
 
 用户执行：
 
@@ -342,7 +341,7 @@ Copy-Item .env.example .env
 
 然后编辑 `.env`。数据库开发密码可以保留本地示例值；真实调用 DeepSeek 时填写 `DEEPSEEK_API_KEY`。不得把 `.env` 加入 Git。
 
-- [ ] **步骤 5：由用户检查并启动 Compose**
+- [x] **步骤 5：由用户检查并启动 Compose**
 
 ```powershell
 docker compose config
@@ -352,7 +351,7 @@ docker compose ps
 
 预期：`postgres` 状态最终显示为 `healthy`。
 
-- [ ] **步骤 6：由用户验证 PostgreSQL 和 pgvector 可用性**
+- [x] **步骤 6：由用户验证 PostgreSQL 和 pgvector 可用性**
 
 ```powershell
 docker compose exec postgres psql -U databricks_agent -d databricks_agent -c "SELECT version();"
@@ -369,7 +368,7 @@ docker compose exec postgres psql -U databricks_agent -d databricks_agent_test -
 - [ ] **步骤 7：建议提交点**
 
 ```powershell
-git add .env.example docker-compose.yml docker/postgres/init/01-create-test-db.sql
+git add .env.example docker-compose.yml docker/postgres/init
 git commit -m "chore: add postgres pgvector compose service"
 ```
 
@@ -393,11 +392,11 @@ git commit -m "chore: add postgres pgvector compose service"
 **接口：**
 
 - 产出：`Settings` 和缓存函数 `get_settings() -> Settings`。
-- 产出：`get_db() -> AsyncIterator[AsyncSession]`。
+- 产出：可注入的 `Database`、异步 SessionFactory 和 `get_db_session()`。
 - 产出：`create_app(settings: Settings | None = None) -> FastAPI` 和读取运行配置的 `run()`。
-- 产出：`GET /health`，数据库正常返回 200，数据库异常返回 503。
+- 产出：`GET /health` 与 `GET /health/live` 检查应用存活，`GET /health/ready` 检查数据库并在异常时返回 503。
 
-- [ ] **步骤 1：先写配置失败测试**
+- [x] **步骤 1：先写配置失败测试**
 
 `tests/unit/test_config.py` 至少覆盖：
 
@@ -445,7 +444,7 @@ def test_secret_is_masked_when_settings_are_rendered() -> None:
     assert "real-secret" not in str(settings.model_dump())
 ```
 
-- [ ] **步骤 2：运行测试并确认失败**
+- [x] **步骤 2：运行测试并确认失败**
 
 ```powershell
 uv run --locked pytest tests/unit/test_config.py -v
@@ -453,7 +452,7 @@ uv run --locked pytest tests/unit/test_config.py -v
 
 预期：因为 `databricks_zh_expert.core.config` 尚不存在而失败。
 
-- [ ] **步骤 3：实现 Settings**
+- [x] **步骤 3：实现 Settings**
 
 `core/config.py` 必须定义这些字段和配置：
 
@@ -491,7 +490,7 @@ def get_settings() -> Settings:
     return Settings()
 ```
 
-- [ ] **步骤 4：实现数据库基础设施**
+- [x] **步骤 4：实现数据库基础设施**
 
 `db/base.py`：
 
@@ -503,35 +502,40 @@ class Base(DeclarativeBase):
     pass
 ```
 
-`db/session.py` 必须提供：
+`db/session.py` 必须提供可注入的 `Database`，不得在模块导入时读取 Settings 或创建全局 Engine：
 
 ```python
 from collections.abc import AsyncIterator
 
+from contextlib import asynccontextmanager
+
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from databricks_zh_expert.core.config import get_settings
 
-settings = get_settings()
-engine = create_async_engine(settings.database_url, pool_pre_ping=True)
-SessionFactory = async_sessionmaker(engine, expire_on_commit=False)
+class Database:
+    def __init__(self, database_url: str) -> None:
+        self.engine = create_async_engine(database_url, pool_pre_ping=True)
+        self.session_factory = async_sessionmaker(self.engine, expire_on_commit=False)
 
+    @asynccontextmanager
+    async def session(self) -> AsyncIterator[AsyncSession]:
+        async with self.session_factory() as session:
+            yield session
 
-async def get_db() -> AsyncIterator[AsyncSession]:
-    async with SessionFactory() as session:
-        yield session
+    async def dispose(self) -> None:
+        await self.engine.dispose()
 ```
 
-- [ ] **步骤 5：先写健康检查失败测试**
+- [x] **步骤 5：先写健康检查失败测试**
 
-`tests/unit/test_health.py` 使用 FastAPI dependency override 提供 Fake Session，至少验证：
+`tests/unit/test_health.py` 使用 FastAPI dependency override 提供 Fake Session，至少验证 `/health/ready` 的成功和 503 路径：
 
 ```python
 from collections.abc import AsyncIterator
 
 from fastapi.testclient import TestClient
 
-from databricks_zh_expert.db.session import get_db
+from databricks_zh_expert.api.dependencies import get_db_session
 from databricks_zh_expert.main import create_app
 
 
@@ -544,19 +548,19 @@ async def healthy_db() -> AsyncIterator[HealthySession]:
     yield HealthySession()
 
 
-def test_health_returns_ok_when_database_is_available() -> None:
+def test_ready_health_returns_ok_when_database_is_available() -> None:
     app = create_app()
-    app.dependency_overrides[get_db] = healthy_db
+    app.dependency_overrides[get_db_session] = healthy_db
 
-    response = TestClient(app).get("/health")
+    response = TestClient(app).get("/health/ready")
 
     assert response.status_code == 200
-    assert response.json() == {"status": "ok", "database": "ok"}
+    assert response.json() == {"status": "ready", "database": "ok"}
 ```
 
 再增加一个 Fake Session，使 `execute()` 抛出 `SQLAlchemyError`，断言 HTTP 503 和错误码 `database_unavailable`。
 
-- [ ] **步骤 6：实现统一错误和健康路由**
+- [x] **步骤 6：实现统一错误和健康路由**
 
 `core/errors.py` 定义：
 
@@ -579,10 +583,10 @@ class AppError(Exception):
         super().__init__(message)
 ```
 
-`api/health.py` 使用 `Depends(get_db)`、`SELECT 1` 和 `SQLAlchemyError`。成功响应必须是：
+`api/health.py` 的 `/health/ready` 使用 `Depends(get_db_session)`、`SELECT 1` 和 `SQLAlchemyError`。成功响应必须是：
 
 ```json
-{"status":"ok","database":"ok"}
+{"status":"ready","database":"ok"}
 ```
 
 数据库异常必须抛出：
@@ -595,7 +599,7 @@ AppError(
 )
 ```
 
-- [ ] **步骤 7：创建应用工厂和日志配置**
+- [x] **步骤 7：创建应用工厂和日志配置**
 
 `core/logging.py` 使用标准库 `logging.basicConfig`，日志写标准输出，格式至少包含时间、级别、logger 和消息。
 
@@ -608,10 +612,11 @@ AppError(
 5. 不创建模块级 `app`；定义 `run()`，以 Uvicorn factory 模式启动，并读取 `APP_HOST`、`APP_PORT` 和 `LOG_LEVEL`。
 6. FastAPI 版本统一读取包内 `__version__`。
 7. 不在日志中输出 Settings 完整内容。
+8. Windows 启动时使用 `SelectorEventLoop`，确保 psycopg 3 异步连接可用；pytest-asyncio 使用 `pytest_asyncio_loop_factories` hook 保持相同策略。
 
 `tests/unit/test_health.py` 再增加一个请求校验测试，确认无效 API 请求使用统一的 `validation_error` 响应结构，而不是 FastAPI 默认的 `detail` 顶层结构。
 
-- [ ] **步骤 8：运行任务测试和静态检查**
+- [x] **步骤 8：运行任务测试和静态检查**
 
 ```powershell
 uv run --locked pytest tests/unit/test_config.py tests/unit/test_health.py -v
@@ -1352,6 +1357,8 @@ uv run --locked databricks-zh-expert
 
 ```powershell
 Invoke-RestMethod http://127.0.0.1:8000/health
+Invoke-RestMethod http://127.0.0.1:8000/health/live
+Invoke-RestMethod http://127.0.0.1:8000/health/ready
 Start-Process http://127.0.0.1:8000/docs
 ```
 
@@ -1378,22 +1385,22 @@ git commit -m "docs: add stage one local development workflow"
 
 ## 阶段 1 验收清单
 
-- [ ] 宿主机只新增 uv，没有全局安装项目 Python 包。
-- [ ] `.venv` 位于仓库根目录且被 Git 忽略。
-- [ ] `.python-version` 为 `3.12.10`。
-- [ ] `pyproject.toml` 中直接依赖都有精确版本。
-- [ ] `uv.lock` 已生成并纳入 Git。
-- [ ] `.env` 被忽略，`.env.example` 不包含真实密钥。
-- [ ] PostgreSQL 18 + pgvector 0.8.5 由 Docker Compose 启动并处于 healthy。
-- [ ] 开发数据库和测试数据库分离。
+- [x] 宿主机只新增 uv，没有全局安装项目 Python 包。
+- [x] `.venv` 位于仓库根目录且被 Git 忽略。
+- [x] `.python-version` 为 `3.12.10`。
+- [x] `pyproject.toml` 中直接依赖都有精确版本。
+- [x] `uv.lock` 已生成并纳入 Git。
+- [x] `.env` 被忽略，`.env.example` 不包含真实密钥。
+- [x] PostgreSQL 18 + pgvector 0.8.5 由 Docker Compose 启动并处于 healthy。
+- [x] 开发数据库和测试数据库分离。
 - [ ] Alembic 已启用 vector 扩展并创建三张业务表。
-- [ ] `/health` 能检测数据库状态。
+- [x] `/health` 和 `/health/live` 能检测应用存活，`/health/ready` 能检测数据库状态。
 - [ ] 会话创建、列表、详情和消息发送 API 可用。
 - [ ] 一轮真实聊天会保存两条消息和一条 model_call。
-- [ ] 单元测试不连接真实模型。
-- [ ] 集成测试拒绝连接非 `_test` 数据库。
-- [ ] pytest、覆盖率、ruff 和 Pyright 质量门禁通过。
-- [ ] README 包含完整 PowerShell 初始化和运行指令。
+- [x] 单元测试不连接真实模型。
+- [x] 集成测试拒绝连接非 `_test` 数据库。
+- [x] pytest、覆盖率、ruff 和 Pyright 质量门禁通过。
+- [x] README 包含完整 PowerShell 初始化和运行指令。
 
 ## 阶段 1 不包含的内容
 

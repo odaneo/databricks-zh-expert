@@ -39,6 +39,7 @@ packages = ["src/databricks_zh_expert"]
 [tool.pytest.ini_options]
 addopts = "-ra --strict-markers --strict-config"
 asyncio_mode = "auto"
+markers = ["integration: 需要本地测试数据库的集成测试"]
 testpaths = ["tests"]
 
 [tool.coverage.run]

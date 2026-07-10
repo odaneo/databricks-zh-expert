@@ -1,18 +1,53 @@
+from collections.abc import AsyncIterator
+
 import pytest
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy.exc import SQLAlchemyError
 
 import databricks_zh_expert.main as main_module
+from databricks_zh_expert.api.dependencies import get_db_session
+from databricks_zh_expert.db.session import Database
 
 create_app = main_module.create_app
 
 
-def test_application_runner_uses_environment_settings(settings_factory) -> None:
+class HealthySession:
+    async def execute(self, statement: object) -> None:
+        assert str(statement) == "SELECT 1"
+
+
+class UnavailableSession:
+    async def execute(self, statement: object) -> None:
+        del statement
+        raise SQLAlchemyError("测试数据库不可用")
+
+
+async def healthy_db_session() -> AsyncIterator[HealthySession]:
+    yield HealthySession()
+
+
+async def unavailable_db_session() -> AsyncIterator[UnavailableSession]:
+    yield UnavailableSession()
+
+
+def test_application_runner_uses_environment_settings(settings_factory, monkeypatch) -> None:
     captured: dict[str, object] = {}
+    event_loop_configured = False
+
+    def fake_configure_event_loop_policy() -> None:
+        nonlocal event_loop_configured
+        event_loop_configured = True
 
     def fake_server(app_path: str, **kwargs: object) -> None:
         captured["app_path"] = app_path
         captured.update(kwargs)
 
+    monkeypatch.setattr(
+        main_module,
+        "configure_event_loop_policy",
+        fake_configure_event_loop_policy,
+        raising=False,
+    )
     run = getattr(main_module, "run", None)
     assert run is not None
 
@@ -31,7 +66,9 @@ def test_application_runner_uses_environment_settings(settings_factory) -> None:
         "host": "0.0.0.0",
         "port": 9000,
         "log_level": "warning",
+        "loop": main_module.selector_event_loop_factory,
     }
+    assert event_loop_configured is True
 
 
 def test_main_module_exposes_factory_without_global_app() -> None:
@@ -55,6 +92,25 @@ def test_app_factory_uses_injected_settings(settings_factory) -> None:
 
 
 @pytest.mark.asyncio
+async def test_app_lifespan_disposes_database(settings_factory, monkeypatch) -> None:
+    settings = settings_factory()
+    database = Database(settings.database_url)
+    disposed = False
+
+    async def fake_dispose() -> None:
+        nonlocal disposed
+        disposed = True
+
+    monkeypatch.setattr(database, "dispose", fake_dispose)
+    app = create_app(settings=settings, database=database)
+
+    async with app.router.lifespan_context(app):
+        pass
+
+    assert disposed is True
+
+
+@pytest.mark.asyncio
 async def test_health_returns_injected_application_status_without_database_dependency(
     settings_factory,
 ) -> None:
@@ -71,4 +127,58 @@ async def test_health_returns_injected_application_status_without_database_depen
         "service": "测试 Agent",
         "environment": "test",
         "version": "0.1.0",
+    }
+
+
+@pytest.mark.asyncio
+async def test_live_health_uses_the_same_application_status(settings_factory) -> None:
+    app = create_app(settings=settings_factory())
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        response = await client.get("/health/live")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "status": "ok",
+        "service": "测试 Agent",
+        "environment": "test",
+        "version": "0.1.0",
+    }
+
+
+@pytest.mark.asyncio
+async def test_ready_health_executes_the_database_probe(settings_factory) -> None:
+    app = create_app(settings=settings_factory())
+    app.dependency_overrides[get_db_session] = healthy_db_session
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        response = await client.get("/health/ready")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ready", "database": "ok"}
+
+
+@pytest.mark.asyncio
+async def test_ready_health_maps_database_errors_to_service_unavailable(
+    settings_factory,
+) -> None:
+    app = create_app(settings=settings_factory())
+    app.dependency_overrides[get_db_session] = unavailable_db_session
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app, raise_app_exceptions=False),
+        base_url="http://test",
+    ) as client:
+        response = await client.get("/health/ready")
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "code": "database_unavailable",
+        "message": "数据库暂时不可用。",
+        "details": None,
     }

@@ -1,4 +1,5 @@
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager
 from typing import Any
 
 import uvicorn
@@ -9,14 +10,29 @@ from databricks_zh_expert.api.health import router as health_router
 from databricks_zh_expert.core.config import Settings, get_settings
 from databricks_zh_expert.core.errors import register_exception_handlers
 from databricks_zh_expert.core.logging import configure_logging
+from databricks_zh_expert.core.runtime import (
+    configure_event_loop_policy,
+    selector_event_loop_factory,
+)
+from databricks_zh_expert.db.session import Database
 
 ServerRunner = Callable[..., Any]
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    try:
+        yield
+    finally:
+        database: Database = app.state.database
+        await database.dispose()
 
 
 def run(
     settings: Settings | None = None,
     server: ServerRunner = uvicorn.run,
 ) -> None:
+    configure_event_loop_policy()
     settings = settings or get_settings()
     server(
         "databricks_zh_expert.main:create_app",
@@ -24,19 +40,26 @@ def run(
         host=settings.app_host,
         port=settings.app_port,
         log_level=settings.log_level.lower(),
+        loop=selector_event_loop_factory,
     )
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
+def create_app(
+    settings: Settings | None = None,
+    database: Database | None = None,
+) -> FastAPI:
     settings = settings or get_settings()
+    database = database or Database(settings.database_url)
     configure_logging(settings.log_level)
 
     app = FastAPI(
         title=settings.app_name,
         version=__version__,
         description="Databricks 顾问型 Agent Demo API",
+        lifespan=lifespan,
     )
     app.state.settings = settings
+    app.state.database = database
     register_exception_handlers(app)
     app.include_router(health_router)
     return app

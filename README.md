@@ -44,6 +44,7 @@ uv run --locked python --version
 docker compose config
 docker compose up -d postgres
 docker compose exec postgres bash /docker-entrypoint-initdb.d/01-initialize-app-schema.sh
+docker compose exec postgres bash /docker-entrypoint-initdb.d/02-initialize-test-database.sh
 docker compose ps
 ```
 
@@ -52,6 +53,7 @@ docker compose ps
 ```powershell
 docker compose exec postgres psql -U databricks_agent -d databricks_agent -c "SHOW search_path;"
 docker compose exec postgres psql -U databricks_agent -d databricks_agent -c "SELECT e.extname, n.nspname AS schema_name FROM pg_extension e JOIN pg_namespace n ON n.oid = e.extnamespace WHERE e.extname = 'vector';"
+docker compose exec postgres psql -U databricks_agent -d databricks_agent_test -c "SHOW search_path;"
 ```
 
 ## 7. 运行项目检查
@@ -73,6 +75,8 @@ uv run --locked databricks-zh-expert
 
 ```powershell
 Invoke-RestMethod http://127.0.0.1:8000/health
+Invoke-RestMethod http://127.0.0.1:8000/health/live
+Invoke-RestMethod http://127.0.0.1:8000/health/ready
 Start-Process http://127.0.0.1:8000/docs
 ```
 

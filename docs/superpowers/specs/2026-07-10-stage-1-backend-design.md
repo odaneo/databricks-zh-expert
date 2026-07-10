@@ -151,6 +151,8 @@ databricks-zh-expert/
 
 应用使用可注入的 `create_app(settings)` 工厂，不在模块导入时创建全局 FastAPI 实例。项目启动命令通过 `run()` 读取 `APP_HOST`、`APP_PORT` 和 `LOG_LEVEL` 并以 Uvicorn factory 模式启动，避免运行参数同时散落在代码、`.env` 和命令行中。
 
+Windows 默认的 ProactorEventLoop 不兼容 psycopg 3 异步连接。应用启动入口必须切换到 SelectorEventLoop；pytest-asyncio 通过 `pytest_asyncio_loop_factories` hook 使用同一事件循环实现。
+
 ## 8. Docker 与数据库
 
 Docker Compose 只启动一个 `postgres` 服务，使用固定版本镜像 `pgvector/pgvector:0.8.5-pg18-bookworm`、命名数据卷和健康检查。宿主机 FastAPI 通过 `localhost:5432` 访问数据库。
@@ -191,6 +193,8 @@ POST message
 
 ```text
 GET  /health
+GET  /health/live
+GET  /health/ready
 POST /api/chat/sessions
 GET  /api/chat/sessions
 GET  /api/chat/sessions/{session_id}
@@ -239,8 +243,8 @@ POST /api/chat/sessions/{session_id}/messages
 2. `uv sync --locked` 只在项目 `.venv` 安装依赖。
 3. `docker compose up -d` 能启动健康的 PostgreSQL + pgvector。
 4. `alembic upgrade head` 能创建扩展和三张业务表。
-5. `/health` 同时报告应用和数据库状态。
-6. 五个阶段 1 API 可通过 Swagger 或 HTTP 客户端调用。
+5. `/health` 和 `/health/live` 报告应用存活状态，`/health/ready` 报告数据库就绪状态。
+6. 所有阶段 1 API 可通过 Swagger 或 HTTP 客户端调用。
 7. 一轮聊天能持久化 user message、assistant message 和 model_call。
 8. 没有真实模型密钥时，测试仍可全部运行。
 9. `pytest`、覆盖率、ruff 和 Pyright 检查通过。
