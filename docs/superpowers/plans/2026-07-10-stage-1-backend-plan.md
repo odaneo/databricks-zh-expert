@@ -889,9 +889,9 @@ git commit -m "feat: add initial postgres schema"
 - `ChatRepository.list_messages(session_id: UUID, limit: int = 100) -> list[Message]`
 - API：创建、列出和查看会话。
 
-- [ ] **步骤 1：先写会话 API 失败测试**
+- [x] **步骤 1：先写会话 API 失败测试**
 
-先扩展 `tests/conftest.py`，增加测试 AsyncSession、覆盖 `get_db` 的 fixture，以及使用 `httpx.ASGITransport(app=app)` 的 AsyncClient fixture。每个测试结束时回滚事务或清理本测试写入的数据。
+先扩展 `tests/conftest.py`，增加测试 AsyncSession、覆盖 `get_db_session` 的 fixture，以及使用 `httpx.ASGITransport(app=app)` 的 AsyncClient fixture。每个测试结束时回滚事务或清理本测试写入的数据。
 
 `tests/integration/test_sessions_api.py` 覆盖：
 
@@ -920,7 +920,7 @@ async def test_get_missing_session_returns_domain_error(client) -> None:
 
 再覆盖 `GET /api/chat/sessions?limit=20&offset=0`，验证按 `updated_at` 倒序。
 
-- [ ] **步骤 2：运行测试并确认失败**
+- [x] **步骤 2：运行测试并确认失败**
 
 ```powershell
 uv run --locked pytest tests/integration/test_sessions_api.py -v
@@ -928,7 +928,7 @@ uv run --locked pytest tests/integration/test_sessions_api.py -v
 
 预期：chat schemas、repository 和路由尚不存在而失败。
 
-- [ ] **步骤 3：定义会话和消息 Schema**
+- [x] **步骤 3：定义会话和消息 Schema**
 
 `chat/schemas.py` 必须定义：
 
@@ -958,7 +958,7 @@ class SessionDetail(SessionResponse):
     messages: list[MessageResponse]
 ```
 
-- [ ] **步骤 4：实现 ChatRepository 的会话方法**
+- [x] **步骤 4：实现 ChatRepository 的会话方法**
 
 Repository 构造函数固定为：
 
@@ -976,13 +976,13 @@ class ChatRepository:
 4. `list_messages()` 按 `created_at` 正序返回。
 5. Repository 不抛出 HTTPException。
 
-- [ ] **步骤 5：实现会话路由和依赖装配**
+- [x] **步骤 5：实现会话路由和依赖装配**
 
 `api/dependencies.py` 增加：
 
 ```python
 def get_chat_repository(
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> ChatRepository:
     return ChatRepository(db)
 ```
@@ -1003,7 +1003,7 @@ AppError("session_not_found", "会话不存在。", 404)
 
 `main.py` 注册 chat router，前缀固定为 `/api/chat`。
 
-- [ ] **步骤 6：运行会话测试和静态检查**
+- [x] **步骤 6：运行会话测试和静态检查**
 
 ```powershell
 uv run --locked pytest tests/integration/test_sessions_api.py -v

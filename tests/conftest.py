@@ -7,11 +7,21 @@ from typing import Protocol
 import pytest
 import pytest_asyncio
 from dotenv import dotenv_values
+from httpx import ASGITransport, AsyncClient
 from pydantic import SecretStr
+from sqlalchemy import delete
 from sqlalchemy.engine import make_url
-from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 
+from databricks_zh_expert.api.dependencies import get_db_session
 from databricks_zh_expert.core.config import Settings
+from databricks_zh_expert.db.models import ChatSession
+from databricks_zh_expert.main import create_app
 
 
 class SettingsFactory(Protocol):
@@ -64,6 +74,47 @@ async def test_engine(test_database_url: str) -> AsyncIterator[AsyncEngine]:
         yield engine
     finally:
         await engine.dispose()
+
+
+@pytest_asyncio.fixture
+async def test_db_session(test_engine: AsyncEngine) -> AsyncIterator[AsyncSession]:
+    session_factory = async_sessionmaker(
+        bind=test_engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+    async with session_factory() as session:
+        await session.execute(delete(ChatSession))
+        await session.commit()
+        try:
+            yield session
+        finally:
+            await session.rollback()
+            await session.execute(delete(ChatSession))
+            await session.commit()
+
+
+@pytest_asyncio.fixture
+async def client(
+    settings_factory: SettingsFactory,
+    test_database_url: str,
+    test_db_session: AsyncSession,
+) -> AsyncIterator[AsyncClient]:
+    app = create_app(settings=settings_factory(database_url=test_database_url))
+
+    async def override_db_session() -> AsyncIterator[AsyncSession]:
+        yield test_db_session
+
+    app.dependency_overrides[get_db_session] = override_db_session
+    try:
+        async with app.router.lifespan_context(app):
+            async with AsyncClient(
+                transport=ASGITransport(app=app),
+                base_url="http://test",
+            ) as async_client:
+                yield async_client
+    finally:
+        app.dependency_overrides.clear()
 
 
 @pytest.fixture
