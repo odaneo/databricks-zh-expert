@@ -29,3 +29,14 @@ class SessionResponse(BaseModel):
 
 class SessionDetail(SessionResponse):
     messages: list[MessageResponse]
+
+
+class SendMessageRequest(BaseModel):
+    content: str = Field(min_length=1, max_length=20_000)
+
+
+class SendMessageResponse(BaseModel):
+    session_id: UUID
+    user_message: MessageResponse
+    assistant_message: MessageResponse
+    model_call_id: UUID

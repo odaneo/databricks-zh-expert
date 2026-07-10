@@ -73,6 +73,12 @@ uv run --locked alembic upgrade head
 Remove-Item Env:DATABASE_URL
 ```
 
+写入可重复生成的开发演示数据：
+
+```powershell
+uv run --locked python -m databricks_zh_expert.devtools.seed_demo_data
+```
+
 ## 8. 运行项目检查
 
 ```powershell
@@ -88,15 +94,7 @@ uv run --locked pytest --cov=databricks_zh_expert --cov-report=term-missing
 ```powershell
 uv run --locked databricks-zh-expert
 ```
-
-另开一个 PowerShell：
-
-```powershell
-Invoke-RestMethod http://127.0.0.1:8000/health
-Invoke-RestMethod http://127.0.0.1:8000/health/live
-Invoke-RestMethod http://127.0.0.1:8000/health/ready
-Start-Process http://127.0.0.1:8000/docs
-```
+打开 http://127.0.0.1:8000/docs
 
 ## 10. 停止数据库
 

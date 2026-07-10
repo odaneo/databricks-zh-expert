@@ -21,6 +21,21 @@ async def test_deepseek_model_requires_an_api_key(settings_factory) -> None:
 
 
 @pytest.mark.asyncio
+async def test_openai_model_requires_an_api_key(settings_factory) -> None:
+    settings = settings_factory(
+        default_model="openai/gpt-5.4-mini",
+        openai_api_key=None,
+    )
+    client = LiteLLMModelClient(settings=settings)
+
+    with pytest.raises(AppError) as error:
+        await client.complete([ModelMessage(role="user", content="你好")])
+
+    assert error.value.code == "model_not_configured"
+    assert error.value.status_code == 503
+
+
+@pytest.mark.asyncio
 async def test_completion_maps_request_and_response_without_network_access(
     settings_factory,
 ) -> None:
@@ -49,3 +64,39 @@ async def test_completion_maps_request_and_response_without_network_access(
     assert result.model == "deepseek/deepseek-v4-flash"
     assert result.prompt_tokens == 10
     assert result.completion_tokens == 6
+
+
+@pytest.mark.asyncio
+async def test_completion_returns_none_tokens_when_usage_is_missing(
+    settings_factory,
+) -> None:
+    async def fake_completion(**kwargs: Any) -> SimpleNamespace:
+        del kwargs
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="回答"))])
+
+    client = LiteLLMModelClient(
+        settings=settings_factory(deepseek_api_key="local-test-key"),
+        completion=fake_completion,
+    )
+
+    result = await client.complete([ModelMessage(role="user", content="测试")])
+
+    assert result.prompt_tokens is None
+    assert result.completion_tokens is None
+
+
+@pytest.mark.asyncio
+async def test_completion_rejects_empty_content(settings_factory) -> None:
+    async def fake_completion(**kwargs: Any) -> SimpleNamespace:
+        del kwargs
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="  "))])
+
+    client = LiteLLMModelClient(
+        settings=settings_factory(deepseek_api_key="local-test-key"),
+        completion=fake_completion,
+    )
+
+    with pytest.raises(AppError) as error:
+        await client.complete([ModelMessage(role="user", content="测试")])
+
+    assert error.value.code == "model_empty_response"

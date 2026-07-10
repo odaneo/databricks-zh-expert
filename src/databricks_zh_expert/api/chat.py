@@ -3,14 +3,17 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, status
 
-from databricks_zh_expert.api.dependencies import get_chat_repository
+from databricks_zh_expert.api.dependencies import get_chat_repository, get_chat_service
 from databricks_zh_expert.chat.repository import ChatRepository
 from databricks_zh_expert.chat.schemas import (
     MessageResponse,
+    SendMessageRequest,
+    SendMessageResponse,
     SessionCreate,
     SessionDetail,
     SessionResponse,
 )
+from databricks_zh_expert.chat.service import ChatService
 from databricks_zh_expert.core.errors import AppError
 
 router = APIRouter(prefix="/api/chat", tags=["会话"])
@@ -59,4 +62,23 @@ async def get_session(
         created_at=session.created_at,
         updated_at=session.updated_at,
         messages=[MessageResponse.model_validate(message) for message in messages],
+    )
+
+
+@router.post(
+    "/sessions/{session_id}/messages",
+    response_model=SendMessageResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def send_message(
+    session_id: UUID,
+    payload: SendMessageRequest,
+    service: Annotated[ChatService, Depends(get_chat_service)],
+) -> SendMessageResponse:
+    result = await service.send_message(session_id, payload.content)
+    return SendMessageResponse(
+        session_id=session_id,
+        user_message=MessageResponse.model_validate(result.user_message),
+        assistant_message=MessageResponse.model_validate(result.assistant_message),
+        model_call_id=result.model_call.id,
     )

@@ -1,9 +1,9 @@
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from databricks_zh_expert.db.models import ChatSession, Message
+from databricks_zh_expert.db.models import ChatSession, Message, ModelCall
 
 
 class ChatRepository:
@@ -54,3 +54,67 @@ class ChatRepository:
             .limit(limit)
         )
         return list(result.all())
+
+    async def create_message(
+        self,
+        session_id: UUID,
+        role: str,
+        content: str,
+        artifact_type: str | None = None,
+    ) -> Message:
+        message = Message(
+            session_id=session_id,
+            role=role,
+            content=content,
+            artifact_type=artifact_type,
+        )
+        self.db.add(message)
+        await self.db.execute(
+            update(ChatSession).where(ChatSession.id == session_id).values(updated_at=func.now())
+        )
+        await self.db.commit()
+        await self.db.refresh(message)
+        return message
+
+    async def create_model_call(
+        self,
+        *,
+        session_id: UUID,
+        provider: str,
+        model: str,
+        prompt_tokens: int | None,
+        completion_tokens: int | None,
+        latency_ms: int,
+        success: bool,
+        error_message: str | None,
+    ) -> ModelCall:
+        model_call = ModelCall(
+            session_id=session_id,
+            provider=provider,
+            model=model,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            latency_ms=latency_ms,
+            success=success,
+            error_message=error_message,
+        )
+        self.db.add(model_call)
+        await self.db.commit()
+        await self.db.refresh(model_call)
+        return model_call
+
+    async def list_recent_messages(
+        self,
+        session_id: UUID,
+        limit: int = 20,
+    ) -> list[Message]:
+        if not 1 <= limit <= 100:
+            raise ValueError("limit 必须在 1 到 100 之间。")
+
+        result = await self.db.scalars(
+            select(Message)
+            .where(Message.session_id == session_id)
+            .order_by(Message.created_at.desc(), Message.id.desc())
+            .limit(limit)
+        )
+        return list(reversed(result.all()))

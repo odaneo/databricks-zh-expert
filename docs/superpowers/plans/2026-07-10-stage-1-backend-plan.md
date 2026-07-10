@@ -1043,7 +1043,7 @@ git commit -m "feat: add chat session api"
 - `ChatService.send_message(session_id: UUID, content: str) -> SendMessageResult`
 - API：`POST /api/chat/sessions/{session_id}/messages`。
 
-- [ ] **步骤 1：定义 ModelClient 契约**
+- [x] **步骤 1：定义 ModelClient 契约**
 
 `llm/client.py` 必须完整定义：
 
@@ -1082,7 +1082,7 @@ class ModelClient(Protocol):
         raise NotImplementedError
 ```
 
-- [ ] **步骤 2：先写 ChatService 失败测试**
+- [x] **步骤 2：先写 ChatService 失败测试**
 
 `tests/unit/test_chat_service.py` 创建 Fake Repository 和 Fake ModelClient，验证：
 
@@ -1117,7 +1117,7 @@ async def test_send_message_persists_reply_and_model_call() -> None:
     assert repository.model_calls[0].latency_ms >= 0
 ```
 
-- [ ] **步骤 3：运行测试并确认失败**
+- [x] **步骤 3：运行测试并确认失败**
 
 ```powershell
 uv run --locked pytest tests/unit/test_chat_service.py -v
@@ -1125,13 +1125,13 @@ uv run --locked pytest tests/unit/test_chat_service.py -v
 
 预期：ChatService 尚不存在而失败。
 
-- [ ] **步骤 4：扩展 Repository 持久化接口**
+- [x] **步骤 4：扩展 Repository 持久化接口**
 
 增加精确接口 `create_message(self, session_id: UUID, role: str, content: str, artifact_type: str | None = None) -> Message`、`create_model_call(self, *, session_id: UUID, provider: str, model: str, prompt_tokens: int | None, completion_tokens: int | None, latency_ms: int, success: bool, error_message: str | None) -> ModelCall` 和 `list_recent_messages(self, session_id: UUID, limit: int = 20) -> list[Message]`。
 
 每次写入独立 commit。保存 user message 后结束事务，再调用外部模型。`list_recent_messages()` 先按 `created_at DESC` 取最后 N 条，再反转为时间正序返回；`create_message()` 同时更新会话的 `updated_at`。
 
-- [ ] **步骤 5：实现 ChatService**
+- [x] **步骤 5：实现 ChatService**
 
 构造函数固定为：
 
@@ -1156,7 +1156,7 @@ class ChatService:
 8. 如果异常是 `model_not_configured`，记录失败后原样抛出，保持 HTTP 503。
 9. 其他异常转换为 `AppError("model_request_failed", "模型调用失败，请稍后重试。", 502)`。
 
-- [ ] **步骤 6：实现 LiteLLM 适配器**
+- [x] **步骤 6：实现 LiteLLM 适配器**
 
 `LiteLLMModelClient` 从 Settings 读取默认模型、超时和 SecretStr 密钥。调用：
 
@@ -1178,7 +1178,7 @@ response = await litellm.acompletion(
 5. 从 response usage 提取 token；usage 缺失时返回 `None`，不得猜测。
 6. 不记录完整 messages 或 API key。
 
-- [ ] **步骤 7：定义发送消息 Schema 和路由**
+- [x] **步骤 7：定义发送消息 Schema 和路由**
 
 `chat/schemas.py` 增加：
 
@@ -1202,7 +1202,7 @@ POST /api/chat/sessions/{session_id}/messages
 
 成功返回 201。`get_model_client()` 和 `get_chat_service()` 都在 `api/dependencies.py` 组装，使测试可以覆盖 ModelClient。
 
-- [ ] **步骤 8：写消息 API 集成测试**
+- [x] **步骤 8：写消息 API 集成测试**
 
 `tests/integration/test_messages_api.py` 使用依赖覆盖注入 Fake ModelClient，不调用公网。至少验证：
 
@@ -1213,7 +1213,7 @@ POST /api/chat/sessions/{session_id}/messages
 5. 不存在会话返回 404。
 6. 空消息返回 422。
 
-- [ ] **步骤 9：运行模型和消息测试**
+- [x] **步骤 9：运行模型和消息测试**
 
 ```powershell
 uv run --locked pytest tests/unit/test_chat_service.py tests/integration/test_messages_api.py -v
@@ -1223,7 +1223,7 @@ uv run --locked ruff format --check src tests
 
 预期：全部通过，且测试过程中没有任何真实模型网络请求。
 
-- [ ] **步骤 10：由用户执行一次真实 DeepSeek 冒烟测试**
+- [x] **步骤 10：执行一次真实 DeepSeek 冒烟测试**
 
 用户确认 `.env` 已填写 `DEEPSEEK_API_KEY`，启动服务：
 

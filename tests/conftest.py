@@ -7,6 +7,7 @@ from typing import Protocol
 import pytest
 import pytest_asyncio
 from dotenv import dotenv_values
+from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from pydantic import SecretStr
 from sqlalchemy import delete
@@ -95,11 +96,11 @@ async def test_db_session(test_engine: AsyncEngine) -> AsyncIterator[AsyncSessio
 
 
 @pytest_asyncio.fixture
-async def client(
+async def test_app(
     settings_factory: SettingsFactory,
     test_database_url: str,
     test_db_session: AsyncSession,
-) -> AsyncIterator[AsyncClient]:
+) -> AsyncIterator[FastAPI]:
     app = create_app(settings=settings_factory(database_url=test_database_url))
 
     async def override_db_session() -> AsyncIterator[AsyncSession]:
@@ -108,13 +109,18 @@ async def client(
     app.dependency_overrides[get_db_session] = override_db_session
     try:
         async with app.router.lifespan_context(app):
-            async with AsyncClient(
-                transport=ASGITransport(app=app),
-                base_url="http://test",
-            ) as async_client:
-                yield async_client
+            yield app
     finally:
         app.dependency_overrides.clear()
+
+
+@pytest_asyncio.fixture
+async def client(test_app: FastAPI) -> AsyncIterator[AsyncClient]:
+    async with AsyncClient(
+        transport=ASGITransport(app=test_app),
+        base_url="http://test",
+    ) as async_client:
+        yield async_client
 
 
 @pytest.fixture
