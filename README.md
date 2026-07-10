@@ -56,16 +56,34 @@ docker compose exec postgres psql -U databricks_agent -d databricks_agent -c "SE
 docker compose exec postgres psql -U databricks_agent -d databricks_agent_test -c "SHOW search_path;"
 ```
 
-## 7. 运行项目检查
+## 7. 执行数据库迁移
+
+迁移开发数据库：
 
 ```powershell
-uv run --locked ruff format --check src tests
-uv run --locked ruff check src tests
+uv run --locked alembic upgrade head
+uv run --locked alembic current
+```
+
+迁移测试数据库：
+
+```powershell
+$env:DATABASE_URL="postgresql+psycopg://databricks_agent:databricks_agent_dev@localhost:5432/databricks_agent_test"
+uv run --locked alembic upgrade head
+Remove-Item Env:DATABASE_URL
+```
+
+## 8. 运行项目检查
+
+```powershell
+uv run --locked alembic check
+uv run --locked ruff format --check .
+uv run --locked ruff check .
 uv run --locked pyright
 uv run --locked pytest --cov=databricks_zh_expert --cov-report=term-missing
 ```
 
-## 8. 启动 FastAPI
+## 9. 启动 FastAPI
 
 ```powershell
 uv run --locked databricks-zh-expert
@@ -80,7 +98,7 @@ Invoke-RestMethod http://127.0.0.1:8000/health/ready
 Start-Process http://127.0.0.1:8000/docs
 ```
 
-## 9. 停止数据库
+## 10. 停止数据库
 
 停止容器并保留数据卷：
 

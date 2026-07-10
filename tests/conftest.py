@@ -1,13 +1,15 @@
 import asyncio
 import os
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
 from pathlib import Path
 from typing import Protocol
 
 import pytest
+import pytest_asyncio
 from dotenv import dotenv_values
 from pydantic import SecretStr
 from sqlalchemy.engine import make_url
+from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from databricks_zh_expert.core.config import Settings
 
@@ -53,6 +55,15 @@ def test_database_url() -> str:
     if not database_name or not database_name.endswith("_test"):
         pytest.fail("TEST_DATABASE_URL 必须指向名称以 _test 结尾的数据库。")
     return value
+
+
+@pytest_asyncio.fixture
+async def test_engine(test_database_url: str) -> AsyncIterator[AsyncEngine]:
+    engine = create_async_engine(test_database_url, pool_pre_ping=True)
+    try:
+        yield engine
+    finally:
+        await engine.dispose()
 
 
 @pytest.fixture

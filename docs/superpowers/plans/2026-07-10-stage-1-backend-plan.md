@@ -644,8 +644,9 @@ git commit -m "feat: add settings database session and health api"
 - 创建：`alembic/env.py`
 - 创建：`alembic/script.py.mako`
 - 创建：`alembic/versions/0001_initial.py`
-- 创建：`tests/conftest.py`
+- 修改：`tests/conftest.py`
 - 创建：`tests/integration/test_migrations.py`
+- 创建：`tests/unit/test_models.py`
 
 **接口：**
 
@@ -653,7 +654,7 @@ git commit -m "feat: add settings database session and health api"
 - 产出：Alembic revision `0001_initial`。
 - 数据库契约：启用 `vector` 扩展并创建 `sessions`、`messages`、`model_calls`。
 
-- [ ] **步骤 1：先写迁移验证测试**
+- [x] **步骤 1：先写迁移验证测试**
 
 先在 `tests/conftest.py` 创建读取 `TEST_DATABASE_URL` 的 `test_engine` fixture。解析 URL 后必须断言数据库名以 `_test` 结尾，再创建异步 engine；fixture 结束时执行 `engine.dispose()`。
 
@@ -680,7 +681,7 @@ SELECT extversion FROM pg_extension WHERE extname = 'vector'
 
 并验证返回 `0.8.5`。
 
-- [ ] **步骤 2：运行测试并确认失败**
+- [x] **步骤 2：运行测试并确认失败**
 
 确保 Docker 已由用户启动，然后执行：
 
@@ -690,7 +691,7 @@ uv run --locked pytest tests/integration/test_migrations.py -v
 
 预期：初始迁移和测试 fixture 尚不存在，因此失败。
 
-- [ ] **步骤 3：定义 ORM 模型**
+- [x] **步骤 3：定义 ORM 模型**
 
 `db/models.py` 使用 UUID 主键和带时区时间戳。必须包含以下字段：
 
@@ -739,13 +740,13 @@ class ModelCall(Base):
 5. `messages(session_id, created_at)` 和 `model_calls(session_id, created_at)` 复合索引。
 6. `content` 使用 `Text`；`error_message` 使用 `Text`。
 
-- [ ] **步骤 4：配置 Alembic**
+- [x] **步骤 4：配置 Alembic**
 
 `alembic.ini` 不写真实数据库 URL，保留占位的 `sqlalchemy.url`；`alembic/env.py` 必须从 `get_settings().database_url` 读取实际 URL，并导入 `Base.metadata` 和 `db.models`。
 
 迁移环境使用 `async_engine_from_config`，支持 psycopg 异步驱动。不得从 `.env` 读取 `POSTGRES_*` 后自行拼接 URL。
 
-- [ ] **步骤 5：编写初始迁移**
+- [x] **步骤 5：编写初始迁移**
 
 `alembic/versions/0001_initial.py` 固定：
 
@@ -832,7 +833,7 @@ op.create_index(
 
 `downgrade()` 只删除本阶段索引和三张业务表，不删除 `vector` 扩展，避免未来其他表使用扩展时被误删。
 
-- [ ] **步骤 6：由用户迁移开发数据库**
+- [x] **步骤 6：迁移开发数据库**
 
 ```powershell
 uv run --locked alembic upgrade head
@@ -841,7 +842,7 @@ uv run --locked alembic current
 
 预期：current revision 为 `0001_initial`。
 
-- [ ] **步骤 7：由用户迁移测试数据库**
+- [x] **步骤 7：迁移测试数据库**
 
 PowerShell 临时覆盖 `DATABASE_URL`，完成后删除当前 shell 的覆盖值：
 
@@ -851,7 +852,7 @@ uv run --locked alembic upgrade head
 Remove-Item Env:DATABASE_URL
 ```
 
-- [ ] **步骤 8：运行迁移测试**
+- [x] **步骤 8：运行迁移测试**
 
 ```powershell
 uv run --locked pytest tests/integration/test_migrations.py -v
@@ -1393,7 +1394,7 @@ git commit -m "docs: add stage one local development workflow"
 - [x] `.env` 被忽略，`.env.example` 不包含真实密钥。
 - [x] PostgreSQL 18 + pgvector 0.8.5 由 Docker Compose 启动并处于 healthy。
 - [x] 开发数据库和测试数据库分离。
-- [ ] Alembic 已启用 vector 扩展并创建三张业务表。
+- [x] Alembic 已启用 vector 扩展并创建三张业务表。
 - [x] `/health` 和 `/health/live` 能检测应用存活，`/health/ready` 能检测数据库状态。
 - [ ] 会话创建、列表、详情和消息发送 API 可用。
 - [ ] 一轮真实聊天会保存两条消息和一条 model_call。
