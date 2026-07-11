@@ -10,6 +10,7 @@ import litellm
 from databricks_zh_expert.core.config import Settings
 from databricks_zh_expert.core.errors import AppError
 from databricks_zh_expert.llm.client import JsonObject, JsonValue, ModelMessage, ModelResult
+from databricks_zh_expert.llm.model_registry import ModelRegistry
 
 CompletionFunction = Callable[..., Awaitable[Any]]
 logger = logging.getLogger(__name__)
@@ -48,7 +49,8 @@ class LiteLLMModelClient:
 
     @property
     def model(self) -> str:
-        return self._settings.default_model
+        registry = ModelRegistry.from_settings(self._settings)
+        return registry.get(registry.default_model).litellm_model
 
     async def complete(self, messages: list[ModelMessage]) -> ModelResult:
         api_key = self._get_api_key()

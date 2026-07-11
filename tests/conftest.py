@@ -2,7 +2,7 @@ import asyncio
 import os
 from collections.abc import AsyncIterator, Callable
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 
 import pytest
 import pytest_asyncio
@@ -37,7 +37,9 @@ class SettingsFactory(Protocol):
         model_request_timeout_seconds: int = 60,
         model_trace_enabled: bool = False,
         model_trace_path: Path = Path(".local/logs/model-calls.jsonl"),
-        default_model: str = "deepseek/deepseek-v4-flash",
+        default_model: str = "deepseek-v4-flash",
+        fallback_models: str | tuple[str, ...] = "deepseek-v4-flash,gpt5.4mini",
+        default_temperature: float = 0.2,
         database_url: str = ("postgresql+psycopg://user:password@localhost:5432/test_database"),
         postgres_schema: str = "test_schema",
         openai_api_key: str | SecretStr | None = None,
@@ -137,32 +139,37 @@ def settings_factory() -> SettingsFactory:
         model_request_timeout_seconds: int = 60,
         model_trace_enabled: bool = False,
         model_trace_path: Path = Path(".local/logs/model-calls.jsonl"),
-        default_model: str = "deepseek/deepseek-v4-flash",
+        default_model: str = "deepseek-v4-flash",
+        fallback_models: str | tuple[str, ...] = "deepseek-v4-flash,gpt5.4mini",
+        default_temperature: float = 0.2,
         database_url: str = ("postgresql+psycopg://user:password@localhost:5432/test_database"),
         postgres_schema: str = "test_schema",
         openai_api_key: str | SecretStr | None = None,
         deepseek_api_key: str | SecretStr | None = None,
     ) -> Settings:
-        return Settings(
-            app_name=app_name,
-            app_env=app_env,
-            app_host=app_host,
-            app_port=app_port,
-            log_level=log_level,
-            model_request_timeout_seconds=model_request_timeout_seconds,
-            model_trace_enabled=model_trace_enabled,
-            model_trace_path=model_trace_path,
-            default_model=default_model,
-            database_url=database_url,
-            postgres_schema=postgres_schema,
-            openai_api_key=(
+        settings_values: dict[str, Any] = {
+            "app_name": app_name,
+            "app_env": app_env,
+            "app_host": app_host,
+            "app_port": app_port,
+            "log_level": log_level,
+            "model_request_timeout_seconds": model_request_timeout_seconds,
+            "model_trace_enabled": model_trace_enabled,
+            "model_trace_path": model_trace_path,
+            "default_model": default_model,
+            "fallback_models": fallback_models,
+            "default_temperature": default_temperature,
+            "database_url": database_url,
+            "postgres_schema": postgres_schema,
+            "openai_api_key": (
                 SecretStr(openai_api_key) if isinstance(openai_api_key, str) else openai_api_key
             ),
-            deepseek_api_key=(
+            "deepseek_api_key": (
                 SecretStr(deepseek_api_key)
                 if isinstance(deepseek_api_key, str)
                 else deepseek_api_key
             ),
-        )
+        }
+        return Settings(**settings_values)
 
     return create_settings

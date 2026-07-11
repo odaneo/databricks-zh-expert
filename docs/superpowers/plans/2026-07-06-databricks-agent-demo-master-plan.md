@@ -269,15 +269,15 @@ POSTGRES_PASSWORD=
 ```text
 PYTHON_VERSION=3.12.10
 DEFAULT_MODEL=deepseek-v4-flash
-DEV_MODEL=deepseek-v4-flash
-DEFAULT_TEMPERATURE=0.2
-SUPPORTED_OPENAI_MODELS=gpt5.5,gpt5.4mini
-SUPPORTED_DEEPSEEK_MODELS=deepseek-v4-flash,deepseek-v4-pro
 FALLBACK_MODELS=deepseek-v4-flash,gpt5.4mini
-LITELLM_TIMEOUT_SECONDS=60
+DEFAULT_TEMPERATURE=0.2
+MODEL_REQUEST_TIMEOUT_SECONDS=60
 OPENAI_API_KEY=
 DEEPSEEK_API_KEY=
 ```
+
+四个业务别名、供应商和实际 LiteLLM ID 固定在代码模型目录中；默认模型和 fallback 顺序由各环境
+分别配置。
 
 ### 完成标准
 

@@ -25,10 +25,13 @@ async def test_deepseek_model_requires_an_api_key(settings_factory) -> None:
 @pytest.mark.asyncio
 async def test_openai_model_requires_an_api_key(settings_factory) -> None:
     settings = settings_factory(
-        default_model="openai/gpt-5.4-mini",
+        default_model="gpt5.4mini",
         openai_api_key=None,
     )
     client = LiteLLMModelClient(settings=settings)
+
+    assert client.provider == "openai"
+    assert client.model == "openai/gpt-5.4-mini"
 
     with pytest.raises(AppError) as error:
         await client.complete([ModelMessage(role="user", content="你好")])

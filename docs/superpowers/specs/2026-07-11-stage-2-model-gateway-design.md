@@ -66,9 +66,10 @@
 | `deepseek-v4-flash` | DeepSeek V4 Flash | `deepseek` | `deepseek/deepseek-v4-flash` |
 | `deepseek-v4-pro` | DeepSeek V4 Pro | `deepseek` | `deepseek/deepseek-v4-pro` |
 
-别名集合是产品边界，固定在代码的 `ModelAlias` 类型中。环境变量不能添加第五个别名，也不能
-将既有别名改成其他供应商。实际 LiteLLM ID 由环境变量注入，使供应商模型标识变化时不需要修改
-Chat API。
+别名集合、供应商和实际 LiteLLM ID 都是固定产品目录，集中定义在代码的 `ModelAlias`、
+`ModelProvider` 和不可变 `MODEL_SPECS` 中。环境变量不能添加第五个别名、替换实际模型 ID，
+也不能将既有别名改成其他供应商。四个模型 ID 在开发、测试和生产环境中保持一致；供应商模型
+标识发生变化时，通过一次代码和测试变更统一升级。
 
 模型注册表为每个别名提供：
 
@@ -88,11 +89,6 @@ FALLBACK_MODELS=deepseek-v4-flash,gpt5.4mini
 DEFAULT_TEMPERATURE=0.2
 MODEL_REQUEST_TIMEOUT_SECONDS=60
 
-MODEL_GPT55_ID=openai/gpt-5.5
-MODEL_GPT54MINI_ID=openai/gpt-5.4-mini
-MODEL_DEEPSEEK_V4_FLASH_ID=deepseek/deepseek-v4-flash
-MODEL_DEEPSEEK_V4_PRO_ID=deepseek/deepseek-v4-pro
-
 OPENAI_API_KEY=
 DEEPSEEK_API_KEY=
 ```
@@ -100,14 +96,16 @@ DEEPSEEK_API_KEY=
 `DEFAULT_MODEL` 的含义从阶段 1 的 LiteLLM ID 改为业务别名。`FALLBACK_MODELS` 使用逗号分隔的
 业务别名，按配置顺序执行。空字符串表示关闭 fallback。
 
+四个 provider-qualified LiteLLM ID 不属于部署配置，不写入 `.env`。`DEFAULT_MODEL` 和
+`FALLBACK_MODELS` 属于环境级路由策略，因此开发、测试和生产环境可以分别设置不同值。
+
 应用启动时执行纯本地校验：
 
 1. 默认模型必须在固定白名单内。
 2. 每个 fallback 别名必须在固定白名单内。
 3. fallback 列表去除首尾空白，但重复项属于配置错误，不静默修复。
-4. 每个实际模型 ID 的 provider 前缀必须与注册表供应商一致。
-5. `DEFAULT_TEMPERATURE` 必须在 `0` 到 `2` 之间。
-6. timeout 必须大于零。
+4. `DEFAULT_TEMPERATURE` 必须在 `0` 到 `2` 之间。
+5. timeout 必须大于零。
 
 启动校验不连接模型供应商，也不要求两组 API Key 都存在。缺少密钥时应用仍可启动，对应模型在
 模型列表中显示为未配置，实际请求返回 `model_not_configured`。
@@ -398,15 +396,16 @@ HTTP 响应不包含供应商原始错误文本、API Key、请求头或内部 f
 ### 15.1 单元测试
 
 1. 模型注册表只接受四个业务别名。
-2. Settings 校验默认模型、fallback、重复项、provider 前缀、temperature 和 timeout。
-3. 请求未指定模型时使用默认别名。
-4. 请求指定模型时覆盖默认别名。
-5. 候选序列保持顺序、跳过主模型重复项且每个模型最多尝试一次。
-6. 可重试错误触发 fallback。
-7. 密钥、认证、参数和模型不存在错误立即停止。
-8. 全部候选失败时返回 `model_fallback_exhausted`。
-9. temperature 只在 LiteLLM 声明支持时发送。
-10. 每次尝试都产生独立数据库输入和 Trace 输入。
+2. Settings 校验默认模型、fallback、重复项、temperature 和 timeout。
+3. 固定模型目录精确映射四个业务别名、供应商和 LiteLLM ID。
+4. 请求未指定模型时使用默认别名。
+5. 请求指定模型时覆盖默认别名。
+6. 候选序列保持顺序、跳过主模型重复项且每个模型最多尝试一次。
+7. 可重试错误触发 fallback。
+8. 密钥、认证、参数和模型不存在错误立即停止。
+9. 全部候选失败时返回 `model_fallback_exhausted`。
+10. temperature 只在 LiteLLM 声明支持时发送。
+11. 每次尝试都产生独立数据库输入和 Trace 输入。
 
 所有单元测试使用 Fake Transport，不读取真实 API Key、不访问模型网络。
 
