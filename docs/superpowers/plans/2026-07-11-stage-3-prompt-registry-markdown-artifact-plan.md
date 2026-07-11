@@ -480,7 +480,7 @@ git commit -m "feat: render versioned prompt templates"
 - 产出：`MarkdownArtifactParser.parse(spec: PromptSpec, content: str) -> MarkdownArtifact`。
 - 失败：抛出包含稳定原因码的 `ArtifactValidationError`。
 
-- [ ] **步骤 1：写合法 Artifact 参数化测试**
+- [x] **步骤 1：写合法 Artifact 参数化测试**
 
 测试为七个可用 Prompt 构造最小合法 Markdown。SQL 直接以 `sql` 围栏开头，PySpark 直接以
 `python` 围栏开头且都不含 H1；其他类型使用 H1 和各自必需章节。核心断言：
@@ -496,7 +496,7 @@ else:
     assert artifact.content.startswith(f"```{spec.code_fence_language}")
 ```
 
-- [ ] **步骤 2：写非法结构参数化测试**
+- [x] **步骤 2：写非法结构参数化测试**
 
 至少覆盖以下原因码：
 
@@ -519,13 +519,13 @@ def test_invalid_markdown_reports_stable_reason(content: str, reason: str) -> No
 再分别测试 `missing_section`、`section_order_invalid`、`code_fence_not_first`、
 `missing_sql_fence` 和 `missing_python_fence`。SQL/PySpark 只有代码围栏时必须通过。
 
-- [ ] **步骤 3：运行测试并确认 parser 尚不存在**
+- [x] **步骤 3：运行测试并确认 parser 尚不存在**
 
 ```powershell
 uv run --locked pytest tests/unit/test_markdown_artifact.py -q
 ```
 
-- [ ] **步骤 4：实现受限规范化**
+- [x] **步骤 4：实现受限规范化**
 
 ```python
 MAX_ARTIFACT_CHARS = 100_000
@@ -545,7 +545,7 @@ def normalize_markdown(content: str) -> str:
 
 只移除整个响应最外层的一组 `markdown` 或 `md` 围栏，不修改正文标题和章节。
 
-- [ ] **步骤 5：使用 CommonMark token 实现结构校验**
+- [x] **步骤 5：使用 CommonMark token 实现结构校验**
 
 `MarkdownArtifactParser` 在构造函数中创建 `MarkdownIt("commonmark")`。解析后：
 
@@ -558,7 +558,7 @@ def normalize_markdown(content: str) -> str:
 7. 文档型 Artifact 的 H2 文本列表必须包含 `spec.required_sections` 的有序子序列。
 8. 一次收集所有违反项，去重后按检查顺序保存到 tuple。
 
-- [ ] **步骤 6：运行聚焦测试和静态检查**
+- [x] **步骤 6：运行聚焦测试和静态检查**
 
 ```powershell
 uv run --locked pytest tests/unit/test_markdown_artifact.py -q
@@ -567,7 +567,7 @@ uv run --locked ruff check src tests
 uv run --locked pyright
 ```
 
-- [ ] **步骤 7：提交任务 3**
+- [x] **步骤 7：提交任务 3**
 
 ```powershell
 git add src/databricks_zh_expert/artifacts tests/unit/test_markdown_artifact.py
