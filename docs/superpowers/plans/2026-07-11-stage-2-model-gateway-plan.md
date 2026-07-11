@@ -447,7 +447,7 @@ git commit -m "feat: add fixed model registry configuration"
 - 产出：`LiteLLMTransport(settings, completion=None, supported_params=None)`。
 - 保证：每次 `complete()` 只调用一次 `litellm.acompletion()`，且 `request` 不包含 API Key、timeout 或 SDK 重试参数。
 
-- [ ] **步骤 1：先改写传输层失败测试**
+- [x] **步骤 1：先改写传输层失败测试**
 
 `tests/unit/test_litellm_client.py` 使用显式 `ModelDefinition`，固定以下行为：
 
@@ -500,7 +500,7 @@ assert captured == {
 }
 ```
 
-- [ ] **步骤 2：运行传输测试并确认失败**
+- [x] **步骤 2：运行传输测试并确认失败**
 
 ```powershell
 uv run --locked pytest tests/unit/test_litellm_client.py -v
@@ -508,7 +508,7 @@ uv run --locked pytest tests/unit/test_litellm_client.py -v
 
 预期：`LiteLLMTransport`、`ModelTransportResult` 和新方法尚不存在，测试失败。
 
-- [ ] **步骤 3：定义传输层契约并保留短期兼容接口**
+- [x] **步骤 3：定义传输层契约并保留短期兼容接口**
 
 `src/databricks_zh_expert/llm/client.py` 保留 JSON 类型、`ModelMessage`、阶段 1 的 `ModelClient` 与 `ModelResult`，并新增以下接口。旧接口在 Task 5 完成 ChatService 切换后删除，使 Task 2 提交后现有聊天链路仍可导入和运行：
 
@@ -541,7 +541,7 @@ class ModelTransport(Protocol):
     ) -> ModelTransportResult: ...
 ```
 
-- [ ] **步骤 4：实现请求能力检查**
+- [x] **步骤 4：实现请求能力检查**
 
 在现有文件中新增 `LiteLLMTransport`。构造函数注入 `litellm.acompletion` 和 `litellm.get_supported_openai_params`，`build_request()` 必须：
 
@@ -565,7 +565,7 @@ return request
 
 该方法只使用 LiteLLM 本地能力表，不进行网络请求。Trace 后续直接记录这个返回值，因此不得加入 `api_key`、`timeout` 或 `num_retries`。
 
-- [ ] **步骤 5：实现单次 complete 调用**
+- [x] **步骤 5：实现单次 complete 调用**
 
 `complete()` 根据 `model.provider` 选择 SecretStr；缺少密钥时抛出阶段 1 已有的安全错误：
 
@@ -594,7 +594,7 @@ response = await self._completion(**kwargs)
 
 阶段 1 的 `LiteLLMModelClient` 暂时改为薄包装器：从 `ModelRegistry` 取默认定义，调用同文件的 `LiteLLMTransport.build_request()` 和 `complete()`，再把结果映射回旧 `ModelResult`。包装器继续暴露 `provider`、`model` 和 `complete(messages)`，其中 `model` 返回实际 provider-qualified ID。Task 5 删除该包装器及旧协议。
 
-- [ ] **步骤 6：运行任务 2 定向检查**
+- [x] **步骤 6：运行任务 2 定向检查**
 
 ```powershell
 uv run --locked pytest tests/unit/test_litellm_client.py -v
@@ -605,7 +605,7 @@ uv run --locked pyright
 
 预期：传输测试全部通过，Fake completion 只收到一次调用，且捕获参数明确包含 `num_retries=0`。
 
-- [ ] **步骤 7：建议提交点**
+- [x] **步骤 7：建议提交点**
 
 ```powershell
 git add src/databricks_zh_expert/llm/client.py src/databricks_zh_expert/llm/litellm_client.py tests/unit/test_litellm_client.py

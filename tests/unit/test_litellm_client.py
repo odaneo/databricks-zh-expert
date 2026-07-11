@@ -7,44 +7,111 @@ import pytest
 
 from databricks_zh_expert.core.errors import AppError
 from databricks_zh_expert.llm.client import ModelMessage
-from databricks_zh_expert.llm.litellm_client import LiteLLMModelClient
+from databricks_zh_expert.llm.litellm_client import LiteLLMModelClient, LiteLLMTransport
+from databricks_zh_expert.llm.model_registry import (
+    ModelAlias,
+    ModelDefinition,
+    ModelProvider,
+)
 
 
-@pytest.mark.asyncio
-async def test_deepseek_model_requires_an_api_key(settings_factory) -> None:
-    settings = settings_factory(deepseek_api_key=None)
-    client = LiteLLMModelClient(settings=settings)
-
-    with pytest.raises(AppError) as error:
-        await client.complete([ModelMessage(role="user", content="你好")])
-
-    assert error.value.code == "model_not_configured"
-    assert error.value.status_code == 503
-
-
-@pytest.mark.asyncio
-async def test_openai_model_requires_an_api_key(settings_factory) -> None:
-    settings = settings_factory(
-        default_model="gpt5.4mini",
-        openai_api_key=None,
+def make_deepseek_model(*, configured: bool = True) -> ModelDefinition:
+    return ModelDefinition(
+        alias=ModelAlias.DEEPSEEK_V4_FLASH,
+        display_name="DeepSeek V4 Flash",
+        provider=ModelProvider.DEEPSEEK,
+        litellm_model="deepseek/deepseek-v4-flash",
+        configured=configured,
     )
-    client = LiteLLMModelClient(settings=settings)
 
-    assert client.provider == "openai"
-    assert client.model == "openai/gpt-5.4-mini"
 
-    with pytest.raises(AppError) as error:
-        await client.complete([ModelMessage(role="user", content="你好")])
+def make_openai_model(*, configured: bool = True) -> ModelDefinition:
+    return ModelDefinition(
+        alias=ModelAlias.GPT_54_MINI,
+        display_name="GPT-5.4 mini",
+        provider=ModelProvider.OPENAI,
+        litellm_model="openai/gpt-5.4-mini",
+        configured=configured,
+    )
 
-    assert error.value.code == "model_not_configured"
-    assert error.value.status_code == 503
+
+def test_build_request_adds_temperature_only_when_supported(settings_factory) -> None:
+    captured: dict[str, Any] = {}
+
+    def supported_params(**kwargs: Any) -> list[str]:
+        captured.update(kwargs)
+        return ["temperature"]
+
+    transport = LiteLLMTransport(
+        settings_factory(deepseek_api_key="key"),
+        supported_params=supported_params,
+    )
+
+    request = transport.build_request(
+        make_deepseek_model(),
+        [ModelMessage(role="user", content="你好")],
+    )
+
+    assert captured == {
+        "model": "deepseek/deepseek-v4-flash",
+        "custom_llm_provider": ModelProvider.DEEPSEEK,
+        "request_type": "chat_completion",
+    }
+    assert request == {
+        "model": "deepseek/deepseek-v4-flash",
+        "messages": [{"role": "user", "content": "你好"}],
+        "temperature": 0.2,
+    }
+
+
+def test_build_request_omits_unsupported_temperature(settings_factory) -> None:
+    transport = LiteLLMTransport(
+        settings_factory(deepseek_api_key="key"),
+        supported_params=lambda **_: [],
+    )
+
+    request = transport.build_request(make_deepseek_model(), [])
+
+    assert request == {
+        "model": "deepseek/deepseek-v4-flash",
+        "messages": [],
+    }
 
 
 @pytest.mark.asyncio
-async def test_completion_maps_request_and_response_without_network_access(
+@pytest.mark.parametrize(
+    ("model", "settings_override"),
+    [
+        (make_deepseek_model(configured=False), {"deepseek_api_key": None}),
+        (
+            make_openai_model(configured=False),
+            {"default_model": "gpt5.4mini", "openai_api_key": None},
+        ),
+    ],
+)
+async def test_model_requires_its_provider_api_key(
+    settings_factory,
+    model: ModelDefinition,
+    settings_override: dict[str, Any],
+) -> None:
+    transport = LiteLLMTransport(settings_factory(**settings_override))
+
+    with pytest.raises(AppError) as error:
+        await transport.complete(model, transport.build_request(model, []))
+
+    assert error.value.code == "model_not_configured"
+    assert error.value.status_code == 503
+    assert error.value.details == {
+        "provider": model.provider,
+        "model": model.alias,
+    }
+
+
+@pytest.mark.asyncio
+async def test_completion_maps_one_request_and_sanitizes_response(
     settings_factory,
 ) -> None:
-    captured: dict[str, Any] = {}
+    captured_calls: list[dict[str, Any]] = []
     api_key = "local-test-key"
 
     class FakeResponse(SimpleNamespace):
@@ -83,26 +150,41 @@ async def test_completion_maps_request_and_response_without_network_access(
             }
 
     async def fake_completion(**kwargs: Any) -> FakeResponse:
-        captured.update(kwargs)
+        captured_calls.append(kwargs)
         return FakeResponse(
             choices=[SimpleNamespace(message=SimpleNamespace(content="## 回答\n\n测试完成。"))],
             usage=SimpleNamespace(prompt_tokens=10, completion_tokens=6),
         )
 
-    settings = settings_factory(deepseek_api_key=api_key)
-    client = LiteLLMModelClient(settings=settings, completion=fake_completion)
+    transport = LiteLLMTransport(
+        settings_factory(deepseek_api_key=api_key),
+        completion=fake_completion,
+        supported_params=lambda **_: ["temperature"],
+    )
+    model = make_deepseek_model()
+    request = transport.build_request(
+        model,
+        [ModelMessage(role="user", content="生成 Markdown")],
+    )
 
-    result = await client.complete([ModelMessage(role="user", content="生成 Markdown")])
+    result = await transport.complete(model, request)
 
-    assert captured == {
+    assert request == {
         "model": "deepseek/deepseek-v4-flash",
         "messages": [{"role": "user", "content": "生成 Markdown"}],
-        "timeout": 60,
-        "api_key": "local-test-key",
+        "temperature": 0.2,
     }
+    assert captured_calls == [
+        {
+            "model": "deepseek/deepseek-v4-flash",
+            "messages": [{"role": "user", "content": "生成 Markdown"}],
+            "temperature": 0.2,
+            "timeout": 60,
+            "api_key": "local-test-key",
+            "num_retries": 0,
+        }
+    ]
     assert result.content == "## 回答\n\n测试完成。"
-    assert result.provider == "deepseek"
-    assert result.model == "deepseek/deepseek-v4-flash"
     assert result.prompt_tokens == 10
     assert result.completion_tokens == 6
     assert result.api_response == {
@@ -129,10 +211,11 @@ async def test_completion_maps_request_and_response_without_network_access(
         },
         "provider_extension": {"trace_id": "safe-provider-trace"},
     }
-    assert api_key not in json.dumps(result.api_response, ensure_ascii=False)
-    assert "provider-client-secret" not in json.dumps(result.api_response)
-    assert "provider-proxy-authorization" not in json.dumps(result.api_response)
-    assert "provider-session-token" not in json.dumps(result.api_response)
+    rendered_response = json.dumps(result.api_response, ensure_ascii=False)
+    assert api_key not in rendered_response
+    assert "provider-client-secret" not in rendered_response
+    assert "provider-proxy-authorization" not in rendered_response
+    assert "provider-session-token" not in rendered_response
 
 
 @pytest.mark.asyncio
@@ -151,13 +234,15 @@ async def test_completion_uses_safe_fallback_when_response_normalization_fails(
             usage=SimpleNamespace(prompt_tokens=2, completion_tokens=3),
         )
 
-    client = LiteLLMModelClient(
-        settings=settings_factory(deepseek_api_key="local-test-key"),
+    transport = LiteLLMTransport(
+        settings_factory(deepseek_api_key="local-test-key"),
         completion=fake_completion,
+        supported_params=lambda **_: [],
     )
+    model = make_deepseek_model()
 
     with caplog.at_level(logging.WARNING):
-        result = await client.complete([ModelMessage(role="user", content="测试回退")])
+        result = await transport.complete(model, transport.build_request(model, []))
 
     assert result.content == "模型回答仍然有效。"
     assert result.api_response == {
@@ -192,12 +277,14 @@ async def test_completion_returns_none_tokens_when_usage_is_missing(
         del kwargs
         return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="回答"))])
 
-    client = LiteLLMModelClient(
-        settings=settings_factory(deepseek_api_key="local-test-key"),
+    transport = LiteLLMTransport(
+        settings_factory(deepseek_api_key="local-test-key"),
         completion=fake_completion,
+        supported_params=lambda **_: [],
     )
+    model = make_deepseek_model()
 
-    result = await client.complete([ModelMessage(role="user", content="测试")])
+    result = await transport.complete(model, transport.build_request(model, []))
 
     assert result.prompt_tokens is None
     assert result.completion_tokens is None
@@ -209,12 +296,57 @@ async def test_completion_rejects_empty_content(settings_factory) -> None:
         del kwargs
         return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="  "))])
 
+    transport = LiteLLMTransport(
+        settings_factory(deepseek_api_key="local-test-key"),
+        completion=fake_completion,
+        supported_params=lambda **_: [],
+    )
+    model = make_deepseek_model()
+
+    with pytest.raises(AppError) as error:
+        await transport.complete(model, transport.build_request(model, []))
+
+    assert error.value.code == "model_empty_response"
+
+
+@pytest.mark.asyncio
+async def test_legacy_model_client_preserves_existing_result_contract(
+    settings_factory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured_calls: list[dict[str, Any]] = []
+
+    async def fake_completion(**kwargs: Any) -> SimpleNamespace:
+        captured_calls.append(kwargs)
+        return SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content="兼容回答"))],
+            usage=SimpleNamespace(prompt_tokens=4, completion_tokens=2),
+        )
+
+    monkeypatch.setattr(
+        "databricks_zh_expert.llm.litellm_client.litellm.get_supported_openai_params",
+        lambda **_: [],
+    )
     client = LiteLLMModelClient(
         settings=settings_factory(deepseek_api_key="local-test-key"),
         completion=fake_completion,
     )
 
-    with pytest.raises(AppError) as error:
-        await client.complete([ModelMessage(role="user", content="测试")])
+    result = await client.complete([ModelMessage(role="user", content="兼容测试")])
 
-    assert error.value.code == "model_empty_response"
+    assert client.provider == "deepseek"
+    assert client.model == "deepseek/deepseek-v4-flash"
+    assert captured_calls == [
+        {
+            "model": "deepseek/deepseek-v4-flash",
+            "messages": [{"role": "user", "content": "兼容测试"}],
+            "timeout": 60,
+            "api_key": "local-test-key",
+            "num_retries": 0,
+        }
+    ]
+    assert result.content == "兼容回答"
+    assert result.provider == "deepseek"
+    assert result.model == "deepseek/deepseek-v4-flash"
+    assert result.prompt_tokens == 4
+    assert result.completion_tokens == 2

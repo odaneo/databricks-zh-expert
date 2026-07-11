@@ -2,17 +2,28 @@ import logging
 from collections.abc import Awaitable, Callable, Mapping
 from datetime import date, datetime
 from enum import Enum
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
 
 import litellm
 
 from databricks_zh_expert.core.config import Settings
 from databricks_zh_expert.core.errors import AppError
-from databricks_zh_expert.llm.client import JsonObject, JsonValue, ModelMessage, ModelResult
-from databricks_zh_expert.llm.model_registry import ModelRegistry
+from databricks_zh_expert.llm.client import (
+    JsonObject,
+    JsonValue,
+    ModelMessage,
+    ModelResult,
+    ModelTransportResult,
+)
+from databricks_zh_expert.llm.model_registry import (
+    ModelDefinition,
+    ModelProvider,
+    ModelRegistry,
+)
 
 CompletionFunction = Callable[..., Awaitable[Any]]
+SupportedParamsFunction = Callable[..., list[str] | None]
 logger = logging.getLogger(__name__)
 SENSITIVE_RESPONSE_FIELDS = frozenset(
     {
@@ -32,76 +43,96 @@ SENSITIVE_RESPONSE_FIELDS = frozenset(
 )
 
 
-class LiteLLMModelClient:
+class LiteLLMTransport:
     def __init__(
         self,
         settings: Settings,
         completion: CompletionFunction | None = None,
+        supported_params: SupportedParamsFunction | None = None,
     ) -> None:
         self._settings = settings
         self._completion = completion or litellm.acompletion
+        self._supported_params = supported_params or cast(
+            SupportedParamsFunction,
+            litellm.get_supported_openai_params,
+        )
 
-    @property
-    def provider(self) -> str:
-        if "/" not in self.model:
-            return "unknown"
-        return self.model.split("/", maxsplit=1)[0]
+    def build_request(
+        self,
+        model: ModelDefinition,
+        messages: list[ModelMessage],
+    ) -> JsonObject:
+        supported = (
+            self._supported_params(
+                model=model.litellm_model,
+                custom_llm_provider=model.provider,
+                request_type="chat_completion",
+            )
+            or []
+        )
+        request: JsonObject = {
+            "model": model.litellm_model,
+            "messages": [
+                {"role": message.role, "content": message.content} for message in messages
+            ],
+        }
+        if "temperature" in supported:
+            request["temperature"] = self._settings.default_temperature
+        return request
 
-    @property
-    def model(self) -> str:
-        registry = ModelRegistry.from_settings(self._settings)
-        return registry.get(registry.default_model).litellm_model
-
-    async def complete(self, messages: list[ModelMessage]) -> ModelResult:
-        api_key = self._get_api_key()
-        response = await self._completion(
-            model=self.model,
-            messages=[{"role": item.role, "content": item.content} for item in messages],
+    async def complete(
+        self,
+        model: ModelDefinition,
+        request: JsonObject,
+    ) -> ModelTransportResult:
+        api_key = self._get_api_key(model)
+        kwargs: dict[str, Any] = dict(request)
+        kwargs.update(
             timeout=self._settings.model_request_timeout_seconds,
             api_key=api_key,
+            num_retries=0,
         )
+        response = await self._completion(**kwargs)
 
         content = self._read_content(response)
         usage = getattr(response, "usage", None)
         prompt_tokens = self._read_usage(usage, "prompt_tokens")
         completion_tokens = self._read_usage(usage, "completion_tokens")
-        return ModelResult(
+        return ModelTransportResult(
             content=content,
-            provider=self.provider,
-            model=self.model,
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,
             api_response=self._read_api_response(
                 response,
                 api_key=api_key,
-                model=self.model,
+                model=model.litellm_model,
                 content=content,
                 prompt_tokens=prompt_tokens,
                 completion_tokens=completion_tokens,
             ),
         )
 
-    def _get_api_key(self) -> str:
+    def _get_api_key(self, model: ModelDefinition) -> str:
         provider_keys = {
-            "deepseek": self._settings.deepseek_api_key,
-            "openai": self._settings.openai_api_key,
+            ModelProvider.DEEPSEEK: self._settings.deepseek_api_key,
+            ModelProvider.OPENAI: self._settings.openai_api_key,
         }
-        if self.provider not in provider_keys:
+        if model.provider not in provider_keys:
             raise AppError(
                 code="model_not_supported",
                 message="当前模型供应商不受支持。",
                 status_code=400,
-                details={"model": self.model},
+                details={"provider": model.provider, "model": model.alias},
             )
 
-        secret = provider_keys[self.provider]
+        secret = provider_keys[model.provider]
         api_key = secret.get_secret_value() if secret is not None else ""
         if not api_key:
             raise AppError(
                 code="model_not_configured",
                 message="当前模型尚未配置 API 密钥。",
                 status_code=503,
-                details={"provider": self.provider, "model": self.model},
+                details={"provider": model.provider, "model": model.alias},
             )
         return api_key
 
@@ -244,4 +275,35 @@ class LiteLLMModelClient:
             or normalized.endswith("_headers")
             or normalized.endswith(("_authorization", "_password", "_secret", "_token"))
             or "api_key" in normalized
+        )
+
+
+class LiteLLMModelClient:
+    def __init__(
+        self,
+        settings: Settings,
+        completion: CompletionFunction | None = None,
+    ) -> None:
+        registry = ModelRegistry.from_settings(settings)
+        self._model_definition = registry.get(registry.default_model)
+        self._transport = LiteLLMTransport(settings, completion=completion)
+
+    @property
+    def provider(self) -> str:
+        return self._model_definition.provider.value
+
+    @property
+    def model(self) -> str:
+        return self._model_definition.litellm_model
+
+    async def complete(self, messages: list[ModelMessage]) -> ModelResult:
+        request = self._transport.build_request(self._model_definition, messages)
+        result = await self._transport.complete(self._model_definition, request)
+        return ModelResult(
+            content=result.content,
+            provider=self.provider,
+            model=self.model,
+            prompt_tokens=result.prompt_tokens,
+            completion_tokens=result.completion_tokens,
+            api_response=result.api_response,
         )
