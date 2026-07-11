@@ -7,7 +7,7 @@ import pytest
 
 from databricks_zh_expert.core.errors import AppError
 from databricks_zh_expert.llm.client import ModelMessage
-from databricks_zh_expert.llm.litellm_client import LiteLLMModelClient, LiteLLMTransport
+from databricks_zh_expert.llm.litellm_client import LiteLLMTransport
 from databricks_zh_expert.llm.model_registry import (
     ModelAlias,
     ModelDefinition,
@@ -307,46 +307,3 @@ async def test_completion_rejects_empty_content(settings_factory) -> None:
         await transport.complete(model, transport.build_request(model, []))
 
     assert error.value.code == "model_empty_response"
-
-
-@pytest.mark.asyncio
-async def test_legacy_model_client_preserves_existing_result_contract(
-    settings_factory,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    captured_calls: list[dict[str, Any]] = []
-
-    async def fake_completion(**kwargs: Any) -> SimpleNamespace:
-        captured_calls.append(kwargs)
-        return SimpleNamespace(
-            choices=[SimpleNamespace(message=SimpleNamespace(content="兼容回答"))],
-            usage=SimpleNamespace(prompt_tokens=4, completion_tokens=2),
-        )
-
-    monkeypatch.setattr(
-        "databricks_zh_expert.llm.litellm_client.litellm.get_supported_openai_params",
-        lambda **_: [],
-    )
-    client = LiteLLMModelClient(
-        settings=settings_factory(deepseek_api_key="local-test-key"),
-        completion=fake_completion,
-    )
-
-    result = await client.complete([ModelMessage(role="user", content="兼容测试")])
-
-    assert client.provider == "deepseek"
-    assert client.model == "deepseek/deepseek-v4-flash"
-    assert captured_calls == [
-        {
-            "model": "deepseek/deepseek-v4-flash",
-            "messages": [{"role": "user", "content": "兼容测试"}],
-            "timeout": 60,
-            "api_key": "local-test-key",
-            "num_retries": 0,
-        }
-    ]
-    assert result.content == "兼容回答"
-    assert result.provider == "deepseek"
-    assert result.model == "deepseek/deepseek-v4-flash"
-    assert result.prompt_tokens == 4
-    assert result.completion_tokens == 2

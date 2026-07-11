@@ -9,6 +9,7 @@ from uuid import uuid4
 import pytest
 
 from databricks_zh_expert.llm.client import JsonObject
+from databricks_zh_expert.llm.model_registry import ModelAlias
 from databricks_zh_expert.observability.model_trace import (
     JsonlModelTraceSink,
     ModelCallTrace,
@@ -18,11 +19,16 @@ from databricks_zh_expert.observability.model_trace import (
 def make_trace() -> ModelCallTrace:
     return ModelCallTrace(
         model_call_id=uuid4(),
+        invocation_id=uuid4(),
         session_id=uuid4(),
         recorded_at=datetime(2026, 1, 1, tzinfo=UTC),
-        provider="deepseek",
+        requested_model=ModelAlias.GPT_55,
+        model_alias=ModelAlias.GPT_54_MINI,
+        provider="openai",
+        attempt_number=2,
         latency_ms=1250,
         success=True,
+        retryable=False,
         request={
             "model": "deepseek/deepseek-v4-flash",
             "messages": [
@@ -65,15 +71,20 @@ async def test_jsonl_trace_sink_writes_complete_utf8_input_and_output(tmp_path) 
 
     payload = json.loads(trace_path.read_text(encoding="utf-8"))
     assert payload == {
-        "schema_version": "1.0",
+        "schema_version": "1.1",
         "protocol": "openai.chat.completions",
         "trace": {
             "model_call_id": str(trace.model_call_id),
+            "invocation_id": str(trace.invocation_id),
             "session_id": str(trace.session_id),
             "recorded_at": "2026-01-01T00:00:00+00:00",
-            "provider": "deepseek",
+            "requested_model": "gpt5.5",
+            "model_alias": "gpt5.4mini",
+            "provider": "openai",
+            "attempt_number": 2,
             "latency_ms": 1250,
             "success": True,
+            "retryable": False,
         },
         "request": trace.request,
         "response": trace.response,

@@ -13,13 +13,11 @@ from databricks_zh_expert.llm.client import (
     JsonObject,
     JsonValue,
     ModelMessage,
-    ModelResult,
     ModelTransportResult,
 )
 from databricks_zh_expert.llm.model_registry import (
     ModelDefinition,
     ModelProvider,
-    ModelRegistry,
 )
 
 CompletionFunction = Callable[..., Awaitable[Any]]
@@ -275,35 +273,4 @@ class LiteLLMTransport:
             or normalized.endswith("_headers")
             or normalized.endswith(("_authorization", "_password", "_secret", "_token"))
             or "api_key" in normalized
-        )
-
-
-class LiteLLMModelClient:
-    def __init__(
-        self,
-        settings: Settings,
-        completion: CompletionFunction | None = None,
-    ) -> None:
-        registry = ModelRegistry.from_settings(settings)
-        self._model_definition = registry.get(registry.default_model)
-        self._transport = LiteLLMTransport(settings, completion=completion)
-
-    @property
-    def provider(self) -> str:
-        return self._model_definition.provider.value
-
-    @property
-    def model(self) -> str:
-        return self._model_definition.litellm_model
-
-    async def complete(self, messages: list[ModelMessage]) -> ModelResult:
-        request = self._transport.build_request(self._model_definition, messages)
-        result = await self._transport.complete(self._model_definition, request)
-        return ModelResult(
-            content=result.content,
-            provider=self.provider,
-            model=self.model,
-            prompt_tokens=result.prompt_tokens,
-            completion_tokens=result.completion_tokens,
-            api_response=result.api_response,
         )

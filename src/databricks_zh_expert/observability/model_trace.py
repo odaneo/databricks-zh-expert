@@ -8,6 +8,7 @@ from typing import Protocol
 from uuid import UUID
 
 from databricks_zh_expert.llm.client import JsonObject
+from databricks_zh_expert.llm.model_registry import ModelAlias
 
 logger = logging.getLogger(__name__)
 
@@ -15,11 +16,16 @@ logger = logging.getLogger(__name__)
 @dataclass(frozen=True, slots=True)
 class ModelCallTrace:
     model_call_id: UUID
+    invocation_id: UUID
     session_id: UUID
     recorded_at: datetime
+    requested_model: ModelAlias
+    model_alias: ModelAlias
     provider: str
+    attempt_number: int
     latency_ms: int
     success: bool
+    retryable: bool
     request: JsonObject
     response: JsonObject | None
     error: JsonObject | None
@@ -59,15 +65,20 @@ class JsonlModelTraceSink:
     @staticmethod
     def _serialize(trace: ModelCallTrace) -> str:
         payload = {
-            "schema_version": "1.0",
+            "schema_version": "1.1",
             "protocol": "openai.chat.completions",
             "trace": {
                 "model_call_id": str(trace.model_call_id),
+                "invocation_id": str(trace.invocation_id),
                 "session_id": str(trace.session_id),
                 "recorded_at": trace.recorded_at.isoformat(),
+                "requested_model": trace.requested_model,
+                "model_alias": trace.model_alias,
                 "provider": trace.provider,
+                "attempt_number": trace.attempt_number,
                 "latency_ms": trace.latency_ms,
                 "success": trace.success,
+                "retryable": trace.retryable,
             },
             "request": trace.request,
             "response": trace.response,

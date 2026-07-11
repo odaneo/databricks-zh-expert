@@ -1,13 +1,17 @@
 from dataclasses import dataclass
-from datetime import UTC, datetime
-from time import perf_counter
 from typing import cast
 from uuid import UUID
 
 from databricks_zh_expert.chat.repository import ChatRepository
 from databricks_zh_expert.core.errors import AppError
 from databricks_zh_expert.db.models import Message, ModelCall
-from databricks_zh_expert.llm.client import JsonObject, ModelClient, ModelMessage, ModelRole
+from databricks_zh_expert.llm.client import ModelMessage, ModelRole
+from databricks_zh_expert.llm.gateway import (
+    ModelAttempt,
+    ModelGateway,
+    ModelGatewayFailure,
+)
+from databricks_zh_expert.llm.model_registry import ModelAlias
 from databricks_zh_expert.observability.model_trace import (
     ModelCallTrace,
     ModelTraceSink,
@@ -19,23 +23,52 @@ class SendMessageResult:
     user_message: Message
     assistant_message: Message
     model_call: ModelCall
+    model_invocation_id: UUID
+    requested_model: ModelAlias
+    used_model: ModelAlias
+    fallback_used: bool
+    attempt_count: int
+
+
+def build_trace(
+    model_call: ModelCall,
+    session_id: UUID,
+    attempt: ModelAttempt,
+) -> ModelCallTrace:
+    return ModelCallTrace(
+        model_call_id=model_call.id,
+        invocation_id=attempt.invocation_id,
+        session_id=session_id,
+        recorded_at=model_call.created_at,
+        requested_model=attempt.requested_model,
+        model_alias=attempt.model_alias,
+        provider=attempt.provider,
+        attempt_number=attempt.attempt_number,
+        latency_ms=attempt.latency_ms,
+        success=attempt.success,
+        retryable=attempt.retryable,
+        request=attempt.request,
+        response=attempt.response,
+        error=attempt.error,
+    )
 
 
 class ChatService:
     def __init__(
         self,
         repository: ChatRepository,
-        model_client: ModelClient,
+        model_gateway: ModelGateway,
         trace_sink: ModelTraceSink,
     ) -> None:
         self.repository = repository
-        self.model_client = model_client
+        self.model_gateway = model_gateway
         self.trace_sink = trace_sink
 
     async def send_message(
         self,
         session_id: UUID,
         content: str,
+        requested_model: ModelAlias | None = None,
     ) -> SendMessageResult:
         session = await self.repository.get_session(session_id)
         if session is None:
@@ -62,113 +95,59 @@ class ChatService:
             for message in recent_messages
         ]
 
-        started_at = perf_counter()
         try:
-            model_result = await self.model_client.complete(model_messages)
-        except Exception as error:
-            latency_ms = self._elapsed_milliseconds(started_at)
-            model_call = await self.repository.create_model_call(
-                session_id=session_id,
-                provider=self.model_client.provider,
-                model=self.model_client.model,
-                prompt_tokens=None,
-                completion_tokens=None,
-                latency_ms=latency_ms,
-                success=False,
-                error_message=self._safe_error_summary(error),
-            )
-            await self._write_trace(
-                model_call=model_call,
-                input_messages=model_messages,
-                response=None,
-                error=self._safe_trace_error(error),
-            )
-            if isinstance(error, AppError) and error.code == "model_not_configured":
-                raise
+            async for attempt in self.model_gateway.run(model_messages, requested_model):
+                error_code = (
+                    str(attempt.error["code"])
+                    if attempt.error is not None and attempt.error.get("code") is not None
+                    else None
+                )
+                error_message = (
+                    str(attempt.error["message"])
+                    if attempt.error is not None and attempt.error.get("message") is not None
+                    else None
+                )
+                model_call = await self.repository.create_model_call(
+                    session_id=session_id,
+                    invocation_id=attempt.invocation_id,
+                    provider=attempt.provider,
+                    model=attempt.litellm_model,
+                    model_alias=attempt.model_alias,
+                    attempt_number=attempt.attempt_number,
+                    prompt_tokens=attempt.prompt_tokens,
+                    completion_tokens=attempt.completion_tokens,
+                    latency_ms=attempt.latency_ms,
+                    success=attempt.success,
+                    retryable=attempt.retryable,
+                    error_code=error_code,
+                    error_message=error_message,
+                )
+                await self.trace_sink.write(build_trace(model_call, session_id, attempt))
+
+                if attempt.success:
+                    if attempt.content is None:
+                        raise RuntimeError("成功的模型尝试缺少输出内容。")
+                    assistant_message = await self.repository.create_message(
+                        session_id,
+                        "assistant",
+                        attempt.content,
+                        artifact_type="markdown",
+                    )
+                    return SendMessageResult(
+                        user_message=user_message,
+                        assistant_message=assistant_message,
+                        model_call=model_call,
+                        model_invocation_id=attempt.invocation_id,
+                        requested_model=attempt.requested_model,
+                        used_model=attempt.model_alias,
+                        fallback_used=attempt.attempt_number > 1,
+                        attempt_count=attempt.attempt_number,
+                    )
+        except ModelGatewayFailure as error:
             raise AppError(
-                code="model_request_failed",
-                message="模型调用失败，请稍后重试。",
-                status_code=502,
-            ) from error
+                code=error.code,
+                message=error.message,
+                status_code=error.status_code,
+            ) from None
 
-        latency_ms = self._elapsed_milliseconds(started_at)
-        assistant_message = await self.repository.create_message(
-            session_id=session_id,
-            role="assistant",
-            content=model_result.content,
-            artifact_type="markdown",
-        )
-        model_call = await self.repository.create_model_call(
-            session_id=session_id,
-            provider=model_result.provider,
-            model=model_result.model,
-            prompt_tokens=model_result.prompt_tokens,
-            completion_tokens=model_result.completion_tokens,
-            latency_ms=latency_ms,
-            success=True,
-            error_message=None,
-        )
-        await self._write_trace(
-            model_call=model_call,
-            input_messages=model_messages,
-            response=model_result.api_response,
-            error=None,
-        )
-        return SendMessageResult(
-            user_message=user_message,
-            assistant_message=assistant_message,
-            model_call=model_call,
-        )
-
-    async def _write_trace(
-        self,
-        *,
-        model_call: ModelCall,
-        input_messages: list[ModelMessage],
-        response: JsonObject | None,
-        error: JsonObject | None,
-    ) -> None:
-        await self.trace_sink.write(
-            ModelCallTrace(
-                model_call_id=model_call.id,
-                session_id=model_call.session_id,
-                recorded_at=datetime.now(UTC),
-                provider=model_call.provider,
-                latency_ms=model_call.latency_ms,
-                success=model_call.success,
-                request={
-                    "model": model_call.model,
-                    "messages": [
-                        {"role": message.role, "content": message.content}
-                        for message in input_messages
-                    ],
-                },
-                response=response,
-                error=error,
-            )
-        )
-
-    @staticmethod
-    def _elapsed_milliseconds(started_at: float) -> int:
-        return max(0, round((perf_counter() - started_at) * 1000))
-
-    @staticmethod
-    def _safe_error_summary(error: Exception) -> str:
-        if isinstance(error, AppError):
-            return f"{type(error).__name__}: {error.code}"[:500]
-        return f"{type(error).__name__}: 模型调用异常。"[:500]
-
-    @staticmethod
-    def _safe_trace_error(error: Exception) -> JsonObject:
-        if isinstance(error, AppError):
-            message = error.message
-            code = error.code
-        else:
-            message = "模型调用失败，请稍后重试。"
-            code = "model_request_failed"
-        return {
-            "message": message,
-            "type": type(error).__name__,
-            "param": None,
-            "code": code,
-        }
+        raise RuntimeError("模型网关未返回成功尝试。")

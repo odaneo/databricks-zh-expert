@@ -16,31 +16,11 @@ class ModelMessage:
 
 
 @dataclass(frozen=True, slots=True)
-class ModelResult:
-    content: str
-    provider: str
-    model: str
-    prompt_tokens: int | None
-    completion_tokens: int | None
-    api_response: JsonObject
-
-
-@dataclass(frozen=True, slots=True)
 class ModelTransportResult:
     content: str
     prompt_tokens: int | None
     completion_tokens: int | None
     api_response: JsonObject
-
-
-class ModelClient(Protocol):
-    @property
-    def provider(self) -> str: ...
-
-    @property
-    def model(self) -> str: ...
-
-    async def complete(self, messages: list[ModelMessage]) -> ModelResult: ...
 
 
 class ModelTransport(Protocol):

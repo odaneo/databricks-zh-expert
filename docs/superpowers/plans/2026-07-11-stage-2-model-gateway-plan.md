@@ -1047,7 +1047,7 @@ git commit -m "feat: add model gateway fallback state machine"
 - 产出：唯一约束 `uq_model_calls_invocation_attempt` 和检查约束 `ck_model_calls_attempt_number`。
 - 产出：扩展后的 `ChatRepository.create_model_call()`，最终参数由 Task 5 全部传入。
 
-- [ ] **步骤 1：先写 SQLAlchemy 元数据失败测试**
+- [x] **步骤 1：先写 SQLAlchemy 元数据失败测试**
 
 在 `tests/unit/test_models.py` 把 `ModelCall` 字段断言改为：
 
@@ -1082,11 +1082,11 @@ assert {index.name for index in ModelCall.__table__.indexes} == {
 }
 ```
 
-- [ ] **步骤 2：同步未提交的本地模型配置**
+- [x] **步骤 2：同步未提交的本地模型配置**
 
 在 `.env` 中补入 Task 1 的 `FALLBACK_MODELS` 和 `DEFAULT_TEMPERATURE`，把旧的 provider-qualified `DEFAULT_MODEL` 改为业务别名 `deepseek-v4-flash`。四个固定模型 ID 不写入 `.env`；保留现有真实 API Key，不提交 `.env`。
 
-- [ ] **步骤 3：先写迁移结构和历史回填失败测试**
+- [x] **步骤 3：先写迁移结构和历史回填失败测试**
 
 `tests/integration/test_migrations.py` 增加结构断言：
 
@@ -1115,7 +1115,7 @@ assert model_call_columns["error_code"]["nullable"] is True
 
 该测试不启用 pytest-xdist，迁移期间不得并行运行其他数据库测试。
 
-- [ ] **步骤 4：运行模型和迁移测试并确认失败**
+- [x] **步骤 4：运行模型和迁移测试并确认失败**
 
 ```powershell
 uv run --locked pytest tests/unit/test_models.py tests/integration/test_migrations.py -v
@@ -1123,7 +1123,7 @@ uv run --locked pytest tests/unit/test_models.py tests/integration/test_migratio
 
 预期：新列和迁移 revision 尚不存在，测试失败；失败原因不得是连接到开发数据库。
 
-- [ ] **步骤 5：扩展 SQLAlchemy ModelCall**
+- [x] **步骤 5：扩展 SQLAlchemy ModelCall**
 
 `src/databricks_zh_expert/db/models.py` 的 `ModelCall` 使用：
 
@@ -1165,7 +1165,7 @@ class ModelCall(Base):
     )
 ```
 
-- [ ] **步骤 6：实现 0002 迁移和历史映射**
+- [x] **步骤 6：实现 0002 迁移和历史映射**
 
 创建 `alembic/versions/0002_model_gateway_attempts.py`，revision 固定为 `0002_model_gateway_attempts`，`down_revision="0001_initial"`。`upgrade()` 顺序固定为：
 
@@ -1213,7 +1213,7 @@ op.create_unique_constraint(
 
 `downgrade()` 先删除唯一约束和检查约束，再按 `error_code`、`retryable`、`attempt_number`、`model_alias`、`invocation_id` 的顺序删列。不要额外创建与唯一约束重复的索引。
 
-- [ ] **步骤 7：扩展 Repository 写入参数**
+- [x] **步骤 7：扩展 Repository 写入参数**
 
 `ChatRepository.create_model_call()` 最终签名固定为：
 
@@ -1239,7 +1239,7 @@ async def create_model_call(
 
 构造 `ModelCall` 时逐字段传入，不从 `model` 猜测 alias，不在 Repository 中实现 fallback 规则。Task 5 同一提交批次内同步所有调用方和 Fake Repository 后，再运行完整测试。
 
-- [ ] **步骤 8：执行开发库、测试库迁移和定向测试**
+- [x] **步骤 8：执行开发库、测试库迁移和定向测试**
 
 ```powershell
 uv run --locked alembic upgrade head
@@ -1252,7 +1252,7 @@ uv run --locked alembic check
 
 预期：开发库和测试库均位于 `0002_model_gateway_attempts`；结构、历史回填和 Alembic drift 检查通过。
 
-- [ ] **步骤 9：建议提交点**
+- [x] **步骤 9：建议提交点**
 
 该提交和 Task 5 的服务调用方修改连续执行，避免把 Repository 新签名单独推送为不可运行版本。Task 5 验证通过后统一提交以下文件。
 
@@ -1263,11 +1263,16 @@ uv run --locked alembic check
 **文件：**
 
 - 修改：`src/databricks_zh_expert/chat/service.py`
+- 修改：`src/databricks_zh_expert/api/dependencies.py`
 - 修改：`src/databricks_zh_expert/observability/model_trace.py`
 - 修改：`src/databricks_zh_expert/llm/client.py`
 - 修改：`src/databricks_zh_expert/llm/litellm_client.py`
+- 修改：`alembic/env.py`
 - 修改：`tests/unit/test_chat_service.py`
+- 修改：`tests/unit/test_litellm_client.py`
 - 修改：`tests/unit/test_model_trace.py`
+- 修改：`tests/integration/test_messages_api.py`
+- 修改：`tests/integration/test_migrations.py`
 
 **接口：**
 
@@ -1276,7 +1281,7 @@ uv run --locked alembic check
 - 产出：`SendMessageResult` 的 `model_invocation_id`、`requested_model`、`used_model`、`fallback_used`、`attempt_count` 和最终成功 `model_call`。
 - 产出：Trace `schema_version="1.1"`，每次尝试一行。
 
-- [ ] **步骤 1：先把 ChatService Fake 切换为异步尝试流**
+- [x] **步骤 1：先把 ChatService Fake 切换为异步尝试流**
 
 在 `tests/unit/test_chat_service.py` 删除 `FakeModelClient`，新增实现 `ModelGateway` 的 Fake。成功与 fallback 测试使用同一个 `invocation_id`，并返回完整 `ModelAttempt`。关键成功断言固定为：
 
@@ -1309,7 +1314,7 @@ assert repository.events[-4:] == [
 ]
 ```
 
-- [ ] **步骤 2：先写数据库失败不得继续 fallback 的测试**
+- [x] **步骤 2：先写数据库失败不得继续 fallback 的测试**
 
 Fake Repository 在第一次 `create_model_call()` 抛出 `RuntimeError("数据库写入失败")`，Fake Gateway 在第一次 yield 后只有被继续迭代才记录 `resumed=True`：
 
@@ -1323,7 +1328,7 @@ assert [message.role for message in repository.messages] == ["user"]
 
 再覆盖：不可重试失败映射为对应 `AppError`；全部可重试失败映射为 `model_fallback_exhausted`；失败时不创建 assistant message；每个已产出尝试各写一次 Trace。
 
-- [ ] **步骤 3：先写 Trace 1.1 失败测试**
+- [x] **步骤 3：先写 Trace 1.1 失败测试**
 
 `tests/unit/test_model_trace.py` 的 `make_trace()` 增加：
 
@@ -1354,7 +1359,7 @@ assert payload["trace"] == {
 }
 ```
 
-- [ ] **步骤 4：运行服务和 Trace 测试并确认失败**
+- [x] **步骤 4：运行服务和 Trace 测试并确认失败**
 
 ```powershell
 uv run --locked pytest tests/unit/test_chat_service.py tests/unit/test_model_trace.py -v
@@ -1362,7 +1367,7 @@ uv run --locked pytest tests/unit/test_chat_service.py tests/unit/test_model_tra
 
 预期：ChatService 仍依赖 `ModelClient`，Trace 仍输出 1.0，测试失败。
 
-- [ ] **步骤 5：实现 ChatService 的逐次持久化顺序**
+- [x] **步骤 5：实现 ChatService 的逐次持久化顺序**
 
 `SendMessageResult` 定义为：
 
@@ -1439,7 +1444,7 @@ except ModelGatewayFailure as error:
 
 异步迭代器正常结束但没有成功尝试时抛出 `RuntimeError("模型网关未返回成功尝试。")`；该情况只代表网关实现违反内部契约。
 
-- [ ] **步骤 6：升级 ModelCallTrace 和 JSONL schema**
+- [x] **步骤 6：升级 ModelCallTrace 和 JSONL schema**
 
 `ModelCallTrace` 增加精确字段：
 
@@ -1479,11 +1484,11 @@ def build_trace(
 
 `JsonlModelTraceSink._serialize()` 把 `schema_version` 改为 `1.1`，并把以上字段写入 `trace`。保留顶层 `protocol="openai.chat.completions"`、`request`、`response`、`error`；成功行 `error=None`，失败行 `response=None`。旧 JSONL 文件不迁移、不覆盖。
 
-- [ ] **步骤 7：删除阶段 1 的临时模型客户端接口**
+- [x] **步骤 7：删除阶段 1 的临时模型客户端接口**
 
 确认 ChatService 和依赖装配不再引用后，从 `llm/client.py` 删除 `ModelResult`、`ModelClient`，从 `llm/litellm_client.py` 删除 Task 2 保留的 `LiteLLMModelClient` 薄包装器。项目中只保留 `ModelTransport`、`LiteLLMTransport` 和 `ModelGateway` 三个边界。
 
-- [ ] **步骤 8：运行任务 4 和任务 5 的联合门禁**
+- [x] **步骤 8：运行任务 4 和任务 5 的联合门禁**
 
 ```powershell
 uv run --locked pytest tests/unit/test_models.py tests/integration/test_migrations.py tests/unit/test_chat_service.py tests/unit/test_model_trace.py -v
@@ -1494,7 +1499,9 @@ uv run --locked pyright
 
 预期：迁移、Repository、服务和 Trace 测试全部通过；Pyright 不再出现旧 `ModelClient` 引用。
 
-- [ ] **步骤 9：建议提交点**
+联合门禁额外发现 Alembic 的日志初始化会关闭既有应用日志器，已通过回归测试和 `disable_existing_loggers=False` 修复。完整测试结果为 92 项通过，覆盖率 91.82%。
+
+- [x] **步骤 9：建议提交点**
 
 ```powershell
 git add alembic/versions/0002_model_gateway_attempts.py src/databricks_zh_expert/db/models.py src/databricks_zh_expert/chat/repository.py src/databricks_zh_expert/chat/service.py src/databricks_zh_expert/observability/model_trace.py src/databricks_zh_expert/llm tests/unit/test_models.py tests/integration/test_migrations.py tests/unit/test_chat_service.py tests/unit/test_model_trace.py
