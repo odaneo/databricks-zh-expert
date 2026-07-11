@@ -628,7 +628,7 @@ git commit -m "refactor: add single attempt litellm transport"
 - 产出：`ModelGateway.run(messages, requested_model) -> AsyncIterator[ModelAttempt]`。
 - 产出：`FallbackModelGateway(registry, transport)` 和终止异常 `ModelGatewayFailure`。
 
-- [ ] **步骤 1：先写候选顺序和默认模型失败测试**
+- [x] **步骤 1：先写候选顺序和默认模型失败测试**
 
 `tests/unit/test_model_gateway.py` 创建不会联网的 `FakeModelTransport`，其 `build_request()` 返回标准 Chat Completions 请求，其 `complete()` 按模型别名弹出预设结果或异常。固定以下断言：
 
@@ -663,7 +663,7 @@ async def test_explicit_request_model_overrides_default(gateway_factory) -> None
     assert attempts[0].requested_model == "gpt5.5"
 ```
 
-- [ ] **步骤 2：先写 fallback 与终止错误失败测试**
+- [x] **步骤 2：先写 fallback 与终止错误失败测试**
 
 使用带 `status_code` 的 Fake provider exception，精确覆盖：
 
@@ -722,7 +722,7 @@ async def test_all_retryable_candidates_raise_fallback_exhausted(gateway_factory
 
 再用参数化测试断言 400、401、403、404、空响应 `AppError` 和 `model_not_configured` 均不请求第二个模型；429、500、502、503、504 会请求下一候选。
 
-- [ ] **步骤 3：运行网关测试并确认失败**
+- [x] **步骤 3：运行网关测试并确认失败**
 
 ```powershell
 uv run --locked pytest tests/unit/test_model_gateway.py -v
@@ -730,7 +730,7 @@ uv run --locked pytest tests/unit/test_model_gateway.py -v
 
 预期：`gateway.py` 尚不存在，测试失败。
 
-- [ ] **步骤 4：定义尝试结果和终止异常**
+- [x] **步骤 4：定义尝试结果和终止异常**
 
 `src/databricks_zh_expert/llm/gateway.py` 定义：
 
@@ -776,7 +776,7 @@ class ModelGateway(Protocol):
     ) -> AsyncIterator[ModelAttempt]: ...
 ```
 
-- [ ] **步骤 5：实现不解析异常文本的错误分类**
+- [x] **步骤 5：实现不解析异常文本的错误分类**
 
 定义内部不可变 `ErrorClassification`，并严格使用异常类型和 `status_code`：
 
@@ -826,7 +826,7 @@ class ErrorClassification:
 
 其中可重试错误摘要统一为“模型服务暂时不可用。”，认证错误为“模型认证或权限校验失败。”，其他错误为“模型调用失败，请检查请求和模型配置。”；不得使用 `str(error)`。
 
-- [ ] **步骤 6：实现串行 fallback 异步生成器**
+- [x] **步骤 6：实现串行 fallback 异步生成器**
 
 `FallbackModelGateway.run()` 按以下结构实现：
 
@@ -1010,7 +1010,7 @@ raise ModelGatewayFailure(
 
 `elapsed_ms()` 使用 `max(0, round((time.perf_counter() - started_at) * 1000))`。成功尝试的 `retryable=False`、`error=None`；失败尝试的 `response=None`、`content=None`、token 为 `None`。
 
-- [ ] **步骤 7：运行任务 3 定向检查**
+- [x] **步骤 7：运行任务 3 定向检查**
 
 ```powershell
 uv run --locked pytest tests/unit/test_model_gateway.py -v
@@ -1021,7 +1021,7 @@ uv run --locked pyright
 
 预期：所有候选顺序和错误矩阵测试通过；测试中的 Fake transport 明确证明每个候选最多调用一次。
 
-- [ ] **步骤 8：建议提交点**
+- [x] **步骤 8：建议提交点**
 
 ```powershell
 git add src/databricks_zh_expert/llm/gateway.py tests/unit/test_model_gateway.py
