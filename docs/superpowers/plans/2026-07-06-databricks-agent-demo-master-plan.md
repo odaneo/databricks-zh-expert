@@ -257,11 +257,11 @@ POSTGRES_PASSWORD=
 3. 暂不支持 Claude、Gemini、Azure OpenAI 或其他模型供应商。
 4. 支持固定模型白名单：`gpt5.5`、`gpt5.4mini`、`deepseek-v4-flash`、`deepseek-v4-pro`。
 5. 开发调试默认使用 `deepseek-v4-flash`。
-6. 支持默认模型。
-7. 支持 temperature 配置。
+6. 每次消息请求可指定固定业务模型别名，省略时使用默认模型。
+7. 支持全局 temperature 配置；模型不支持自定义值时不发送该参数。
 8. 支持 OpenAI 和 DeepSeek 之间的 fallback 模型列表。
 9. 支持 token 统计。
-10. 支持错误日志。
+10. 支持 Trace 1.2 调用日志，并保留脱敏后的供应商原始错误。
 11. 启动时校验配置的模型名是否在白名单内。
 
 ### 配置草案
@@ -281,7 +281,7 @@ DEEPSEEK_API_KEY=
 
 ### 完成标准
 
-业务服务只调用一个内部 `ModelGateway`，在 OpenAI 和 DeepSeek 之间切换模型时不需要改 Chat API、RAG 或代码生成模块。
+业务服务只调用一个内部 `ModelGateway`；Chat API 可按请求选择业务模型别名，切换 OpenAI、DeepSeek 或 fallback 顺序时不需要修改 RAG、代码生成等下游模块。
 
 ---
 
@@ -848,24 +848,11 @@ Agent 生成的 SQL 和 PySpark 可能存在环境差异，不能默认可执行
 
 ## 8. 近期最推荐的下一步
 
-下一步建议先细化“阶段 1：项目初始化与最小聊天后端计划”，目标是拿到第一个可以运行的 FastAPI 后端。
+阶段 1 和阶段 2 已完成。下一步建议细化“阶段 3：Prompt Registry 和 Markdown Artifact”，先固定顾问问答、SQL、PySpark 与工作流设计的输入输出契约，再实现模板注册、结构化生成和 Markdown 交付物。
 
-这个小计划应该覆盖：
-
-1. 项目目录。
-2. 依赖文件。
-3. 配置加载。
-4. 健康检查接口。
-5. 聊天接口。
-6. PostgreSQL 会话保存与 Alembic 迁移。
-7. 模型调用日志。
-8. 测试框架。
-9. 本地启动命令。
-10. README。
-
-完成这个小计划后，再继续拆 LiteLLM 模型网关。
-
-阶段 1 的详细设计和实施步骤见：
+已完成阶段的详细设计和实施步骤见：
 
 1. `docs/superpowers/specs/2026-07-10-stage-1-backend-design.md`。
 2. `docs/superpowers/plans/2026-07-10-stage-1-backend-plan.md`。
+3. `docs/superpowers/specs/2026-07-11-stage-2-model-gateway-design.md`。
+4. `docs/superpowers/plans/2026-07-11-stage-2-model-gateway-plan.md`。

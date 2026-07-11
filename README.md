@@ -38,6 +38,8 @@ uv run --locked python --version
 
 编辑 `.env`，确认 `.env.example` 中的全部配置，并填写需要使用的 `OPENAI_API_KEY` 和 `DEEPSEEK_API_KEY`。
 
+`DEFAULT_MODEL` 和 `FALLBACK_MODELS` 使用 `.env.example` 中的业务别名；四个固定 LiteLLM 模型 ID 由代码模型目录统一维护。
+
 ## 5. 启动数据库
 
 ```powershell

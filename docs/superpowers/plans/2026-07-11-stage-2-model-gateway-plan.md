@@ -1744,10 +1744,10 @@ git commit -m "feat: expose request level model selection"
 **接口：**
 
 - 产出：启动步骤只引用阶段 2 的有效配置键。
-- 产出：DeepSeek Flash 与 GPT-5.4 mini 各一次真实成功调用的验收记录留在数据库和本地 Trace，验收会话随后删除。
+- 产出：DeepSeek Flash 与 GPT-5.4 mini 各一次真实成功调用先在数据库中核对，本地 Trace 保留，验收会话随后按精确 ID 删除。
 - 产出：最终质量门禁和 Alembic drift 检查全部通过。
 
-- [ ] **步骤 1：精简同步 README 启动配置**
+- [x] **步骤 1：精简同步 README 启动配置**
 
 README 第 4 步只补充一句，不增加新的长章节：
 
@@ -1757,9 +1757,9 @@ README 第 4 步只补充一句，不增加新的长章节：
 
 保留现有环境准备、uv、数据库、迁移、检查、启动和停止步骤，不加入内部架构、fallback 状态机、测试输出示例或 Trace 格式说明。
 
-- [ ] **步骤 2：同步总计划的阶段 2 配置草案**
+- [x] **步骤 2：核对总计划和环境变量模板**
 
-在 `docs/superpowers/plans/2026-07-06-databricks-agent-demo-master-plan.md` 删除 `DEV_MODEL`、`SUPPORTED_OPENAI_MODELS`、`SUPPORTED_DEEPSEEK_MODELS` 和 `LITELLM_TIMEOUT_SECONDS`，配置块精确替换为：
+确认 `docs/superpowers/plans/2026-07-06-databricks-agent-demo-master-plan.md` 的配置草案与项目实际配置一致：
 
 ```text
 PYTHON_VERSION=3.12.10
@@ -1771,25 +1771,19 @@ OPENAI_API_KEY=
 DEEPSEEK_API_KEY=
 ```
 
-在核心能力中明确“每次消息请求可指定业务模型别名，省略时使用默认模型”。
+Python 版本由 `.python-version` 和 `pyproject.toml` 约束，其余运行时配置由 `.env.example` 声明。四个固定 LiteLLM 模型 ID 继续由代码模型目录维护。总计划需明确“每次消息请求可指定业务模型别名，省略时使用默认模型”，并把近期下一步更新为阶段 3。
 
-- [ ] **步骤 3：执行锁文件、迁移和质量门禁**
+- [x] **步骤 3：执行锁文件和迁移预检**
 
 ```powershell
 uv lock --check
-uv sync --locked
-uv run --locked alembic upgrade head
 uv run --locked alembic current
 uv run --locked alembic check
-uv run --locked ruff format --check .
-uv run --locked ruff check .
-uv run --locked pyright
-uv run --locked pytest --cov=databricks_zh_expert --cov-report=term-missing
 ```
 
-预期：锁文件无变化，Alembic current 为 `0002_model_gateway_attempts (head)`，无 schema drift，全部测试通过且分支覆盖率不低于 80%。
+预期：锁文件无变化，Alembic current 为 `0002_model_gateway_attempts (head)`，且无 schema drift。依赖安装、迁移升级和完整质量门禁不在此处重复执行。
 
-- [ ] **步骤 4：启动服务并检查模型列表**
+- [x] **步骤 4：启动服务并检查模型列表**
 
 在一个 PowerShell 启动：
 
@@ -1806,7 +1800,7 @@ $models | ConvertTo-Json -Depth 5
 
 确认只出现四个业务别名，OpenAI 和 DeepSeek 均为 `configured=true`，响应中没有实际 LiteLLM ID 或密钥。
 
-- [ ] **步骤 5：执行一次 DeepSeek Flash 真实冒烟**
+- [x] **步骤 5：执行一次 DeepSeek Flash 真实冒烟**
 
 ```powershell
 $deepseekSession = Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/chat/sessions -ContentType "application/json" -Body '{"title":"[阶段2冒烟] DeepSeek"}'
@@ -1817,7 +1811,7 @@ $deepseekResult | ConvertTo-Json -Depth 5
 
 确认 `requested_model` 和 `used_model` 均为 `deepseek-v4-flash`、`fallback_used=false`、`attempt_count=1`。
 
-- [ ] **步骤 6：执行一次 GPT-5.4 mini 真实冒烟**
+- [x] **步骤 6：执行一次 GPT-5.4 mini 真实冒烟**
 
 ```powershell
 $openaiSession = Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/chat/sessions -ContentType "application/json" -Body '{"title":"[阶段2冒烟] OpenAI"}'
@@ -1828,14 +1822,13 @@ $openaiResult | ConvertTo-Json -Depth 5
 
 确认 `requested_model` 和 `used_model` 均为 `gpt5.4mini`、`fallback_used=false`、`attempt_count=1`。不通过制造真实供应商故障验证 fallback。
 
-- [ ] **步骤 7：核对数据库尝试记录和 Trace 1.2 脱敏**
+- [x] **步骤 7：核对数据库尝试记录和 Trace 1.2 脱敏**
 
 ```powershell
-docker compose exec postgres psql -U databricks_agent -d databricks_agent -c "SELECT s.title, mc.invocation_id, mc.model_alias, mc.attempt_number, mc.success, mc.retryable, mc.error_code FROM model_calls mc JOIN sessions s ON s.id = mc.session_id WHERE s.title LIKE '[阶段2冒烟]%' ORDER BY mc.created_at;"
-Get-Content .local/logs/model-calls.jsonl -Tail 2
+docker compose exec postgres psql -U databricks_agent -d databricks_agent -c "SELECT s.id, s.title, mc.invocation_id, mc.model_alias, mc.attempt_number, mc.success, mc.retryable, mc.error_code FROM databricks_agent.model_calls mc JOIN databricks_agent.sessions s ON s.id = mc.session_id WHERE s.id IN ('<deepseek_session_id>', '<openai_session_id>') ORDER BY mc.created_at;"
 ```
 
-数据库应有两个成功尝试且 `attempt_number=1`。最后两行 JSONL 应为 `schema_version=1.2`，请求与响应完整可解析；失败行还必须包含 `provider_error`。再运行以下本地脱敏检查：
+数据库应按本次创建的两个精确会话 ID 查到两个成功尝试，且 `attempt_number=1`。从 JSONL 中按会话 ID 定位本次记录，不依赖“最后两行”；记录应为 `schema_version=1.2`，请求与响应完整可解析。再运行以下本地脱敏检查：
 
 ```powershell
 @'
@@ -1851,10 +1844,12 @@ print("Trace 密钥脱敏检查通过。")
 '@ | uv run --locked python -
 ```
 
-- [ ] **步骤 8：删除真实冒烟会话并复跑最终门禁**
+- [x] **步骤 8：删除真实冒烟会话并复跑最终门禁**
 
 ```powershell
-docker compose exec postgres psql -U databricks_agent -d databricks_agent -c "DELETE FROM sessions WHERE title LIKE '[阶段2冒烟]%';"
+docker compose exec postgres psql -U databricks_agent -d databricks_agent -c "DELETE FROM sessions WHERE id IN ('<deepseek_session_id>', '<openai_session_id>');"
+uv lock --check
+uv run --locked alembic current
 uv run --locked alembic check
 uv run --locked ruff format --check .
 uv run --locked ruff check .
@@ -1862,7 +1857,7 @@ uv run --locked pyright
 uv run --locked pytest --cov=databricks_zh_expert --cov-report=term-missing
 ```
 
-删除会话会通过外键级联删除对应消息和 `model_calls`；本地 Trace 保留两行脱敏记录供开发调试。
+只删除本次两个精确会话 ID；外键会级联删除对应消息和 `model_calls`，本地 Trace 保留两行脱敏记录供开发调试。
 
 - [ ] **步骤 9：建议提交点**
 
@@ -1875,19 +1870,19 @@ git commit -m "docs: complete stage two model gateway setup"
 
 ## 阶段 2 验收清单
 
-- [ ] API 只接受四个固定业务模型别名，非法值在进入 ChatService 前返回 422。
-- [ ] 同一会话的不同消息请求可以选择不同模型，省略模型时使用 `DEFAULT_MODEL`。
-- [ ] ChatService 只依赖 `ModelGateway`，不识别供应商 API 或 LiteLLM ID。
-- [ ] temperature 仅在固定模型目录和 LiteLLM 同时声明支持自定义值时发送；两个 OpenAI reasoning 模型省略该字段，请求不能覆盖全局值。
-- [ ] LiteLLM 隐式重试关闭，每个候选在同一 invocation 中最多调用一次。
-- [ ] 只有超时、429、连接失败和 5xx 触发 fallback；不可重试错误立即终止。
-- [ ] 每个尝试都拥有相同 invocation 下唯一的 `attempt_number`，并分别写入数据库和 Trace。
-- [ ] 成功 API 返回最终 `model_call_id`、`requested_model`、`used_model`、`fallback_used` 和 `attempt_count`。
-- [ ] `GET /api/models` 不返回 API Key 或内部 LiteLLM ID。
-- [ ] 历史 `model_calls` 已无损回填，未知历史模型标识被保留。
-- [ ] Trace 1.2 保留实际请求、脱敏响应和每次失败的脱敏供应商原始错误，且不包含 API Key、Bearer Token 或其他凭据原文。
-- [ ] DeepSeek Flash 与 GPT-5.4 mini 各完成一次真实冒烟；fallback 只由 Fake transport 自动测试。
-- [ ] Ruff、Pyright、pytest、覆盖率、Alembic current 和 Alembic check 全部通过。
+- [x] API 只接受四个固定业务模型别名，非法值在进入 ChatService 前返回 422。
+- [x] 同一会话的不同消息请求可以选择不同模型，省略模型时使用 `DEFAULT_MODEL`。
+- [x] ChatService 只依赖 `ModelGateway`，不识别供应商 API 或 LiteLLM ID。
+- [x] temperature 仅在固定模型目录和 LiteLLM 同时声明支持自定义值时发送；两个 OpenAI reasoning 模型省略该字段，请求不能覆盖全局值。
+- [x] LiteLLM 隐式重试关闭，每个候选在同一 invocation 中最多调用一次。
+- [x] 只有超时、429、连接失败和 5xx 触发 fallback；不可重试错误立即终止。
+- [x] 每个尝试都拥有相同 invocation 下唯一的 `attempt_number`，并分别写入数据库和 Trace。
+- [x] 成功 API 返回最终 `model_call_id`、`requested_model`、`used_model`、`fallback_used` 和 `attempt_count`。
+- [x] `GET /api/models` 不返回 API Key 或内部 LiteLLM ID。
+- [x] 历史 `model_calls` 已无损回填，未知历史模型标识被保留。
+- [x] Trace 1.2 保留实际请求、脱敏响应和每次失败的脱敏供应商原始错误，且不包含 API Key、Bearer Token 或其他凭据原文。
+- [x] DeepSeek Flash 与 GPT-5.4 mini 各完成一次真实冒烟；fallback 只由 Fake transport 自动测试。
+- [x] Ruff、Pyright、pytest、覆盖率、Alembic current 和 Alembic check 全部通过。
 
 ## 参考资料
 
