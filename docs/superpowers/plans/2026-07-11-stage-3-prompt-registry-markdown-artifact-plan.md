@@ -18,6 +18,7 @@
 4. Artifact 格式不合格时返回 `artifact_invalid`，不自动重试，也不触发 fallback。
 5. 默认 Prompt 保持代码常量，不新增环境变量。
 6. Prompt、Artifact 和结构校验元数据写入 `model_calls` 与 Trace 1.3。
+7. SQL 和 PySpark 采用代码优先输出，必要说明写入简短代码注释，不强制标题和文档章节。
 
 ## 全局约束
 
@@ -27,10 +28,11 @@
 4. `knowledge_qa` 注册但不可用，必须在模型调用前返回 `prompt_not_available`。
 5. 模型直接输出 Markdown；Artifact 无效时返回 `artifact_invalid`，不触发 fallback 或第二次模型调用。
 6. 所有 assistant message 必须使用七个业务 Artifact 类型之一，不再写 `markdown`。
-7. 用户可见文本、模板说明、设计和计划使用中文；代码标识符和 API 字段使用英文。
-8. README 只保留启动步骤；本阶段启动命令和环境变量不变，因此默认不修改 README。
-9. 所有 Python 改动后运行 Ruff 和 Pyright/Pylance；阶段收尾运行完整 pytest、覆盖率和 Alembic drift 检查。
-10. 自动测试禁止访问真实模型网络；真实 API Key 只用于最终两次人工验收，不进入 Git 或测试输出。
+7. SQL 和 PySpark 只强制正确语言的代码围栏，并优先使用代码注释说明用途、参数和假设。
+8. 用户可见文本、模板说明、设计和计划使用中文；代码标识符和 API 字段使用英文。
+9. README 只保留启动步骤；本阶段启动命令和环境变量不变，因此默认不修改 README。
+10. 所有 Python 改动后运行 Ruff 和 Pyright/Pylance；阶段收尾运行完整 pytest、覆盖率和 Alembic drift 检查。
+11. 自动测试禁止访问真实模型网络；真实 API Key 只用于最终两次人工验收，不进入 Git 或测试输出。
 
 ## 基线
 
@@ -111,7 +113,7 @@ tests/
 - 产出：`PromptName`、`PromptSpec`、`PROMPT_SPECS`、`DEFAULT_PROMPT`、`PromptUnavailableError`。
 - 后续任务只能从上述固定类型读取 Prompt 和 Artifact 定义。
 
-- [ ] **步骤 1：写固定目录失败测试**
+- [x] **步骤 1：写固定目录失败测试**
 
 创建 `tests/unit/test_prompt_registry.py`，至少覆盖：
 
@@ -153,7 +155,7 @@ def test_knowledge_prompt_is_reserved_for_stage_four() -> None:
     assert knowledge.unavailable_reason == "预置 Databricks 知识库将在阶段 4 启用。"
 ```
 
-- [ ] **步骤 2：确认测试因模块不存在而失败**
+- [x] **步骤 2：确认测试因模块不存在而失败**
 
 ```powershell
 uv run --locked pytest tests/unit/test_prompt_registry.py -q
@@ -161,7 +163,7 @@ uv run --locked pytest tests/unit/test_prompt_registry.py -q
 
 预期：收集阶段出现 `ModuleNotFoundError`，且没有模型网络请求。
 
-- [ ] **步骤 3：添加项目直接依赖**
+- [x] **步骤 3：添加项目直接依赖**
 
 ```powershell
 uv add "jinja2==3.1.6" "markdown-it-py==4.2.0"
@@ -170,7 +172,7 @@ uv lock --check
 
 确认 `pyproject.toml` 直接依赖中出现两个精确版本，`uv.lock` 由 uv 更新，不手工编辑锁文件。
 
-- [ ] **步骤 4：实现 Artifact 领域类型**
+- [x] **步骤 4：实现 Artifact 领域类型**
 
 `src/databricks_zh_expert/artifacts/types.py` 使用以下公开契约：
 
@@ -202,7 +204,7 @@ class ArtifactValidationError(ValueError):
         super().__init__("Markdown Artifact 未通过结构校验。")
 ```
 
-- [ ] **步骤 5：实现固定 Prompt 目录**
+- [x] **步骤 5：实现固定 Prompt 目录**
 
 `PromptSpec` 使用冻结 dataclass，包含设计规格中的九个字段。八个定义的版本统一为 `1.0.0`，映射
 和必需章节必须与设计规格第 7、8 节一致。关键声明为：
@@ -251,9 +253,10 @@ class PromptUnavailableError(ValueError):
 ```
 
 `PROMPT_SPECS` 中七个可用定义的 `available=True`、`unavailable_reason=None`；`knowledge_qa`
-使用 `available=False` 和固定中文原因。
+使用 `available=False` 和固定中文原因。`sql_generation` 与 `pyspark_generation` 的
+`required_sections=()`，其余 Prompt 的必需章节与设计规格一致。
 
-- [ ] **步骤 6：运行聚焦测试和静态检查**
+- [x] **步骤 6：运行聚焦测试和静态检查**
 
 ```powershell
 uv run --locked pytest tests/unit/test_prompt_registry.py -q
@@ -264,7 +267,7 @@ uv run --locked pyright
 
 预期：Prompt 目录测试通过，Pyright 为 0 errors。
 
-- [ ] **步骤 7：提交任务 1**
+- [x] **步骤 7：提交任务 1**
 
 ```powershell
 git add pyproject.toml uv.lock src/databricks_zh_expert/artifacts/types.py src/databricks_zh_expert/prompts/registry.py tests/unit/test_prompt_registry.py
@@ -323,7 +326,7 @@ def test_default_prompt_renders_a_chinese_system_message() -> None:
 def test_sql_prompt_contains_sql_fence_contract() -> None:
     rendered = PromptRegistry.create_default().render(PromptName.SQL_GENERATION)
     assert "语言标识为 `sql`" in rendered.system_message
-    assert "## SQL" in rendered.system_message
+    assert "不输出一级标题" in rendered.system_message
 
 
 def test_reserved_prompt_is_rejected_before_rendering() -> None:
@@ -359,13 +362,17 @@ uv run --locked pytest tests/unit/test_prompt_renderer.py -q
 
 输出规则：
 - 只输出 Markdown，不输出寒暄或格式说明。
+{% if code_fence_language %}
+- 第一块内容必须是语言标识为 `{{ code_fence_language }}` 的 fenced code block。
+- 不输出一级标题或固定文档章节。
+- 用简短代码注释说明用途、输入、参数、关键假设和待确认项。
+- 确有必要时只在代码块后补充少量简短列表项，不先写长篇解释。
+{% else %}
 - 第一行必须是唯一的一级标题 `# 标题`。
 - 必须按以下顺序包含二级标题：
 {% for section in required_sections %}
   - `## {{ section }}`
 {% endfor %}
-{% if code_fence_language %}
-- 至少包含一个语言标识为 `{{ code_fence_language }}` 的 fenced code block。
 {% endif %}
 - 不输出原始 HTML，不用单个 markdown 代码围栏包裹整份文档。
 ```
@@ -385,8 +392,8 @@ uv run --locked pytest tests/unit/test_prompt_renderer.py -q
 
 | 文件 | 任务正文 |
 | --- | --- |
-| `sql_generation.jinja2` | 生成 Databricks SQL 草稿。代码不得声称已执行，参数和表名不确定时使用清晰占位名称并在人工确认事项中解释。 |
-| `pyspark_generation.jinja2` | 生成可放入 Databricks Notebook 的 PySpark 草稿。说明输入、输出、参数、依赖和运行前确认项。 |
+| `sql_generation.jinja2` | 直接生成 Databricks SQL 代码块，不写标题或固定章节。用简短 SQL 注释说明用途、输入、参数、关键假设和待确认项。 |
+| `pyspark_generation.jinja2` | 直接生成可放入 Databricks Notebook 的 Python 代码块，不写标题或固定章节。用简短注释说明输入、输出、参数和关键假设。 |
 | `workflow_design.jinja2` | 把业务需求拆成 Bronze、Silver、Gold、Notebook、Job 依赖、调度、监控和风险设计。 |
 | `document_summary.jinja2` | 总结用户在当前会话中提供的文档或文本，不补写原文不存在的事实。 |
 | `knowledge_qa.jinja2` | 只依据未来提供的预置知识库检索上下文回答并给出来源；没有检索上下文时不得生成答案。 |
@@ -475,14 +482,18 @@ git commit -m "feat: render versioned prompt templates"
 
 - [ ] **步骤 1：写合法 Artifact 参数化测试**
 
-测试为七个可用 Prompt 构造最小合法 Markdown。SQL 使用 `sql` 围栏，PySpark 使用 `python` 围栏；
-其他类型按各自必需章节生成正文。核心断言：
+测试为七个可用 Prompt 构造最小合法 Markdown。SQL 直接以 `sql` 围栏开头，PySpark 直接以
+`python` 围栏开头且都不含 H1；其他类型使用 H1 和各自必需章节。核心断言：
 
 ```python
 artifact = MarkdownArtifactParser().parse(spec, content)
 assert artifact.artifact_type is spec.artifact_type
-assert artifact.title == "测试交付物"
-assert artifact.content.startswith("# 测试交付物")
+if spec.code_fence_language is None:
+    assert artifact.title == "测试交付物"
+    assert artifact.content.startswith("# 测试交付物")
+else:
+    assert artifact.title == spec.display_name
+    assert artifact.content.startswith(f"```{spec.code_fence_language}")
 ```
 
 - [ ] **步骤 2：写非法结构参数化测试**
@@ -505,8 +516,8 @@ def test_invalid_markdown_reports_stable_reason(content: str, reason: str) -> No
     assert reason in caught.value.violations
 ```
 
-再分别测试 `missing_section`、`section_order_invalid`、`missing_sql_fence` 和
-`missing_python_fence`。
+再分别测试 `missing_section`、`section_order_invalid`、`code_fence_not_first`、
+`missing_sql_fence` 和 `missing_python_fence`。SQL/PySpark 只有代码围栏时必须通过。
 
 - [ ] **步骤 3：运行测试并确认 parser 尚不存在**
 
@@ -538,13 +549,14 @@ def normalize_markdown(content: str) -> str:
 
 `MarkdownArtifactParser` 在构造函数中创建 `MarkdownIt("commonmark")`。解析后：
 
-1. `heading_open` 且 `tag == "h1"` 的下一枚 `inline` token 提供标题。
-2. 第一枚非空 block token 必须是 H1。
-3. H1 数量必须为 1。
-4. H2 文本列表必须包含 `spec.required_sections` 的有序子序列。
-5. `fence.info` 的首个词用于语言判断，大小写转小写。
-6. 任一 `html_block` 或 `html_inline` token 产生 `raw_html_not_allowed`。
-7. 一次收集所有违反项，去重后按检查顺序保存到 tuple。
+1. 任一 `html_block` 或 `html_inline` token 产生 `raw_html_not_allowed`。
+2. `spec.code_fence_language` 有值时按代码型 Artifact 校验。
+3. 代码型 Artifact 的第一枚 block token 必须是 `fence`，否则产生 `code_fence_not_first`。
+4. `fence.info` 的首个词必须等于要求语言；SQL 和 PySpark 分别产生稳定的 missing reason。
+5. 代码型 Artifact 不检查 H1/H2，标题固定使用 `spec.display_name`。
+6. 文档型 Artifact 的第一枚 block token 必须是唯一 H1，其下一枚 `inline` token 提供标题。
+7. 文档型 Artifact 的 H2 文本列表必须包含 `spec.required_sections` 的有序子序列。
+8. 一次收集所有违反项，去重后按检查顺序保存到 tuple。
 
 - [ ] **步骤 6：运行聚焦测试和静态检查**
 
@@ -1006,7 +1018,7 @@ assert payload["prompt_version"] == "1.0.0"
 assert payload["artifact"] == {
     "type": "sql",
     "format": "markdown",
-    "title": "每日销售汇总 SQL",
+    "title": "Databricks SQL",
 }
 assert payload["assistant_message"]["artifact_type"] == "sql"
 ```
@@ -1048,8 +1060,8 @@ result = await service.send_message(
 
 1. `ARTIFACT_TYPES` 只使用 `ArtifactType` 值，不再出现 `markdown`。
 2. assistant 演示内容第一行改为 H1。
-3. 每条演示内容按其 Artifact 类型生成最小合法章节。
-4. SQL 和 PySpark 演示数据包含正确代码围栏。
+3. 五类文档型内容生成最小合法标题和章节。
+4. SQL 和 PySpark 演示数据直接输出带简短注释的正确语言代码围栏，不生成固定章节。
 5. 保持 30 个 sessions 和 300 个 messages，可重复删除并重建。
 
 - [ ] **步骤 5：运行 API、会话和演示数据测试**
@@ -1269,8 +1281,8 @@ git commit -m "docs: complete stage three prompt artifact acceptance"
 - [ ] 所有模板使用 Jinja2 `StrictUndefined` 并在应用启动时完成预检。
 - [ ] system message 是每次模型请求第一条消息，历史 system message 不会重复注入。
 - [ ] Markdown 使用 CommonMark AST 校验，不通过正则模拟完整语法。
-- [ ] 七类 Artifact 的 H1、必需章节和章节顺序均受校验。
-- [ ] SQL 和 PySpark 分别要求 `sql` 和 `python` fenced code block。
+- [ ] 五类文档型 Artifact 的 H1、必需章节和章节顺序均受校验。
+- [ ] SQL 和 PySpark 不要求 H1/H2，分别直接以 `sql` 和 `python` fenced code block 开头。
 - [ ] 原始 HTML 被拒绝，外层单个 Markdown 围栏可被规范化。
 - [ ] Artifact 无效不保存 assistant message、不触发 fallback、不自动进行第二次模型调用。
 - [ ] 历史 `messages.artifact_type='markdown'` 已迁移为 `answer`，未知类型受数据库约束拒绝。
