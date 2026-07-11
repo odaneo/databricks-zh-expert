@@ -299,7 +299,7 @@ git commit -m "feat: add prompt and artifact catalogs"
 - 产出：`RenderedPrompt`、`JinjaPromptRenderer`、`PromptRegistry`。
 - `PromptRegistry.render(PromptName | None) -> RenderedPrompt` 是 ChatService 的唯一 Prompt 入口。
 
-- [ ] **步骤 1：写模板渲染失败测试**
+- [x] **步骤 1：写模板渲染失败测试**
 
 测试至少断言：
 
@@ -339,13 +339,13 @@ def test_validate_all_checks_reserved_templates_too() -> None:
     PromptRegistry.create_default().validate_all()
 ```
 
-- [ ] **步骤 2：运行测试并确认 renderer 尚不存在**
+- [x] **步骤 2：运行测试并确认 renderer 尚不存在**
 
 ```powershell
 uv run --locked pytest tests/unit/test_prompt_renderer.py -q
 ```
 
-- [ ] **步骤 3：创建基础系统模板**
+- [x] **步骤 3：创建基础系统模板**
 
 `base_system.jinja2` 使用以下完整骨架：
 
@@ -377,7 +377,7 @@ uv run --locked pytest tests/unit/test_prompt_renderer.py -q
 - 不输出原始 HTML，不用单个 markdown 代码围栏包裹整份文档。
 ```
 
-- [ ] **步骤 4：创建八个任务模板**
+- [x] **步骤 4：创建八个任务模板**
 
 每个模板都继承 `base_system.jinja2`，只在 `task_instructions` block 中声明任务专属规则：
 
@@ -400,7 +400,7 @@ uv run --locked pytest tests/unit/test_prompt_renderer.py -q
 | `proposal_generation.jinja2` | 生成面向项目评审的提案或设计书草案，明确范围、交付物、实施步骤、风险和待确认事项。 |
 | `self_check.jinja2` | 检查当前会话中的交付物是否完整、可实施且符合 Databricks 边界，区分通过项、问题项和修改建议。 |
 
-- [ ] **步骤 5：实现渲染器和注册表**
+- [x] **步骤 5：实现渲染器和注册表**
 
 `JinjaPromptRenderer` 必须使用：
 
@@ -446,7 +446,7 @@ class PromptRegistry:
 `_render_spec()` 传给模板的上下文只包含 `required_sections` 和 `code_fence_language`，不接收用户
 输入。渲染结果使用 `.strip()`，空字符串属于启动配置错误。
 
-- [ ] **步骤 6：运行模板、打包资源和类型检查**
+- [x] **步骤 6：运行模板、打包资源和类型检查**
 
 ```powershell
 uv run --locked pytest tests/unit/test_prompt_registry.py tests/unit/test_prompt_renderer.py -q
@@ -458,7 +458,7 @@ uv run --locked ruff check src tests
 uv run --locked pyright
 ```
 
-- [ ] **步骤 7：提交任务 2**
+- [x] **步骤 7：提交任务 2**
 
 ```powershell
 git add src/databricks_zh_expert/prompts tests/unit/test_prompt_renderer.py

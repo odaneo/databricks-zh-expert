@@ -3,6 +3,7 @@ from enum import StrEnum
 from typing import Final
 
 from databricks_zh_expert.artifacts.types import ArtifactType
+from databricks_zh_expert.prompts.renderer import JinjaPromptRenderer, PromptRenderer
 
 
 class PromptName(StrEnum):
@@ -28,6 +29,14 @@ class PromptSpec:
     code_fence_language: str | None
     available: bool
     unavailable_reason: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class RenderedPrompt:
+    name: PromptName
+    version: str
+    artifact_type: ArtifactType
+    system_message: str
 
 
 DEFAULT_PROMPT: Final[PromptName] = PromptName.DATABRICKS_QA
@@ -176,3 +185,57 @@ class PromptUnavailableError(ValueError):
     def __init__(self, spec: PromptSpec) -> None:
         self.spec = spec
         super().__init__(spec.unavailable_reason or "Prompt 当前不可用。")
+
+
+class PromptRegistry:
+    def __init__(
+        self,
+        *,
+        renderer: PromptRenderer,
+        prompts: tuple[PromptSpec, ...],
+        default_prompt: PromptName,
+    ) -> None:
+        self._renderer = renderer
+        self._prompts = prompts
+        self._default_prompt = default_prompt
+        self._by_name = {spec.name: spec for spec in prompts}
+
+    @property
+    def default_prompt(self) -> PromptName:
+        return self._default_prompt
+
+    @property
+    def prompts(self) -> tuple[PromptSpec, ...]:
+        return self._prompts
+
+    @classmethod
+    def create_default(cls) -> "PromptRegistry":
+        return cls(
+            renderer=JinjaPromptRenderer(),
+            prompts=PROMPT_SPECS,
+            default_prompt=DEFAULT_PROMPT,
+        )
+
+    def get(self, name: PromptName) -> PromptSpec:
+        return self._by_name[name]
+
+    def render(self, requested: PromptName | None) -> RenderedPrompt:
+        spec = self.get(requested or self.default_prompt)
+        if not spec.available:
+            raise PromptUnavailableError(spec)
+        return self._render_spec(spec)
+
+    def validate_all(self) -> None:
+        for spec in self.prompts:
+            self._render_spec(spec)
+
+    def _render_spec(self, spec: PromptSpec) -> RenderedPrompt:
+        system_message = self._renderer.render(spec).strip()
+        if not system_message:
+            raise ValueError(f"Prompt 模板渲染结果不能为空：{spec.name}。")
+        return RenderedPrompt(
+            name=spec.name,
+            version=spec.version,
+            artifact_type=spec.artifact_type,
+            system_message=system_message,
+        )
