@@ -75,10 +75,15 @@ async def send_message(
     payload: SendMessageRequest,
     service: Annotated[ChatService, Depends(get_chat_service)],
 ) -> SendMessageResponse:
-    result = await service.send_message(session_id, payload.content)
+    result = await service.send_message(session_id, payload.content, payload.model)
     return SendMessageResponse(
         session_id=session_id,
         user_message=MessageResponse.model_validate(result.user_message),
         assistant_message=MessageResponse.model_validate(result.assistant_message),
+        model_invocation_id=result.model_invocation_id,
         model_call_id=result.model_call.id,
+        requested_model=result.requested_model,
+        used_model=result.used_model,
+        fallback_used=result.fallback_used,
+        attempt_count=result.attempt_count,
     )

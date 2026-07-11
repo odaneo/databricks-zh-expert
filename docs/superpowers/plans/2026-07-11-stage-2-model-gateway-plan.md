@@ -15,12 +15,12 @@
 3. 供应商只允许 `openai` 和 `deepseek`，不得加入 Claude、Gemini、Azure OpenAI 或其他供应商。
 4. API 只接受 `gpt5.5`、`gpt5.4mini`、`deepseek-v4-flash`、`deepseek-v4-pro` 四个业务别名，不接受 LiteLLM ID；四个实际 ID 固定在代码 `MODEL_SPECS` 中，不写入环境变量。
 5. 默认开发配置固定为 `DEFAULT_MODEL=deepseek-v4-flash`、`FALLBACK_MODELS=deepseek-v4-flash,gpt5.4mini`、`DEFAULT_TEMPERATURE=0.2`。
-6. 每次消息请求的 `model` 可选；省略时使用 `DEFAULT_MODEL`，temperature 不允许由请求覆盖。
+6. 每次消息请求的 `model` 可选；省略时使用 `DEFAULT_MODEL`，temperature 不允许由请求覆盖；只有模型目录和 LiteLLM 都声明支持自定义值时才发送。
 7. 每个候选模型只调用一次，并向 LiteLLM 显式传入 `num_retries=0`。
 8. 只有超时、HTTP 429、连接失败和供应商 HTTP 5xx 可以触发 fallback。
 9. 非法别名、缺少密钥、认证或权限失败、错误参数、模型不存在、空响应和无效响应不得触发 fallback。
 10. 每次实际模型尝试必须独立写入 `model_calls` 和 Trace；数据库写入失败时不得继续调用下一个模型。
-11. HTTP、数据库、Trace 和应用日志均不得包含 API Key、认证头或供应商原始错误文本。
+11. HTTP、数据库和应用日志不得包含供应商原始错误文本、API Key 或认证头值；Trace 可以保存经脱敏的供应商原始错误，但不得包含任何凭据原文。
 12. 外部模型调用期间不得持有数据库事务；Trace 写入失败只记录警告，不中断聊天和 fallback。
 13. 自动测试不得访问真实模型网络；真实验收只各调用一次 `deepseek-v4-flash` 和 `gpt5.4mini`。
 14. README 只保留启动所需步骤，不加入架构说明、测试案例或预期输出长文。
@@ -34,7 +34,7 @@
 
 ```text
 src/databricks_zh_expert/core/config.py              模型环境配置、CSV 解析和启动校验
-src/databricks_zh_expert/llm/model_registry.py       固定业务别名、模型定义和配置状态
+src/databricks_zh_expert/llm/model_registry.py       固定业务别名、模型定义、配置状态和参数能力
 src/databricks_zh_expert/llm/client.py               传输层消息、请求结果和 Protocol
 src/databricks_zh_expert/llm/litellm_client.py       单次 LiteLLM Chat Completions 传输适配器
 src/databricks_zh_expert/llm/gateway.py              fallback 状态机、错误分类和 ModelAttempt
@@ -46,14 +46,14 @@ src/databricks_zh_expert/api/models.py               GET /api/models
 src/databricks_zh_expert/api/dependencies.py         Registry、Transport、Gateway 和 Service 装配
 src/databricks_zh_expert/api/chat.py                 把请求模型传入 ChatService
 src/databricks_zh_expert/db/models.py                model_calls 尝试分组字段和约束
-src/databricks_zh_expert/observability/model_trace.py Trace 1.1 尝试元数据
+src/databricks_zh_expert/observability/model_trace.py Trace 1.2 尝试元数据和脱敏供应商原始错误
 src/databricks_zh_expert/main.py                     注册模型列表路由
 alembic/versions/0002_model_gateway_attempts.py      历史数据回填和新约束迁移
 tests/unit/test_model_registry.py                    白名单与注册表测试
 tests/unit/test_litellm_client.py                    单次传输、参数能力和脱敏测试
 tests/unit/test_model_gateway.py                     候选顺序、错误分类和 fallback 测试
 tests/unit/test_chat_service.py                      每次尝试持久化及错误映射测试
-tests/unit/test_model_trace.py                       Trace 1.1 序列化测试
+tests/unit/test_model_trace.py                       Trace 1.2 序列化测试
 tests/unit/test_config.py                            环境配置和启动校验测试
 tests/unit/test_models.py                            SQLAlchemy 字段和约束测试
 tests/integration/test_migrations.py                 迁移结构和历史数据回填测试
@@ -1521,8 +1521,16 @@ git commit -m "feat: persist model gateway attempts"
 - 修改：`src/databricks_zh_expert/api/chat.py`
 - 修改：`src/databricks_zh_expert/api/dependencies.py`
 - 修改：`src/databricks_zh_expert/main.py`
+- 修改：`src/databricks_zh_expert/llm/gateway.py`
+- 修改：`src/databricks_zh_expert/llm/model_registry.py`
+- 修改：`src/databricks_zh_expert/llm/litellm_client.py`
+- 修改：`src/databricks_zh_expert/observability/model_trace.py`
 - 修改：`tests/integration/test_messages_api.py`
-- 修改：`tests/conftest.py`
+- 修改：`tests/unit/test_model_gateway.py`
+- 修改：`tests/unit/test_model_registry.py`
+- 修改：`tests/unit/test_litellm_client.py`
+- 修改：`tests/unit/test_model_trace.py`
+- 复用：`tests/conftest.py`（现有 `settings_factory` 已满足测试需要）
 
 **接口：**
 
@@ -1531,7 +1539,7 @@ git commit -m "feat: persist model gateway attempts"
 - 产出：消息成功响应新增 `model_invocation_id`、`requested_model`、`used_model`、`fallback_used`、`attempt_count`。
 - 产出：FastAPI 依赖 `get_model_registry()`、`get_model_transport()`、`get_model_gateway()`。
 
-- [ ] **步骤 1：先写模型列表 API 失败测试**
+- [x] **步骤 1：先写模型列表 API 失败测试**
 
 创建 `tests/integration/test_models_api.py`：
 
@@ -1560,7 +1568,7 @@ async def test_list_models_returns_aliases_without_internal_ids_or_keys(
 
 使用 `settings_factory(openai_api_key="key", deepseek_api_key=None)` 的独立 app 再断言两个 OpenAI 模型 `configured=true`，两个 DeepSeek 模型 `configured=false`。
 
-- [ ] **步骤 2：先改写消息 API 的请求选模和 fallback 测试**
+- [x] **步骤 2：先改写消息 API 的请求选模和 fallback 测试**
 
 `tests/integration/test_messages_api.py` 把依赖覆盖从 `get_model_client` 改为 `get_model_gateway`。Fake Gateway 对显式 `gpt5.5` 依次 yield 一次可重试失败和一次 `gpt5.4mini` 成功，固定断言：
 
@@ -1581,7 +1589,7 @@ assert payload["model_invocation_id"] == str(fake_gateway.invocation_id)
 
 查询数据库并断言同一 `invocation_id` 有两条记录，`model_call_id` 等于第二条成功记录。另增加：省略 `model` 时 Fake Gateway 收到 `None`；`model="unknown"` 返回 422 和 `validation_error`，且 Fake Gateway 未被调用。
 
-- [ ] **步骤 3：运行 API 测试并确认失败**
+- [x] **步骤 3：运行 API 测试并确认失败**
 
 ```powershell
 uv run --locked pytest tests/integration/test_models_api.py tests/integration/test_messages_api.py -v
@@ -1589,7 +1597,7 @@ uv run --locked pytest tests/integration/test_models_api.py tests/integration/te
 
 预期：模型列表路由、新 Schema 和新依赖尚不存在，测试失败。
 
-- [ ] **步骤 4：定义模型列表 Schema 和路由**
+- [x] **步骤 4：定义模型列表 Schema 和路由**
 
 `src/databricks_zh_expert/api/model_schemas.py`：
 
@@ -1614,7 +1622,7 @@ class ModelListResponse(BaseModel):
 
 `src/databricks_zh_expert/api/models.py` 创建 `APIRouter(prefix="/api/models", tags=["模型"])`，GET 根路径从注入的 `ModelRegistry` 构造上述响应。不得返回 `litellm_model` 或任何 SecretStr。
 
-- [ ] **步骤 5：扩展聊天请求与响应 Schema**
+- [x] **步骤 5：扩展聊天请求与响应 Schema**
 
 `src/databricks_zh_expert/chat/schemas.py` 修改为：
 
@@ -1638,7 +1646,7 @@ class SendMessageResponse(BaseModel):
 
 `api/chat.py` 调用 `await service.send_message(session_id, payload.content, payload.model)`，并逐字段映射 `SendMessageResult`；`model_call_id` 始终取最终成功尝试。
 
-- [ ] **步骤 6：重写依赖装配**
+- [x] **步骤 6：重写依赖装配**
 
 `api/dependencies.py` 删除 `get_model_client()`，增加：
 
@@ -1656,15 +1664,21 @@ def get_model_transport(
 
 
 def get_model_gateway(
+    settings: Annotated[Settings, Depends(get_app_settings)],
     registry: Annotated[ModelRegistry, Depends(get_model_registry)],
     transport: Annotated[ModelTransport, Depends(get_model_transport)],
 ) -> ModelGateway:
-    return FallbackModelGateway(registry, transport)
+    sensitive_values = tuple(
+        secret.get_secret_value()
+        for secret in (settings.openai_api_key, settings.deepseek_api_key)
+        if secret is not None and secret.get_secret_value()
+    )
+    return FallbackModelGateway(registry, transport, sensitive_values)
 ```
 
 `get_chat_service()` 注入 `ModelGateway`。`main.py` 导入并注册 `models_router`，保留 health 和 chat 路由顺序。测试通过覆盖 `get_model_gateway` 保证不访问公网。
 
-- [ ] **步骤 7：运行 API 与完整自动测试**
+- [x] **步骤 7：运行 API 与完整自动测试**
 
 ```powershell
 uv run --locked pytest tests/integration/test_models_api.py tests/integration/test_messages_api.py -v
@@ -1676,10 +1690,44 @@ uv run --locked pyright
 
 预期：全部测试通过，分支覆盖率不低于 80%，Ruff 和 Pyright 为 0 errors；自动测试期间没有真实模型调用。
 
-- [ ] **步骤 8：建议提交点**
+实际结果：96 项测试通过，覆盖率 92.20%；Ruff、Pyright 和 `uv lock --check` 全部通过，测试期间未调用真实模型。
+
+- [x] **步骤 8：升级 Trace 1.2 并记录脱敏供应商原始错误**
+
+每个失败 `ModelAttempt.error` 在现有 OpenAI 风格安全字段之外增加 `provider_error`：
+
+```json
+{
+  "provider_error": {
+    "message": "供应商原始错误文本",
+    "status_code": 400,
+    "code": "invalid_request_error",
+    "request_id": "req_123"
+  }
+}
+```
+
+该字段不受错误分类或状态码限制，每次失败均写入；HTTP 响应和数据库仍只保存中文安全摘要。写入前必须脱敏 Settings 中的全部 API Key，以及 `sk-*`、Bearer 和命名凭据模式。新行使用 `schema_version="1.2"`，旧 JSONL 不迁移、不覆盖。
+
+实际结果：102 项测试通过，覆盖率 92.39%；Ruff、Pyright 和 `uv lock --check` 全部通过。
+
+- [x] **步骤 9：修复 OpenAI reasoning 模型的 temperature 参数能力**
+
+真实 `gpt5.5` 调用返回 `unsupported_value`，证明 LiteLLM 的参数名支持列表不能表达“只允许默认 temperature=1”。在固定模型目录增加 `supports_custom_temperature`：
+
+- `gpt5.5=false`
+- `gpt5.4mini=false`
+- `deepseek-v4-flash=true`
+- `deepseek-v4-pro=true`
+
+`LiteLLMTransport.build_request()` 只有在模型目录允许且 LiteLLM 返回 `temperature` 支持时，才发送 `DEFAULT_TEMPERATURE`。两个 OpenAI reasoning 模型省略该字段，两个 DeepSeek 模型继续使用开发配置 `0.2`。
+
+实际结果：103 项测试通过，覆盖率 92.41%；Ruff 和 Pyright 全部通过。
+
+- [x] **步骤 10：建议提交点**
 
 ```powershell
-git add src/databricks_zh_expert/api src/databricks_zh_expert/chat/schemas.py src/databricks_zh_expert/main.py tests/conftest.py tests/integration/test_messages_api.py tests/integration/test_models_api.py
+git add src/databricks_zh_expert/api src/databricks_zh_expert/chat/schemas.py src/databricks_zh_expert/main.py src/databricks_zh_expert/llm/gateway.py src/databricks_zh_expert/llm/model_registry.py src/databricks_zh_expert/llm/litellm_client.py src/databricks_zh_expert/observability/model_trace.py tests/integration/test_messages_api.py tests/integration/test_models_api.py tests/unit/test_model_gateway.py tests/unit/test_model_registry.py tests/unit/test_litellm_client.py tests/unit/test_model_trace.py
 git commit -m "feat: expose request level model selection"
 ```
 
@@ -1780,14 +1828,14 @@ $openaiResult | ConvertTo-Json -Depth 5
 
 确认 `requested_model` 和 `used_model` 均为 `gpt5.4mini`、`fallback_used=false`、`attempt_count=1`。不通过制造真实供应商故障验证 fallback。
 
-- [ ] **步骤 7：核对数据库尝试记录和 Trace 1.1 脱敏**
+- [ ] **步骤 7：核对数据库尝试记录和 Trace 1.2 脱敏**
 
 ```powershell
 docker compose exec postgres psql -U databricks_agent -d databricks_agent -c "SELECT s.title, mc.invocation_id, mc.model_alias, mc.attempt_number, mc.success, mc.retryable, mc.error_code FROM model_calls mc JOIN sessions s ON s.id = mc.session_id WHERE s.title LIKE '[阶段2冒烟]%' ORDER BY mc.created_at;"
 Get-Content .local/logs/model-calls.jsonl -Tail 2
 ```
 
-数据库应有两个成功尝试且 `attempt_number=1`。最后两行 JSONL 应为 `schema_version=1.1`，请求与响应完整可解析。再运行以下本地脱敏检查：
+数据库应有两个成功尝试且 `attempt_number=1`。最后两行 JSONL 应为 `schema_version=1.2`，请求与响应完整可解析；失败行还必须包含 `provider_error`。再运行以下本地脱敏检查：
 
 ```powershell
 @'
@@ -1830,14 +1878,14 @@ git commit -m "docs: complete stage two model gateway setup"
 - [ ] API 只接受四个固定业务模型别名，非法值在进入 ChatService 前返回 422。
 - [ ] 同一会话的不同消息请求可以选择不同模型，省略模型时使用 `DEFAULT_MODEL`。
 - [ ] ChatService 只依赖 `ModelGateway`，不识别供应商 API 或 LiteLLM ID。
-- [ ] temperature 仅在 LiteLLM 声明当前模型支持时发送，请求不能覆盖全局值。
+- [ ] temperature 仅在固定模型目录和 LiteLLM 同时声明支持自定义值时发送；两个 OpenAI reasoning 模型省略该字段，请求不能覆盖全局值。
 - [ ] LiteLLM 隐式重试关闭，每个候选在同一 invocation 中最多调用一次。
 - [ ] 只有超时、429、连接失败和 5xx 触发 fallback；不可重试错误立即终止。
 - [ ] 每个尝试都拥有相同 invocation 下唯一的 `attempt_number`，并分别写入数据库和 Trace。
 - [ ] 成功 API 返回最终 `model_call_id`、`requested_model`、`used_model`、`fallback_used` 和 `attempt_count`。
 - [ ] `GET /api/models` 不返回 API Key 或内部 LiteLLM ID。
 - [ ] 历史 `model_calls` 已无损回填，未知历史模型标识被保留。
-- [ ] Trace 1.1 保留实际请求和脱敏响应，失败记录不包含供应商原始错误文本。
+- [ ] Trace 1.2 保留实际请求、脱敏响应和每次失败的脱敏供应商原始错误，且不包含 API Key、Bearer Token 或其他凭据原文。
 - [ ] DeepSeek Flash 与 GPT-5.4 mini 各完成一次真实冒烟；fallback 只由 Fake transport 自动测试。
 - [ ] Ruff、Pyright、pytest、覆盖率、Alembic current 和 Alembic check 全部通过。
 

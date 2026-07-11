@@ -26,6 +26,7 @@ class ModelSpec:
     display_name: str
     provider: ModelProvider
     litellm_model: str
+    supports_custom_temperature: bool
 
 
 MODEL_SPECS: Final[tuple[ModelSpec, ...]] = (
@@ -34,24 +35,28 @@ MODEL_SPECS: Final[tuple[ModelSpec, ...]] = (
         display_name="GPT-5.5",
         provider=ModelProvider.OPENAI,
         litellm_model="openai/gpt-5.5",
+        supports_custom_temperature=False,
     ),
     ModelSpec(
         alias=ModelAlias.GPT_54_MINI,
         display_name="GPT-5.4 mini",
         provider=ModelProvider.OPENAI,
         litellm_model="openai/gpt-5.4-mini",
+        supports_custom_temperature=False,
     ),
     ModelSpec(
         alias=ModelAlias.DEEPSEEK_V4_FLASH,
         display_name="DeepSeek V4 Flash",
         provider=ModelProvider.DEEPSEEK,
         litellm_model="deepseek/deepseek-v4-flash",
+        supports_custom_temperature=True,
     ),
     ModelSpec(
         alias=ModelAlias.DEEPSEEK_V4_PRO,
         display_name="DeepSeek V4 Pro",
         provider=ModelProvider.DEEPSEEK,
         litellm_model="deepseek/deepseek-v4-pro",
+        supports_custom_temperature=True,
     ),
 )
 MODEL_ALIASES: Final[tuple[ModelAlias, ...]] = tuple(spec.alias for spec in MODEL_SPECS)
@@ -64,6 +69,7 @@ class ModelDefinition:
     provider: ModelProvider
     litellm_model: str
     configured: bool
+    supports_custom_temperature: bool
 
 
 class ModelRegistry:
@@ -111,6 +117,7 @@ class ModelRegistry:
                     provider=spec.provider,
                     litellm_model=spec.litellm_model,
                     configured=provider_configuration[spec.provider],
+                    supports_custom_temperature=spec.supports_custom_temperature,
                 )
                 for spec in MODEL_SPECS
             ),

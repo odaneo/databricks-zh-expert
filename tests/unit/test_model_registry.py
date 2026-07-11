@@ -21,6 +21,10 @@ def test_registry_exposes_only_the_fixed_model_aliases(settings_factory) -> None
     assert [model.alias for model in registry.models] == list(MODEL_ALIASES)
     assert registry.get(ModelAlias.GPT_55).litellm_model == "openai/gpt-5.5"
     assert registry.get(ModelAlias.DEEPSEEK_V4_FLASH).provider is ModelProvider.DEEPSEEK
+    assert registry.get(ModelAlias.GPT_55).supports_custom_temperature is False
+    assert registry.get(ModelAlias.GPT_54_MINI).supports_custom_temperature is False
+    assert registry.get(ModelAlias.DEEPSEEK_V4_FLASH).supports_custom_temperature is True
+    assert registry.get(ModelAlias.DEEPSEEK_V4_PRO).supports_custom_temperature is True
     assert registry.default_model is ModelAlias.DEEPSEEK_V4_FLASH
     assert registry.fallback_models == (
         ModelAlias.DEEPSEEK_V4_FLASH,
@@ -35,22 +39,25 @@ def test_model_specs_are_the_single_fixed_model_catalog() -> None:
             spec.display_name,
             spec.provider.value,
             spec.litellm_model,
+            spec.supports_custom_temperature,
         )
         for spec in MODEL_SPECS
     ] == [
-        ("gpt5.5", "GPT-5.5", "openai", "openai/gpt-5.5"),
-        ("gpt5.4mini", "GPT-5.4 mini", "openai", "openai/gpt-5.4-mini"),
+        ("gpt5.5", "GPT-5.5", "openai", "openai/gpt-5.5", False),
+        ("gpt5.4mini", "GPT-5.4 mini", "openai", "openai/gpt-5.4-mini", False),
         (
             "deepseek-v4-flash",
             "DeepSeek V4 Flash",
             "deepseek",
             "deepseek/deepseek-v4-flash",
+            True,
         ),
         (
             "deepseek-v4-pro",
             "DeepSeek V4 Pro",
             "deepseek",
             "deepseek/deepseek-v4-pro",
+            True,
         ),
     ]
 

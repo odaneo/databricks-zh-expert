@@ -47,10 +47,16 @@ def get_model_transport(
 
 
 def get_model_gateway(
+    settings: Annotated[Settings, Depends(get_app_settings)],
     registry: Annotated[ModelRegistry, Depends(get_model_registry)],
     transport: Annotated[ModelTransport, Depends(get_model_transport)],
 ) -> ModelGateway:
-    return FallbackModelGateway(registry, transport)
+    sensitive_values = tuple(
+        secret.get_secret_value()
+        for secret in (settings.openai_api_key, settings.deepseek_api_key)
+        if secret is not None and secret.get_secret_value()
+    )
+    return FallbackModelGateway(registry, transport, sensitive_values)
 
 
 def get_model_trace_sink(request: Request) -> ModelTraceSink:

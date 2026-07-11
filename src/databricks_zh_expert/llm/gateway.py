@@ -1,3 +1,4 @@
+import re
 import time
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
@@ -33,6 +34,12 @@ RETRYABLE_EXCEPTION_TYPES = (
     APIConnectionError,
     InternalServerError,
     ServiceUnavailableError,
+)
+API_KEY_PATTERN = re.compile(r"\bsk-[A-Za-z0-9_-]{8,}\b")
+BEARER_PATTERN = re.compile(r"(?i)(\bBearer\s+)[^\s,;\"']+")
+NAMED_CREDENTIAL_PATTERN = re.compile(
+    r"(?i)(\b(?:api[_-]?key|access[_-]?token|refresh[_-]?token|token|password|"
+    r"client[_-]?secret)\b[\"']?\s*[:=]\s*[\"']?)([^\"',;\s\[\]{}]+)"
 )
 
 
@@ -144,6 +151,39 @@ def classify_model_error(error: Exception) -> ErrorClassification:
     )
 
 
+def redact_sensitive_text(value: str, sensitive_values: tuple[str, ...]) -> str:
+    redacted = value
+    for sensitive_value in sorted(set(sensitive_values), key=len, reverse=True):
+        if sensitive_value:
+            redacted = redacted.replace(sensitive_value, "[REDACTED]")
+    redacted = API_KEY_PATTERN.sub("[REDACTED]", redacted)
+    redacted = BEARER_PATTERN.sub(r"\1[REDACTED]", redacted)
+    return NAMED_CREDENTIAL_PATTERN.sub(r"\1[REDACTED]", redacted)
+
+
+def build_provider_error(
+    error: Exception,
+    sensitive_values: tuple[str, ...],
+) -> JsonObject:
+    status_code = getattr(error, "status_code", None)
+    provider_code = getattr(error, "code", None)
+    request_id = getattr(error, "request_id", None)
+    return {
+        "message": redact_sensitive_text(str(error), sensitive_values),
+        "status_code": status_code if isinstance(status_code, int) else None,
+        "code": (
+            redact_sensitive_text(str(provider_code), sensitive_values)
+            if provider_code is not None
+            else None
+        ),
+        "request_id": (
+            redact_sensitive_text(str(request_id), sensitive_values)
+            if request_id is not None
+            else None
+        ),
+    }
+
+
 def build_failed_attempt(
     *,
     invocation_id: UUID,
@@ -154,6 +194,7 @@ def build_failed_attempt(
     latency_ms: int,
     error: Exception,
     classification: ErrorClassification,
+    sensitive_values: tuple[str, ...],
 ) -> ModelAttempt:
     return ModelAttempt(
         invocation_id=invocation_id,
@@ -175,6 +216,7 @@ def build_failed_attempt(
             "type": type(error).__name__,
             "param": None,
             "code": classification.attempt_code,
+            "provider_error": build_provider_error(error, sensitive_values),
         },
     )
 
@@ -209,9 +251,15 @@ def build_successful_attempt(
 
 
 class FallbackModelGateway:
-    def __init__(self, registry: ModelRegistry, transport: ModelTransport) -> None:
+    def __init__(
+        self,
+        registry: ModelRegistry,
+        transport: ModelTransport,
+        sensitive_values: tuple[str, ...] = (),
+    ) -> None:
         self._registry = registry
         self._transport = transport
+        self._sensitive_values = sensitive_values
 
     async def run(
         self,
@@ -245,6 +293,7 @@ class FallbackModelGateway:
                     latency_ms=elapsed_ms(started_at),
                     error=error,
                     classification=classification,
+                    sensitive_values=self._sensitive_values,
                 )
                 if not classification.retryable:
                     raise ModelGatewayFailure(

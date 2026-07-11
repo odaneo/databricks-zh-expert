@@ -12,6 +12,7 @@ from litellm.exceptions import (
     Timeout,
 )
 
+from databricks_zh_expert.api.dependencies import get_model_gateway
 from databricks_zh_expert.core.config import Settings
 from databricks_zh_expert.core.errors import AppError
 from databricks_zh_expert.llm.client import (
@@ -36,8 +37,17 @@ type TransportOutcome = ModelTransportResult | Exception
 
 
 class FakeProviderError(Exception):
-    def __init__(self, status_code: int | None, message: str = "供应商原始 secret") -> None:
+    def __init__(
+        self,
+        status_code: int | None,
+        message: str = "供应商原始错误详情",
+        *,
+        code: str | None = "provider_error_code",
+        request_id: str | None = "req-test-123",
+    ) -> None:
         self.status_code = status_code
+        self.code = code
+        self.request_id = request_id
         super().__init__(message)
 
 
@@ -112,6 +122,7 @@ def make_gateway(
     gateway = FallbackModelGateway(
         registry=ModelRegistry.from_settings(settings),
         transport=transport,
+        sensitive_values=("openai-key", "deepseek-key"),
     )
     return gateway, transport
 
@@ -187,6 +198,12 @@ async def test_retryable_429_falls_back_and_keeps_one_invocation_id(
         "type": "FakeProviderError",
         "param": None,
         "code": "model_rate_limited",
+        "provider_error": {
+            "message": "供应商原始错误详情",
+            "status_code": 429,
+            "code": "provider_error_code",
+            "request_id": "req-test-123",
+        },
     }
     assert attempts[0].response is None
     assert attempts[0].content is None
@@ -199,6 +216,81 @@ async def test_retryable_429_falls_back_and_keeps_one_invocation_id(
     assert attempts[1].completion_tokens == 3
     assert attempts[1].response == make_transport_result("fallback 成功").api_response
     assert all(attempt.latency_ms >= 0 for attempt in attempts)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status_code", [None, 400, 401, 429, 500])
+async def test_every_failed_attempt_includes_original_provider_error(
+    settings_factory: SettingsFactory,
+    status_code: int | None,
+) -> None:
+    gateway, _ = make_gateway(
+        settings_factory,
+        outcomes={ModelAlias.GPT_55: FakeProviderError(status_code)},
+        fallback_models=(),
+    )
+    iterator = gateway.run([], ModelAlias.GPT_55)
+
+    failed_attempt = await anext(iterator)
+    with pytest.raises(ModelGatewayFailure):
+        await anext(iterator)
+
+    assert failed_attempt.error is not None
+    assert failed_attempt.error["provider_error"] == {
+        "message": "供应商原始错误详情",
+        "status_code": status_code,
+        "code": "provider_error_code",
+        "request_id": "req-test-123",
+    }
+
+
+@pytest.mark.asyncio
+async def test_gateway_dependency_redacts_credentials_from_original_error(
+    settings_factory: SettingsFactory,
+) -> None:
+    settings = settings_factory(
+        default_model="gpt5.5",
+        fallback_models=(),
+        openai_api_key="openai-private-value",
+        deepseek_api_key="deepseek-private-value",
+    )
+    registry = ModelRegistry.from_settings(settings)
+    transport = FakeModelTransport(
+        {
+            ModelAlias.GPT_55: FakeProviderError(
+                400,
+                message=(
+                    "Authorization: Bearer openai-private-value; "
+                    "api_key=sk-unconfigured-sensitive-value; "
+                    "details=deepseek-private-value; "
+                    'payload={"api_key":"unconfigured-json-key",'
+                    '"password":"plain-password"}'
+                ),
+            )
+        }
+    )
+    gateway = get_model_gateway(
+        settings=settings,
+        registry=registry,
+        transport=transport,
+    )
+    iterator = gateway.run([], ModelAlias.GPT_55)
+
+    failed_attempt = await anext(iterator)
+    with pytest.raises(ModelGatewayFailure):
+        await anext(iterator)
+
+    assert failed_attempt.error is not None
+    assert failed_attempt.error["provider_error"] == {
+        "message": (
+            "Authorization: Bearer [REDACTED]; api_key=[REDACTED]; "
+            'details=[REDACTED]; payload={"api_key":"[REDACTED]",'
+            '"password":"[REDACTED]"}'
+        ),
+        "status_code": 400,
+        "code": "provider_error_code",
+        "request_id": "req-test-123",
+    }
 
 
 @pytest.mark.asyncio
@@ -322,7 +414,7 @@ async def test_non_retryable_provider_status_stops_immediately(
         (
             AppError(
                 code="model_not_configured",
-                message="原始配置错误 secret",
+                message="原始配置错误 openai-key",
                 status_code=503,
             ),
             "model_not_configured",
@@ -330,7 +422,7 @@ async def test_non_retryable_provider_status_stops_immediately(
         (
             AppError(
                 code="model_empty_response",
-                message="原始空响应 secret",
+                message="原始空响应 openai-key",
                 status_code=502,
             ),
             "model_request_failed",
@@ -338,7 +430,7 @@ async def test_non_retryable_provider_status_stops_immediately(
         (
             AppError(
                 code="model_invalid_response",
-                message="原始无效响应 secret",
+                message="原始无效响应 openai-key",
                 status_code=502,
             ),
             "model_request_failed",
@@ -364,8 +456,9 @@ async def test_application_errors_never_fallback_even_with_5xx_status(
     assert failed_attempt.retryable is False
     assert error.value.code == terminal_code
     assert transport.called_aliases == [ModelAlias.GPT_55]
-    assert "secret" not in str(failed_attempt.error)
-    assert "secret" not in error.value.message
+    assert "openai-key" not in str(failed_attempt.error)
+    assert "[REDACTED]" in str(failed_attempt.error)
+    assert "openai-key" not in error.value.message
 
 
 @pytest.mark.parametrize(

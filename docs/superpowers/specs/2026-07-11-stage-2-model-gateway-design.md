@@ -24,7 +24,7 @@
 
 1. 请求通过业务别名选择模型，不接受 LiteLLM 模型 ID。
 2. `model` 字段可选，省略时使用 `DEFAULT_MODEL`。
-3. temperature 只从全局环境配置读取，本阶段不允许请求覆盖。
+3. temperature 只从全局环境配置读取，本阶段不允许请求覆盖；模型目录可以禁止发送自定义值。
 4. fallback 使用全局有序列表，不为每个主模型维护单独列表。
 5. 只有超时、限流、连接失败和供应商 5xx 可以触发 fallback。
 6. 参数、白名单、密钥、认证、权限和模型不存在等错误不得触发 fallback。
@@ -42,7 +42,7 @@
 4. LiteLLM 单次调用适配器。
 5. 可重试错误分类和串行 fallback。
 6. `model_calls` 尝试分组字段和 Alembic 迁移。
-7. Trace 1.1 尝试元数据。
+7. Trace 1.2 尝试元数据和脱敏供应商原始错误。
 8. OpenAI 与 DeepSeek 各一次真实冒烟验证。
 
 ### 4.2 不包含
@@ -182,12 +182,15 @@ error
 
 ## 8. 参数能力
 
-全局 `DEFAULT_TEMPERATURE` 是期望值，不代表所有供应商模型都支持该参数。
-`LiteLLMTransport` 使用当前锁定版本提供的 `get_supported_openai_params()` 检查实际模型能力：
+全局 `DEFAULT_TEMPERATURE` 是期望值，不代表所有供应商模型都支持自定义值。固定 `MODEL_SPECS`
+记录 `supports_custom_temperature`，`LiteLLMTransport` 再使用当前锁定版本提供的
+`get_supported_openai_params()` 检查参数名能力：
 
-1. 支持 `temperature` 时，将其放入实际请求。
-2. 不支持时省略该字段，不将参数不兼容误判为供应商故障。
-3. Trace 的 `request` 只记录实际发送的字段。
+1. 模型目录允许自定义 temperature，且 LiteLLM 声明支持时，才将全局值放入实际请求。
+2. `gpt5.5` 和 `gpt5.4mini` 属于 OpenAI reasoning 模型，省略 temperature 并使用供应商默认值。
+3. `deepseek-v4-flash` 和 `deepseek-v4-pro` 允许使用全局 temperature。
+4. 任一能力检查不满足时省略该字段，不将参数不兼容误判为供应商故障。
+5. Trace 的 `request` 只记录实际发送的字段。
 
 阶段 2 不增加 reasoning effort、thinking mode、top-p 或模型专属参数。相关策略在后续 Prompt 或
 任务编排阶段单独设计。
@@ -378,8 +381,10 @@ retryable
 | `model_request_failed` | 502 | 不可重试的供应商或响应错误 |
 | `model_fallback_exhausted` | 502 | 所有可用候选均发生可重试失败 |
 
-HTTP 响应不包含供应商原始错误文本、API Key、请求头或内部 fallback 列表。数据库和 Trace 只记录
-错误类型、稳定错误代码和中文安全摘要。
+HTTP 响应不包含供应商原始错误文本、API Key、请求头或内部 fallback 列表。数据库只记录错误类型、
+稳定错误代码和中文安全摘要。Trace 1.2 在相同安全字段之外，为每次失败增加 `provider_error`，记录
+脱敏后的供应商原始 message、HTTP 状态码、供应商错误码和 request ID；任何 API Key、Bearer Token、
+认证头值、密码或命名凭据都必须替换为 `[REDACTED]`。
 
 ## 14. 事务和持久化顺序
 
@@ -404,7 +409,7 @@ HTTP 响应不包含供应商原始错误文本、API Key、请求头或内部 f
 7. 可重试错误触发 fallback。
 8. 密钥、认证、参数和模型不存在错误立即停止。
 9. 全部候选失败时返回 `model_fallback_exhausted`。
-10. temperature 只在 LiteLLM 声明支持时发送。
+10. temperature 只在固定模型目录和 LiteLLM 同时允许时发送；两个 OpenAI reasoning 模型不发送自定义值。
 11. 每次尝试都产生独立数据库输入和 Trace 输入。
 
 所有单元测试使用 Fake Transport，不读取真实 API Key、不访问模型网络。
@@ -426,7 +431,7 @@ HTTP 响应不包含供应商原始错误文本、API Key、请求头或内部 f
 1. `deepseek-v4-flash` 一次短请求。
 2. `gpt5.4mini` 一次短请求。
 
-真实冒烟验证模型选择、token、数据库记录、Trace 1.1 和密钥脱敏。fallback 只使用 Fake Transport
+真实冒烟验证模型选择、token、数据库记录、Trace 1.2 和密钥脱敏。fallback 只使用 Fake Transport
 验证，不通过故意触发供应商故障来测试。
 
 ## 16. 文档约束
@@ -444,7 +449,7 @@ HTTP 响应不包含供应商原始错误文本、API Key、请求头或内部 f
 3. ChatService 只依赖 `ModelGateway`，不识别供应商或 LiteLLM ID。
 4. 主模型发生可重试错误时按全局列表顺序 fallback。
 5. 不可重试错误不触发 fallback。
-6. 每次尝试均有独立 `model_calls` 和 Trace 1.1 记录。
+6. 每次尝试均有独立 `model_calls` 和 Trace 1.2 记录。
 7. API 明确返回请求模型、实际模型、fallback 状态和尝试次数。
 8. 四个模型别名、配置和迁移均有自动测试。
 9. OpenAI 与 DeepSeek 各完成一次真实冒烟。

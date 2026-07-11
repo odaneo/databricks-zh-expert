@@ -12,6 +12,7 @@ from databricks_zh_expert.llm.model_registry import (
     ModelAlias,
     ModelDefinition,
     ModelProvider,
+    ModelRegistry,
 )
 
 
@@ -22,6 +23,7 @@ def make_deepseek_model(*, configured: bool = True) -> ModelDefinition:
         provider=ModelProvider.DEEPSEEK,
         litellm_model="deepseek/deepseek-v4-flash",
         configured=configured,
+        supports_custom_temperature=True,
     )
 
 
@@ -32,6 +34,7 @@ def make_openai_model(*, configured: bool = True) -> ModelDefinition:
         provider=ModelProvider.OPENAI,
         litellm_model="openai/gpt-5.4-mini",
         configured=configured,
+        supports_custom_temperature=False,
     )
 
 
@@ -74,6 +77,28 @@ def test_build_request_omits_unsupported_temperature(settings_factory) -> None:
 
     assert request == {
         "model": "deepseek/deepseek-v4-flash",
+        "messages": [],
+    }
+
+
+def test_build_request_omits_custom_temperature_for_openai_reasoning_model(
+    settings_factory,
+) -> None:
+    settings = settings_factory(
+        default_model="gpt5.5",
+        fallback_models=(),
+        openai_api_key="openai-key",
+    )
+    model = ModelRegistry.from_settings(settings).get(ModelAlias.GPT_55)
+    transport = LiteLLMTransport(
+        settings,
+        supported_params=lambda **_: ["temperature"],
+    )
+
+    request = transport.build_request(model, [])
+
+    assert request == {
+        "model": "openai/gpt-5.5",
         "messages": [],
     }
 

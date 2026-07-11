@@ -74,7 +74,7 @@ class LiteLLMTransport:
                 {"role": message.role, "content": message.content} for message in messages
             ],
         }
-        if "temperature" in supported:
+        if model.supports_custom_temperature and "temperature" in supported:
             request["temperature"] = self._settings.default_temperature
         return request
 

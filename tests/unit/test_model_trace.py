@@ -71,7 +71,7 @@ async def test_jsonl_trace_sink_writes_complete_utf8_input_and_output(tmp_path) 
 
     payload = json.loads(trace_path.read_text(encoding="utf-8"))
     assert payload == {
-        "schema_version": "1.1",
+        "schema_version": "1.2",
         "protocol": "openai.chat.completions",
         "trace": {
             "model_call_id": str(trace.model_call_id),

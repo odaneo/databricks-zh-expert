@@ -65,7 +65,7 @@ class JsonlModelTraceSink:
     @staticmethod
     def _serialize(trace: ModelCallTrace) -> str:
         payload = {
-            "schema_version": "1.1",
+            "schema_version": "1.2",
             "protocol": "openai.chat.completions",
             "trace": {
                 "model_call_id": str(trace.model_call_id),
