@@ -43,6 +43,12 @@ async def test_initial_migration_creates_expected_tables(
                 for constraint in inspect(sync_connection).get_check_constraints("model_calls")
             }
         )
+        message_check_constraints = await connection.run_sync(
+            lambda sync_connection: {
+                constraint["name"]
+                for constraint in inspect(sync_connection).get_check_constraints("messages")
+            }
+        )
 
     assert EXPECTED_TABLES <= table_names
     assert public_table_names == set()
@@ -51,8 +57,14 @@ async def test_initial_migration_creates_expected_tables(
     assert model_call_columns["attempt_number"]["nullable"] is False
     assert model_call_columns["retryable"]["nullable"] is False
     assert model_call_columns["error_code"]["nullable"] is True
+    assert model_call_columns["prompt_name"]["nullable"] is True
+    assert model_call_columns["prompt_version"]["nullable"] is True
+    assert model_call_columns["artifact_type"]["nullable"] is True
+    assert model_call_columns["artifact_valid"]["nullable"] is True
+    assert model_call_columns["artifact_error_code"]["nullable"] is True
     assert "uq_model_calls_invocation_attempt" in unique_constraints
     assert "ck_model_calls_attempt_number" in check_constraints
+    assert "ck_messages_artifact_type" in message_check_constraints
 
 
 @pytest.mark.integration
@@ -198,6 +210,126 @@ def test_model_gateway_migration_backfills_historical_calls(
                 "error_code": None,
             },
         }
+    finally:
+        get_settings.cache_clear()
+        command.upgrade(config, "head")
+        with psycopg.connect(sync_database_url) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("DELETE FROM sessions WHERE id = %s", (session_id,))
+        get_settings.cache_clear()
+
+
+@pytest.mark.integration
+def test_prompt_artifact_migration_backfills_historical_records(
+    test_database_url: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DATABASE_URL", test_database_url)
+    get_settings.cache_clear()
+    config = Config("alembic.ini")
+    sync_database_url = (
+        make_url(test_database_url)
+        .set(drivername="postgresql")
+        .render_as_string(hide_password=False)
+    )
+    session_id = uuid4()
+    message_id = uuid4()
+    model_call_id = uuid4()
+    invalid_message_id = uuid4()
+
+    try:
+        command.downgrade(config, "0002_model_gateway_attempts")
+        with psycopg.connect(sync_database_url) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "INSERT INTO sessions (id, title) VALUES (%s, %s)",
+                    (session_id, "Prompt Artifact 迁移测试"),
+                )
+                cursor.execute(
+                    """
+                    INSERT INTO messages (
+                        id,
+                        session_id,
+                        role,
+                        content,
+                        artifact_type
+                    )
+                    VALUES (%s, %s, 'assistant', '# 历史回答', 'markdown')
+                    """,
+                    (message_id, session_id),
+                )
+                cursor.execute(
+                    """
+                    INSERT INTO model_calls (
+                        id,
+                        session_id,
+                        invocation_id,
+                        provider,
+                        model,
+                        model_alias,
+                        attempt_number,
+                        latency_ms,
+                        success,
+                        retryable
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    (
+                        model_call_id,
+                        session_id,
+                        model_call_id,
+                        "openai",
+                        "openai/gpt-5.5",
+                        "gpt5.5",
+                        1,
+                        120,
+                        True,
+                        False,
+                    ),
+                )
+
+        command.upgrade(config, "head")
+        with psycopg.connect(sync_database_url) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT artifact_type FROM messages WHERE id = %s",
+                    (message_id,),
+                )
+                migrated_artifact_type = cursor.fetchone()
+                cursor.execute(
+                    """
+                    SELECT
+                        prompt_name,
+                        prompt_version,
+                        artifact_type,
+                        artifact_valid,
+                        artifact_error_code
+                    FROM model_calls
+                    WHERE id = %s
+                    """,
+                    (model_call_id,),
+                )
+                historical_audit = cursor.fetchone()
+
+        assert migrated_artifact_type == ("answer",)
+        assert historical_audit == (None, None, None, None, None)
+
+        with pytest.raises(psycopg.errors.CheckViolation):
+            with psycopg.connect(sync_database_url) as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        """
+                        INSERT INTO messages (
+                            id,
+                            session_id,
+                            role,
+                            content,
+                            artifact_type
+                        )
+                        VALUES (%s, %s, 'assistant', '# 非法回答', 'unknown')
+                        """,
+                        (invalid_message_id, session_id),
+                    )
     finally:
         get_settings.cache_clear()
         command.upgrade(config, "head")

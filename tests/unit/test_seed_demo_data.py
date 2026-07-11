@@ -4,6 +4,7 @@ from io import BytesIO, TextIOWrapper
 
 import pytest
 
+from databricks_zh_expert.artifacts.types import ArtifactType
 from databricks_zh_expert.devtools.seed_demo_data import (
     SeedResult,
     build_demo_records,
@@ -22,6 +23,11 @@ def test_build_demo_records_creates_expected_sessions_and_messages() -> None:
     messages_per_session = Counter(message.session_id for message in messages)
     assert set(messages_per_session.values()) == {10}
     assert {message.role for message in messages} == {"user", "assistant"}
+    assistant_artifact_types = {
+        message.artifact_type for message in messages if message.role == "assistant"
+    }
+    assert assistant_artifact_types <= {artifact.value for artifact in ArtifactType} | {None}
+    assert "markdown" not in assistant_artifact_types
 
 
 def test_write_seed_summary_supports_a_cp932_console() -> None:

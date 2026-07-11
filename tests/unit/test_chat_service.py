@@ -286,7 +286,7 @@ async def test_send_message_persists_each_fallback_attempt_before_reply() -> Non
 
     assert result.user_message.content == "设计一个销售工作流"
     assert result.assistant_message.content == "这是一个 Markdown 回答。"
-    assert result.assistant_message.artifact_type == "markdown"
+    assert result.assistant_message.artifact_type == "answer"
     assert result.model_invocation_id == invocation_id
     assert result.requested_model is ModelAlias.GPT_55
     assert result.used_model is ModelAlias.GPT_54_MINI

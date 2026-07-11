@@ -8,6 +8,7 @@ from uuid import uuid4
 from sqlalchemy import delete
 from sqlalchemy.engine import make_url
 
+from databricks_zh_expert.artifacts.types import ArtifactType
 from databricks_zh_expert.core.config import Settings, get_settings
 from databricks_zh_expert.core.runtime import selector_event_loop_factory
 from databricks_zh_expert.db.models import ChatSession, Message
@@ -46,7 +47,13 @@ DEMO_TITLES = (
     "灾备与恢复建议",
     "项目交付设计书",
 )
-ARTIFACT_TYPES = ("markdown", "sql", "pyspark", "workflow_design", None)
+ARTIFACT_TYPES = (
+    ArtifactType.ANSWER.value,
+    ArtifactType.SQL.value,
+    ArtifactType.PYSPARK.value,
+    ArtifactType.WORKFLOW_DESIGN.value,
+    None,
+)
 
 
 @dataclass(frozen=True, slots=True)

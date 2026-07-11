@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from typing import cast
 from uuid import UUID
 
+from databricks_zh_expert.artifacts.types import ArtifactType
 from databricks_zh_expert.chat.repository import ChatRepository
 from databricks_zh_expert.core.errors import AppError
 from databricks_zh_expert.db.models import Message, ModelCall
@@ -131,7 +132,7 @@ class ChatService:
                         session_id,
                         "assistant",
                         attempt.content,
-                        artifact_type="markdown",
+                        artifact_type=ArtifactType.ANSWER.value,
                     )
                     return SendMessageResult(
                         user_message=user_message,

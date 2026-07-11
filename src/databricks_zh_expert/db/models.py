@@ -43,6 +43,12 @@ class Message(Base):
             "role IN ('system', 'user', 'assistant')",
             name="ck_messages_role",
         ),
+        CheckConstraint(
+            "artifact_type IS NULL OR artifact_type IN "
+            "('answer', 'sql', 'pyspark', 'workflow_design', "
+            "'document_summary', 'proposal', 'checklist')",
+            name="ck_messages_artifact_type",
+        ),
         Index("ix_messages_session_created_at", "session_id", "created_at"),
     )
 
@@ -91,6 +97,11 @@ class ModelCall(Base):
     success: Mapped[bool] = mapped_column(Boolean, nullable=False)
     retryable: Mapped[bool] = mapped_column(Boolean, nullable=False)
     error_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    prompt_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    prompt_version: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    artifact_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    artifact_valid: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    artifact_error_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

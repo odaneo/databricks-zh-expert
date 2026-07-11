@@ -581,15 +581,20 @@ git commit -m "feat: validate markdown artifacts"
 **文件：**
 
 - 修改：`src/databricks_zh_expert/db/models.py`
+- 修改：`src/databricks_zh_expert/chat/service.py`
+- 修改：`src/databricks_zh_expert/devtools/seed_demo_data.py`
 - 创建：`alembic/versions/0003_prompt_artifacts.py`
 - 修改：`tests/integration/test_migrations.py`
+- 修改：`tests/unit/test_models.py`
+- 修改：`tests/unit/test_chat_service.py`
+- 修改：`tests/unit/test_seed_demo_data.py`
 
 **接口：**
 
 - `messages.artifact_type`：空值或七个 `ArtifactType`。
 - `model_calls`：新增可空 `prompt_name`、`prompt_version`、`artifact_type`、`artifact_valid`、`artifact_error_code`。
 
-- [ ] **步骤 1：扩展迁移失败测试**
+- [x] **步骤 1：扩展迁移与现有写入方失败测试**
 
 在独立测试 schema 中先迁移到 `0002_model_gateway_attempts`，插入：
 
@@ -604,14 +609,16 @@ VALUES (:message_id, :session_id, 'assistant', '# 历史回答', 'markdown');
 2. `model_calls` 存在五个新列。
 3. 阶段 2 历史 model_call 的五个字段都是空值。
 4. 插入 `artifact_type='unknown'` 违反 `ck_messages_artifact_type`。
+5. ChatService 的通用回答写入 `artifact_type='answer'`。
+6. 演示数据不再生成 `artifact_type='markdown'`。
 
-- [ ] **步骤 2：运行迁移测试并确认 head 仍是 0002**
+- [x] **步骤 2：运行迁移测试并确认 head 仍是 0002**
 
 ```powershell
 uv run --locked pytest tests/integration/test_migrations.py -q
 ```
 
-- [ ] **步骤 3：修改 SQLAlchemy 模型**
+- [x] **步骤 3：修改 SQLAlchemy 模型并修正现有写入方**
 
 `Message.__table_args__` 增加：
 
@@ -634,7 +641,11 @@ artifact_valid: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
 artifact_error_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
 ```
 
-- [ ] **步骤 4：创建 0003 迁移**
+在任务 6 接入 Prompt 编排前，现有 ChatService 的通用模型回答使用
+`ArtifactType.ANSWER.value`；演示数据的类型目录也只使用 `ArtifactType` 的合法值。这样 0003
+约束上线后，现有聊天接口和演示数据初始化仍可正常写库。
+
+- [x] **步骤 4：创建 0003 迁移**
 
 `upgrade()` 顺序固定为：
 
@@ -661,7 +672,7 @@ op.add_column("model_calls", sa.Column("artifact_error_code", sa.String(100), nu
 
 `downgrade()` 反向删除五个 model_calls 列和 check constraint，不修改已经迁移的 message 值。
 
-- [ ] **步骤 5：升级开发和测试数据库并检查 drift**
+- [x] **步骤 5：升级开发和测试数据库并检查 drift**
 
 ```powershell
 uv run --locked alembic upgrade head
@@ -674,19 +685,21 @@ Remove-Item Env:DATABASE_URL
 
 预期：开发数据库 current 为 `0003_prompt_artifacts (head)`，`alembic check` 无新增操作。
 
-- [ ] **步骤 6：运行迁移与类型检查**
+- [x] **步骤 6：运行迁移、兼容性测试与类型检查**
 
 ```powershell
 uv run --locked pytest tests/integration/test_migrations.py -q
+uv run --locked pytest tests/unit/test_models.py tests/unit/test_chat_service.py tests/unit/test_seed_demo_data.py -q
 uv run --locked ruff format --check src tests alembic
 uv run --locked ruff check src tests alembic
 uv run --locked pyright
+uv run --locked pytest -q
 ```
 
-- [ ] **步骤 7：提交任务 4**
+- [x] **步骤 7：提交任务 4**
 
 ```powershell
-git add src/databricks_zh_expert/db/models.py alembic/versions/0003_prompt_artifacts.py tests/integration/test_migrations.py
+git add src/databricks_zh_expert/db/models.py src/databricks_zh_expert/chat/service.py src/databricks_zh_expert/devtools/seed_demo_data.py alembic/versions/0003_prompt_artifacts.py tests/integration/test_migrations.py tests/unit/test_models.py tests/unit/test_chat_service.py tests/unit/test_seed_demo_data.py docs/superpowers/plans/2026-07-11-stage-3-prompt-registry-markdown-artifact-plan.md
 git commit -m "feat: persist prompt artifact audit metadata"
 ```
 

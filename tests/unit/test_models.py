@@ -36,6 +36,11 @@ def test_models_register_expected_tables_and_columns() -> None:
         "success",
         "retryable",
         "error_code",
+        "prompt_name",
+        "prompt_version",
+        "artifact_type",
+        "artifact_valid",
+        "artifact_error_code",
         "error_message",
         "created_at",
     }
@@ -44,15 +49,23 @@ def test_models_register_expected_tables_and_columns() -> None:
 def test_message_model_enforces_roles_and_session_ordering() -> None:
     message_table = cast(Table, Message.__table__)
     constraints = message_table.constraints
-    role_constraint = next(
-        constraint for constraint in constraints if isinstance(constraint, CheckConstraint)
-    )
+    check_constraints = {
+        constraint.name: constraint
+        for constraint in constraints
+        if isinstance(constraint, CheckConstraint)
+    }
     session_foreign_key = next(
         constraint for constraint in constraints if isinstance(constraint, ForeignKeyConstraint)
     )
 
-    assert role_constraint.name == "ck_messages_role"
-    assert str(role_constraint.sqltext) == "role IN ('system', 'user', 'assistant')"
+    assert str(check_constraints["ck_messages_role"].sqltext) == (
+        "role IN ('system', 'user', 'assistant')"
+    )
+    assert str(check_constraints["ck_messages_artifact_type"].sqltext) == (
+        "artifact_type IS NULL OR artifact_type IN "
+        "('answer', 'sql', 'pyspark', 'workflow_design', "
+        "'document_summary', 'proposal', 'checklist')"
+    )
     assert session_foreign_key.ondelete == "CASCADE"
     assert {index.name for index in message_table.indexes} == {"ix_messages_session_created_at"}
 
