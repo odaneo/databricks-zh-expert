@@ -6,7 +6,8 @@
 
 **架构：** 第一版采用“单体后端 + 简单 Web UI/API 调试”的结构，先把模型调用、会话保存、Prompt 模板、RAG 和 Markdown 交付物跑通。Agent 不直接操作 Databricks，不执行 SQL，不提交 Job，只负责生成建议、代码草稿、设计文档和引用来源。
 
-**技术栈：** Python 3.12.10、FastAPI、LiteLLM、PostgreSQL、pgvector、SQLAlchemy 2.x、Alembic、psycopg 3、LlamaIndex、pytest、ruff、Pyright、Markdown。
+**技术栈：** Python 3.12.10、FastAPI、LiteLLM、PostgreSQL、pgvector、SQLAlchemy 2.x、Alembic、
+psycopg 3、OpenAI Embeddings、httpx、Beautiful Soup、markdown-it-py、pytest、Ruff、Pyright、Markdown。
 
 ---
 
@@ -353,118 +354,144 @@ checklist
 
 ### 小目标
 
-提前整理 Databricks 知识材料并构建向量索引，用户提问时只检索已经存在的知识库，不要求用户每次手动上传文档。
+从受控 Databricks 官方来源离线构建本地知识索引。用户提问时只检索已经构建的预置知识库，不要求用户
+上传文档，也不在聊天请求中实时抓取和建索引。
 
 ### 技术栈
 
-1. LlamaIndex。
-2. PostgreSQL。
-3. pgvector。
-4. SQLAlchemy 2.x。
-5. Alembic。
-6. psycopg 3。
-7. Markdown。
-8. YAML。
+1. PostgreSQL + pgvector。
+2. SQLAlchemy 2.x + Alembic + psycopg 3。
+3. OpenAI `text-embedding-3-small`，固定 1536 维。
+4. httpx。
+5. Beautiful Soup + markdownify。
+6. markdown-it-py + tiktoken。
+7. YAML 来源清单。
+
+阶段 4 不引入 LlamaIndex。同步事务、Alembic schema、混合检索、审计和 ChatService 集成均使用项目现有
+边界显式实现；未来确实需要复杂 retriever 或 reranker 时再重新评估。
 
 ### 知识库来源
 
-1. 人工整理的 Databricks 官方文档摘要。
-2. Databricks SQL 模板。
-3. PySpark 模板。
-4. Bronze / Silver / Gold 设计模板。
-5. Workflow 设计模板。
-6. Unity Catalog 权限建议。
-7. 成本优化检查清单。
-8. 性能优化检查清单。
+1. `https://docs.databricks.com/llms.txt`：只作为通用文档发现目录，抓取白名单官方页面正文。
+2. `https://docs.databricks.com/api/llms.txt`：只作为 REST API Markdown 目录，抓取选定 API 页面正文。
+
+首批约 30 至 50 篇，只覆盖 Delta Lake、Lakeflow Jobs / Pipelines、Auto Loader、Structured Streaming、
+Unity Catalog、Databricks SQL、SQL Warehouse、Photon、性能、成本和少量 API operation；不全量抓取官网。
+Agent Skills、Sitemap 和社区资料不进入阶段 4。
 
 ### 知识库目录草案
 
 ```text
 knowledge/
   databricks/
-    summaries/
-    sql_templates/
-    pyspark_templates/
-    medallion_templates/
-    workflow_templates/
-    unity_catalog/
-    cost_optimization/
-    performance_optimization/
+    sources.yml
 ```
 
-知识库原文件保存在 `knowledge/databricks/`。解析后的文档记录、Chunk、Embedding 和检索元数据统一写入 PostgreSQL，不再维护独立向量数据库的数据目录。
+仓库只保存来源清单、代码和少量测试 fixture，不提交批量官方正文。原始 HTML 和两个 `llms.txt` 不持久化；
+规范化完整 Markdown、Chunk 正文、Embedding 和同步运行统一写入 PostgreSQL。
 
 ### 核心流程
 
 ```text
-整理 Databricks 知识材料
-  -> 保存为 Markdown / YAML
-  -> 切分 chunk
-  -> 生成 embedding
-  -> 写入 PostgreSQL 的 kb_documents / kb_chunks
-  -> 通过 pgvector 保存并检索 embedding
-  -> 保存知识来源元数据
+YAML 白名单
+  -> llms.txt 发现和核对
+  -> 条件 GET 抓取官方 HTML / Markdown 正文
+  -> 规范化 Markdown
+  -> 内容哈希判断是否变化
+  -> 标题感知 token chunk
+  -> OpenAI Embedding
+  -> PostgreSQL 单文档事务性发布
   -> 用户提问
-  -> 检索相关 chunk
-  -> 拼接上下文
-  -> 模型生成答案
-  -> 返回引用来源
+  -> pgvector 精确候选 + PostgreSQL 全文候选
+  -> RRF 融合和上下文预算
+  -> 现有 ModelGateway 生成中文答案
+  -> 保存 assistant message 与结构化官方引用
 ```
 
 ### API 草案
 
 ```text
-GET  /api/knowledge/sources
-GET  /api/knowledge/sources/{source_id}
 GET  /api/knowledge/index/status
-POST /api/rag/query
+POST /api/chat/sessions/{session_id}/messages
+     prompt=knowledge_qa
 ```
+
+知识同步只通过开发者 CLI `databricks-zh-expert-kb sync` 发起，不开放 HTTP 写接口。
 
 ### 元数据草案
 
 ```text
 kb_documents
   id
+  source_key
+  source_kind
   title
   category
-  source_path
+  source_url
+  canonical_url
+  normalized_content
   content_hash
-  version
+  source_version
   status
   chunk_count
-  created_at
-  updated_at
 
 kb_chunks
   id
   document_id
   chunk_index
+  heading_path
   content
   source_ref
   metadata JSONB
-  embedding VECTOR(<固定维度>)
+  embedding VECTOR(1536)
   embedding_model
-  created_at
+  search_vector TSVECTOR
 
 kb_ingestion_runs
   id
   status
-  document_count
+  manifest_hash
+  embedding_model
+  embedding_dimensions
+  discovered_count
+  changed_count
+  skipped_count
+  failed_count
   chunk_count
-  error_message
+  error_summary JSONB
   started_at
   completed_at
+
+messages
+  source_citations JSONB NULL
 ```
 
-Embedding 模型与聊天模型分开配置。`kb_chunks.embedding` 的维度在选定 Embedding 模型后通过迁移固定；同一个向量索引内不得混用不同维度，切换 Embedding 模型时需要重建索引。
+阶段 4 只新增三张知识表。检索候选、排名和分数写入 Trace 1.4，不增加检索审计表。assistant message 保存
+引用快照，因此重新打开历史会话仍能展示当时的官方来源。
+
+Embedding 模型与聊天模型分开配置。DeepSeek 聊天仍使用 OpenAI 查询 Embedding，因此用户问题的数据流必须
+明确说明。同一个向量索引不得混用模型或维度，切换时必须显式重建。Demo 使用精确 cosine 检索，不创建
+HNSW 或 IVFFlat。
 
 ### 完成标准
 
-Demo 启动前或初始化时已经构建好 Databricks 知识库索引。用户不需要上传文档，也可以基于预置知识库提问，回答里能看到来源引用。
+1. 开发者可用 CLI 增量构建预置官方知识索引。
+2. `knowledge_qa` 通过现有 Chat API 使用 OpenAI 或 DeepSeek 聊天并返回结构化官方引用。
+3. 发送消息和重新打开历史会话时都能恢复相同引用。
+4. 没有索引或没有相关上下文时不调用聊天模型。
+5. Trace 1.4 可查看实际 RAG 上下文、排名和分数。
+6. 中文固定检索评估达到 `Recall@5 >= 80%`。
+7. 所有现有会话、消息、模型调用和阶段 3 验收数据不被清理。
 
 ### 后置能力
 
-用户上传项目文档、导入本地文件夹、PDF / Word 解析和用户文档索引都放到后续版本，不进入第一版 Demo。
+中文专家模板、Agent Skills 和项目经验在阶段 5 增加。用户上传、PDF / Word、多租户索引、HNSW、检索审计表、
+定时同步、reranker 和 Databricks MCP / AI Search 均放到后续版本。
+
+详细设计和逐任务计划见：
+
+1. `docs/superpowers/specs/2026-07-12-stage-4-prebuilt-databricks-rag-design.md`。
+2. `docs/superpowers/plans/2026-07-12-stage-4-prebuilt-databricks-rag-plan.md`。
 
 ---
 
@@ -859,8 +886,8 @@ Agent 生成的 SQL 和 PySpark 可能存在环境差异，不能默认可执行
 
 ## 8. 近期最推荐的下一步
 
-阶段 1 至阶段 3 已完成。下一步建议细化“阶段 4：预置 Databricks 知识库 RAG”，先固定知识来源、
-文档版本、解析边界、Embedding 配置和引用结构，再实现离线索引构建与只读检索问答。
+阶段 1 至阶段 3 已完成，阶段 4 的详细设计和实施计划已经固定。下一步执行阶段 4 任务 1：添加直接依赖、
+环境配置、知识源清单和清单预检；此时不抓取网络、不迁移数据库。
 
 已完成阶段的详细设计和实施步骤见：
 
@@ -870,3 +897,5 @@ Agent 生成的 SQL 和 PySpark 可能存在环境差异，不能默认可执行
 4. `docs/superpowers/plans/2026-07-11-stage-2-model-gateway-plan.md`。
 5. `docs/superpowers/specs/2026-07-11-stage-3-prompt-registry-markdown-artifact-design.md`。
 6. `docs/superpowers/plans/2026-07-11-stage-3-prompt-registry-markdown-artifact-plan.md`。
+7. `docs/superpowers/specs/2026-07-12-stage-4-prebuilt-databricks-rag-design.md`。
+8. `docs/superpowers/plans/2026-07-12-stage-4-prebuilt-databricks-rag-plan.md`。
