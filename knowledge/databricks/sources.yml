@@ -1,0 +1,158 @@
+version: 1
+
+ingestion:
+  chunk_size_tokens: 600
+  chunk_overlap_tokens: 80
+
+catalogs:
+  - id: databricks-docs
+    kind: databricks_llms_index
+    index_url: https://docs.databricks.com/llms.txt
+    cloud: aws
+    locale: en
+    include_urls:
+      - source_key: docs-lakehouse
+        url: https://docs.databricks.com/lakehouse/
+        category: architecture
+      - source_key: docs-delta-lake
+        url: https://docs.databricks.com/delta/
+        category: delta_lake
+      - source_key: docs-tables
+        url: https://docs.databricks.com/tables/
+        category: delta_lake
+      - source_key: docs-table-types
+        url: https://docs.databricks.com/tables/types
+        category: architecture
+      - source_key: docs-change-data-feed
+        url: https://docs.databricks.com/tables/features/change-data-feed
+        category: delta_lake
+      - source_key: docs-managed-tables
+        url: https://docs.databricks.com/tables/managed
+        category: delta_lake
+      - source_key: docs-transactions
+        url: https://docs.databricks.com/transactions/
+        category: delta_lake
+      - source_key: docs-data-engineering
+        url: https://docs.databricks.com/data-engineering/
+        category: data_engineering
+      - source_key: docs-data-engineering-best-practices
+        url: https://docs.databricks.com/data-engineering/best-practices
+        category: data_engineering
+      - source_key: docs-lakeflow-pipelines
+        url: https://docs.databricks.com/ldp/
+        category: data_engineering
+      - source_key: docs-lakeflow-pipeline-concepts
+        url: https://docs.databricks.com/ldp/concepts
+        category: data_engineering
+      - source_key: docs-lakeflow-expectations
+        url: https://docs.databricks.com/ldp/expectations
+        category: data_engineering
+      - source_key: docs-lakeflow-connect
+        url: https://docs.databricks.com/ingestion/overview
+        category: data_engineering
+      - source_key: docs-standard-connectors
+        url: https://docs.databricks.com/ingestion/
+        category: data_engineering
+      - source_key: docs-structured-streaming
+        url: https://docs.databricks.com/structured-streaming/concepts
+        category: streaming
+      - source_key: docs-auto-loader
+        url: https://docs.databricks.com/ingestion/cloud-object-storage/auto-loader/
+        category: streaming
+      - source_key: docs-lakeflow-jobs
+        url: https://docs.databricks.com/jobs/
+        category: orchestration
+      - source_key: docs-job-tasks
+        url: https://docs.databricks.com/jobs/configure-task
+        category: orchestration
+      - source_key: docs-job-scheduling
+        url: https://docs.databricks.com/jobs/scheduled
+        category: orchestration
+      - source_key: docs-databricks-sql
+        url: https://docs.databricks.com/sql/
+        category: sql
+      - source_key: docs-sql-warehouses
+        url: https://docs.databricks.com/compute/sql-warehouse/
+        category: sql
+      - source_key: docs-serverless-sql-warehouses
+        url: https://docs.databricks.com/admin/sql/serverless
+        category: sql
+      - source_key: docs-query-history
+        url: https://docs.databricks.com/sql/user/queries/query-history
+        category: performance
+      - source_key: docs-sql-reference
+        url: https://docs.databricks.com/sql/language-manual/
+        category: sql
+      - source_key: docs-pyspark
+        url: https://docs.databricks.com/pyspark/
+        category: data_engineering
+      - source_key: docs-photon
+        url: https://docs.databricks.com/compute/photon
+        category: performance
+      - source_key: docs-optimizations
+        url: https://docs.databricks.com/optimizations/
+        category: performance
+      - source_key: docs-unity-catalog
+        url: https://docs.databricks.com/data-governance/unity-catalog/
+        category: governance
+      - source_key: docs-unity-catalog-access-control
+        url: https://docs.databricks.com/data-governance/unity-catalog/access-control
+        category: governance
+      - source_key: docs-unity-catalog-privileges
+        url: https://docs.databricks.com/data-governance/unity-catalog/manage-privileges/
+        category: governance
+      - source_key: docs-unity-catalog-lineage
+        url: https://docs.databricks.com/data-governance/unity-catalog/data-lineage
+        category: governance
+      - source_key: docs-system-tables
+        url: https://docs.databricks.com/admin/system-tables/
+        category: cost
+      - source_key: docs-cost-management
+        url: https://docs.databricks.com/admin/usage
+        category: cost
+
+  - id: databricks-api
+    kind: databricks_api_llms_index
+    index_url: https://docs.databricks.com/api/llms.txt
+    cloud: aws
+    locale: en
+    include_modules:
+      - name: Jobs
+        include_operations:
+          - source_key: api-jobs-create
+            title: Create a new job
+            category: api
+          - source_key: api-jobs-get
+            title: Get a single job
+            category: api
+          - source_key: api-jobs-update
+            title: Update job settings partially
+            category: api
+          - source_key: api-jobs-run-now
+            title: Trigger a new job run
+            category: api
+          - source_key: api-jobs-get-run
+            title: Get a single job run
+            category: api
+      - name: Pipelines
+        include_operations:
+          - source_key: api-pipelines-create
+            title: Create a pipeline
+            category: api
+          - source_key: api-pipelines-get
+            title: Get a pipeline
+            category: api
+          - source_key: api-pipelines-edit
+            title: Edit a pipeline
+            category: api
+          - source_key: api-pipelines-start
+            title: Start a pipeline
+            category: api
+      - name: SQL Warehouses
+        include_operations:
+          - source_key: api-warehouses-create
+            title: Create a warehouse
+            category: api
+          - source_key: api-warehouses-get
+            title: Get warehouse info
+            category: api

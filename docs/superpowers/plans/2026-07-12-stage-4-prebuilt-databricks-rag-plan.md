@@ -73,6 +73,7 @@ knowledge/
 src/databricks_zh_expert/
   rag/
     __init__.py
+    constants.py                        跨环境一致的 Embedding、抓取和检索参数
     types.py                            来源、文档、Chunk、Embedding、引用类型
     manifest.py                         YAML 清单解析和校验
     catalogs.py                         两种 llms.txt 目录解析
@@ -92,8 +93,6 @@ src/databricks_zh_expert/
     schemas.py                          source_citations API 契约
     repository.py                       消息引用持久化
     service.py                          knowledge_qa 编排
-  core/
-    config.py                           Embedding、抓取和检索环境配置
   db/
     models.py                           三张知识表和 message 引用列
   observability/
@@ -126,7 +125,7 @@ tests/
 
 ---
 
-### 任务 1：固定依赖、环境配置和官方来源清单
+### 任务 1：固定依赖、产品常量和官方来源清单
 
 **小目标：** 项目可以确定性读取和校验一份有限的 Databricks 官方来源清单；此任务不访问网络、不修改数据库。
 
@@ -134,12 +133,11 @@ tests/
 
 - 修改：`pyproject.toml`
 - 修改：`uv.lock`
-- 修改：`.env.example`
-- 修改：`src/databricks_zh_expert/core/config.py`
 - 创建：`knowledge/databricks/sources.yml`
+- 创建：`src/databricks_zh_expert/rag/constants.py`
 - 创建：`src/databricks_zh_expert/rag/types.py`
 - 创建：`src/databricks_zh_expert/rag/manifest.py`
-- 测试：`tests/unit/test_config.py`
+- 创建：`tests/unit/test_rag_constants.py`
 - 创建：`tests/unit/test_knowledge_manifest.py`
 
 **公开接口：**
@@ -166,12 +164,12 @@ class KnowledgeManifest:
 def load_manifest(path: Path) -> KnowledgeManifest: ...
 ```
 
-- [ ] **步骤 1：写配置和清单失败测试**
+- [x] **步骤 1：写产品常量和清单失败测试**
 
 至少覆盖：
 
-1. 新环境字段能由 `Settings` 读取并受范围约束。
-2. `EMBEDDING_DIMENSIONS` 必须为 1536。
+1. 九个 RAG 参数由 `rag/constants.py` 提供，不属于 `Settings` 或 `.env`。
+2. Embedding 模型固定为 `text-embedding-3-small`，维度固定为 1536。
 3. `chunk_overlap_tokens < chunk_size_tokens`。
 4. catalog id 和 source key 唯一。
 5. 只允许 `https://docs.databricks.com/...`。
@@ -179,13 +177,13 @@ def load_manifest(path: Path) -> KnowledgeManifest: ...
 7. 未知字段、未知 source kind、空清单和非法 URL 失败。
 8. 仓库中的实际 `sources.yml` 可成功解析。
 
-- [ ] **步骤 2：确认测试失败**
+- [x] **步骤 2：确认测试失败**
 
 ```powershell
-uv run --locked pytest tests/unit/test_config.py tests/unit/test_knowledge_manifest.py -q
+uv run --locked pytest tests/unit/test_rag_constants.py tests/unit/test_knowledge_manifest.py -q
 ```
 
-- [ ] **步骤 3：添加精确直接依赖**
+- [x] **步骤 3：添加精确直接依赖**
 
 ```powershell
 uv add "openai==2.45.0" "pgvector==0.5.0" "httpx==0.28.1" `
@@ -195,25 +193,25 @@ uv lock --check
 
 把 `httpx==0.28.1` 从 dev group 移到 runtime，不能在两个依赖组重复声明。不得手工编辑 `uv.lock`。
 
-- [ ] **步骤 4：实现 Settings 和领域类型**
+- [x] **步骤 4：实现产品常量和领域类型**
 
-新增设计规格第 17 节环境变量，使用 Pydantic 约束正数、候选数、top-k、token 上限和 0 至 1 的相关性阈值。
-字段保持必填，由 `.env` 或部署环境注入；不在 `config.py` 写环境默认值。
+按照设计规格第 17 节在 `rag/constants.py` 定义九个带 `Final` 的产品常量。它们跨环境一致，不进入
+`core/config.py`、`.env.example` 或本地 `.env`。来源类型和清单结构继续使用冻结 dataclass。
 
-- [ ] **步骤 5：创建初始来源清单**
+- [x] **步骤 5：创建初始来源清单**
 
 通用文档约 25 至 35 篇，覆盖 Delta Lake、Medallion、Jobs、Pipelines、Auto Loader、Structured Streaming、
 Unity Catalog、Databricks SQL、Photon、性能和成本。API 约 5 至 15 篇，明确列出 Jobs、Pipelines 等具体
 operation，不使用目录通配符。
 
-- [ ] **步骤 6：验证并提交**
+- [x] **步骤 6：验证并提交**
 
 ```powershell
-uv run --locked pytest tests/unit/test_config.py tests/unit/test_knowledge_manifest.py -q
+uv run --locked pytest tests/unit/test_rag_constants.py tests/unit/test_knowledge_manifest.py -q
 uv run --locked ruff format --check .
 uv run --locked ruff check .
 uv run --locked pyright
-git add pyproject.toml uv.lock .env.example knowledge src tests
+git add pyproject.toml uv.lock knowledge src tests docs
 git commit -m "feat: define databricks knowledge sources"
 ```
 
@@ -721,8 +719,8 @@ uv run --locked databricks-zh-expert-kb evaluate
 
 - [ ] **步骤 7：精简更新 README**
 
-只补充新增 `.env` 字段、`alembic upgrade head`、首次知识同步和服务启动命令。不加入内部架构、API 示例、
-预期输出或调试章节。
+只补充 `alembic upgrade head`、首次知识同步和服务启动命令。不新增 RAG 环境变量，也不加入内部架构、API
+示例、预期输出或调试章节。
 
 - [ ] **步骤 8：最终验证并提交**
 
@@ -735,7 +733,7 @@ uv run --locked pyright
 uv run --locked pytest --cov=databricks_zh_expert --cov-report=term-missing
 uv run --locked alembic check
 git status --short
-git add README.md docs src tests knowledge pyproject.toml uv.lock alembic .env.example
+git add README.md docs src tests knowledge pyproject.toml uv.lock alembic
 git commit -m "test: complete stage four knowledge rag"
 ```
 

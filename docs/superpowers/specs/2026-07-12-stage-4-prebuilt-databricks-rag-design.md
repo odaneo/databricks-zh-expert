@@ -306,12 +306,15 @@ catalogs:
     cloud: aws
     locale: en
     include_urls:
-      - https://docs.databricks.com/delta/
-      - https://docs.databricks.com/jobs/
-      - https://docs.databricks.com/structured-streaming/concepts
-      - https://docs.databricks.com/data-governance/unity-catalog/
-      - https://docs.databricks.com/compute/photon
-      - https://docs.databricks.com/admin/usage
+      - source_key: docs-delta-lake
+        url: https://docs.databricks.com/delta/
+        category: delta_lake
+      - source_key: docs-lakeflow-jobs
+        url: https://docs.databricks.com/jobs/
+        category: orchestration
+      - source_key: docs-unity-catalog
+        url: https://docs.databricks.com/data-governance/unity-catalog/
+        category: governance
 
   - id: databricks-api
     kind: databricks_api_llms_index
@@ -319,19 +322,21 @@ catalogs:
     include_modules:
       - name: Jobs
         include_operations:
-          - Create a new job
-          - Get a single job
-          - Update job settings partially
-          - Trigger a new job run
+          - source_key: api-jobs-create
+            title: Create a new job
+            category: api
+          - source_key: api-jobs-get
+            title: Get a single job
+            category: api
       - name: Pipelines
         include_operations:
-          - Create a pipeline
-          - Get a pipeline
-          - Update a pipeline
+          - source_key: api-pipelines-create
+            title: Create a pipeline
+            category: api
 ```
 
-最终 operation 标题必须在任务 1 中根据当时官方目录核对。目录中不存在的白名单项使 dry-run 失败，不静默
-扩大抓取范围。
+`source_key` 是数据库中的稳定业务键，不从 URL 或标题临时推导。最终 URL 和 operation 标题必须在任务 1 中
+根据当时官方目录核对。目录中不存在的白名单项使 dry-run 失败，不静默扩大抓取范围。
 
 ## 10. 同步流程
 
@@ -520,24 +525,25 @@ databricks-zh-expert-kb evaluate
 4. `status` 只读数据库，不访问网络。
 5. `evaluate` 只执行检索评估，不调用聊天模型。
 
-## 17. 配置
+## 17. 产品常量
 
-新增环境变量：
+以下参数在开发、测试和生产环境中必须一致，集中定义在 `rag/constants.py`，不进入 `Settings` 或 `.env`：
 
-```dotenv
-EMBEDDING_MODEL=text-embedding-3-small
-EMBEDDING_DIMENSIONS=1536
-KNOWLEDGE_MANIFEST_PATH=knowledge/databricks/sources.yml
-KNOWLEDGE_FETCH_TIMEOUT_SECONDS=30
-RAG_VECTOR_CANDIDATE_K=30
-RAG_LEXICAL_CANDIDATE_K=30
-RAG_TOP_K=6
-RAG_MAX_CONTEXT_TOKENS=5000
-RAG_MIN_VECTOR_SCORE=0.30
+```python
+EMBEDDING_MODEL = "text-embedding-3-small"
+EMBEDDING_DIMENSIONS = 1536
+KNOWLEDGE_MANIFEST_PATH = Path("knowledge/databricks/sources.yml")
+KNOWLEDGE_FETCH_TIMEOUT_SECONDS = 30
+RAG_VECTOR_CANDIDATE_K = 30
+RAG_LEXICAL_CANDIDATE_K = 30
+RAG_TOP_K = 6
+RAG_MAX_CONTEXT_TOKENS = 5000
+RAG_MIN_VECTOR_SCORE = 0.3
 ```
 
-环境变量管理部署差异；来源 URL、operation 白名单和 Chunk 参数写入 YAML；来源类型、允许 host、距离算法和
-Trace schema 版本写入代码枚举或常量。
+Embedding 模型和维度决定索引兼容性，路径指向固定代码资产，其余参数属于统一评估的检索策略，不是部署差异。
+来源 URL、operation 白名单和 Chunk 参数继续写入 YAML。只有未来出现真实环境差异时，才把对应单项提升为
+环境变量。
 
 ## 18. 错误契约
 
