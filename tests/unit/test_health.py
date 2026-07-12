@@ -1,16 +1,25 @@
 from collections.abc import AsyncIterator
+from dataclasses import replace
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from jinja2 import DictLoader, TemplateSyntaxError
 from sqlalchemy.exc import SQLAlchemyError
 
 import databricks_zh_expert.main as main_module
 from databricks_zh_expert.api.dependencies import get_db_session
+from databricks_zh_expert.artifacts.markdown import MarkdownArtifactParser
 from databricks_zh_expert.db.session import Database
 from databricks_zh_expert.observability.model_trace import (
     JsonlModelTraceSink,
     NullModelTraceSink,
 )
+from databricks_zh_expert.prompts.registry import (
+    DEFAULT_PROMPT,
+    PROMPT_SPECS,
+    PromptRegistry,
+)
+from databricks_zh_expert.prompts.renderer import JinjaPromptRenderer
 
 create_app = main_module.create_app
 
@@ -115,6 +124,50 @@ def test_app_factory_uses_configured_jsonl_trace_sink_when_enabled(
 
     assert isinstance(app.state.model_trace_sink, JsonlModelTraceSink)
     assert app.state.model_trace_sink.path == trace_path
+
+
+def test_app_factory_validates_and_stores_prompt_components(
+    settings_factory,
+    monkeypatch,
+) -> None:
+    registry = PromptRegistry.create_default()
+    artifact_parser = MarkdownArtifactParser()
+    validation_calls = 0
+
+    def validate_all() -> None:
+        nonlocal validation_calls
+        validation_calls += 1
+
+    monkeypatch.setattr(registry, "validate_all", validate_all)
+
+    app = create_app(
+        settings=settings_factory(),
+        prompt_registry=registry,
+        artifact_parser=artifact_parser,
+    )
+
+    assert validation_calls == 1
+    assert app.state.prompt_registry is registry
+    assert app.state.artifact_parser is artifact_parser
+
+
+def test_app_factory_rejects_invalid_prompt_template_immediately(
+    settings_factory,
+) -> None:
+    broken_spec = replace(PROMPT_SPECS[0], template_name="broken.jinja2")
+    registry = PromptRegistry(
+        renderer=JinjaPromptRenderer(
+            loader=DictLoader({"broken.jinja2": "{% if %}"}),
+        ),
+        prompts=(broken_spec,),
+        default_prompt=DEFAULT_PROMPT,
+    )
+
+    with pytest.raises(TemplateSyntaxError):
+        create_app(
+            settings=settings_factory(),
+            prompt_registry=registry,
+        )
 
 
 @pytest.mark.asyncio

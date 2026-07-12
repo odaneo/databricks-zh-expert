@@ -4,6 +4,7 @@ from typing import Annotated, cast
 from fastapi import Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from databricks_zh_expert.artifacts.markdown import MarkdownArtifactParser
 from databricks_zh_expert.chat.repository import ChatRepository
 from databricks_zh_expert.chat.service import ChatService
 from databricks_zh_expert.core.config import Settings
@@ -16,6 +17,7 @@ from databricks_zh_expert.llm.gateway import (
 from databricks_zh_expert.llm.litellm_client import LiteLLMTransport
 from databricks_zh_expert.llm.model_registry import ModelRegistry
 from databricks_zh_expert.observability.model_trace import ModelTraceSink
+from databricks_zh_expert.prompts.registry import PromptRegistry
 
 
 def get_app_settings(request: Request) -> Settings:
@@ -61,6 +63,14 @@ def get_model_gateway(
 
 def get_model_trace_sink(request: Request) -> ModelTraceSink:
     return cast(ModelTraceSink, request.app.state.model_trace_sink)
+
+
+def get_prompt_registry(request: Request) -> PromptRegistry:
+    return cast(PromptRegistry, request.app.state.prompt_registry)
+
+
+def get_artifact_parser(request: Request) -> MarkdownArtifactParser:
+    return cast(MarkdownArtifactParser, request.app.state.artifact_parser)
 
 
 def get_chat_service(

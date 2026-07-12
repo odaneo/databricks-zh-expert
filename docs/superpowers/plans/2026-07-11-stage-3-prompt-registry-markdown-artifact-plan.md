@@ -722,7 +722,7 @@ git commit -m "feat: persist prompt artifact audit metadata"
 - 应用状态：`app.state.prompt_registry` 和 `app.state.artifact_parser`。
 - 依赖：`get_prompt_registry()`、`get_artifact_parser()`。
 
-- [ ] **步骤 1：写 Prompt 列表 API 失败测试**
+- [x] **步骤 1：写 Prompt 列表 API 失败测试**
 
 ```python
 async def test_list_prompts_exposes_catalog_without_template_text(client) -> None:
@@ -740,13 +740,13 @@ async def test_list_prompts_exposes_catalog_without_template_text(client) -> Non
     assert "system_message" not in serialized
 ```
 
-- [ ] **步骤 2：运行测试并确认 404**
+- [x] **步骤 2：运行测试并确认 404**
 
 ```powershell
 uv run --locked pytest tests/integration/test_prompts_api.py -q
 ```
 
-- [ ] **步骤 3：实现响应模型和路由**
+- [x] **步骤 3：实现响应模型和路由**
 
 `PromptSummary` 字段固定为：`name`、`display_name`、`description`、`artifact_type`、`version`、
 `available`、`unavailable_reason`。`PromptListResponse` 包含 `default_prompt` 和列表。
@@ -783,7 +783,7 @@ async def list_prompts(
     )
 ```
 
-- [ ] **步骤 4：在应用工厂创建只读组件**
+- [x] **步骤 4：在应用工厂创建只读组件**
 
 `create_app()` 增加可注入参数：
 
@@ -796,7 +796,7 @@ artifact_parser: MarkdownArtifactParser | None = None,
 `prompts_router`。测试可以注入 Fake Registry 或真实默认 Registry，但模板语法错误必须使
 `create_app()` 立即失败。
 
-- [ ] **步骤 5：运行 API、启动预检和静态检查**
+- [x] **步骤 5：运行 API、启动预检和静态检查**
 
 ```powershell
 uv run --locked pytest tests/integration/test_prompts_api.py tests/unit/test_health.py -q
@@ -805,7 +805,7 @@ uv run --locked ruff check src tests
 uv run --locked pyright
 ```
 
-- [ ] **步骤 6：提交任务 5**
+- [x] **步骤 6：提交任务 5**
 
 ```powershell
 git add src/databricks_zh_expert/api/prompt_schemas.py src/databricks_zh_expert/api/prompts.py src/databricks_zh_expert/api/dependencies.py src/databricks_zh_expert/main.py tests/integration/test_prompts_api.py tests/unit/test_health.py
