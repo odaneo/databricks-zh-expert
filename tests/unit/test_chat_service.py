@@ -326,7 +326,7 @@ async def test_send_message_persists_each_fallback_attempt_before_reply() -> Non
     assert result.assistant_message.content == VALID_ANSWER
     assert result.assistant_message.artifact_type == "answer"
     assert result.prompt_name is PromptName.DATABRICKS_QA
-    assert result.prompt_version == "1.0.0"
+    assert result.prompt_version == "1.0.1"
     assert result.artifact.artifact_type is ArtifactType.ANSWER
     assert result.artifact.title == "Databricks 分析建议"
     assert result.model_invocation_id == invocation_id
@@ -339,7 +339,7 @@ async def test_send_message_persists_each_fallback_attempt_before_reply() -> Non
     assert repository.model_calls[0].success is False
     assert repository.model_calls[1].success is True
     assert repository.model_calls[0].prompt_name == "databricks_qa"
-    assert repository.model_calls[0].prompt_version == "1.0.0"
+    assert repository.model_calls[0].prompt_version == "1.0.1"
     assert repository.model_calls[0].artifact_type == "answer"
     assert repository.model_calls[0].artifact_valid is None
     assert repository.model_calls[0].artifact_error_code is None
@@ -397,12 +397,12 @@ async def test_explicit_sql_prompt_persists_sql_artifact_audit() -> None:
     assert gateway.received_messages[0].role == "system"
     assert "语言标识为 `sql`" in gateway.received_messages[0].content
     assert result.prompt_name is PromptName.SQL_GENERATION
-    assert result.prompt_version == "1.0.0"
+    assert result.prompt_version == "1.0.1"
     assert result.artifact.artifact_type is ArtifactType.SQL
     assert result.artifact.content == VALID_SQL
     assert result.assistant_message.artifact_type == "sql"
     assert repository.model_calls[0].prompt_name == "sql_generation"
-    assert repository.model_calls[0].prompt_version == "1.0.0"
+    assert repository.model_calls[0].prompt_version == "1.0.1"
     assert repository.model_calls[0].artifact_type == "sql"
     assert repository.model_calls[0].artifact_valid is True
     assert repository.model_calls[0].artifact_error_code is None

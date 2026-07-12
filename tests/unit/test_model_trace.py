@@ -33,7 +33,7 @@ def make_trace() -> ModelCallTrace:
         success=True,
         retryable=False,
         prompt_name=PromptName.SQL_GENERATION,
-        prompt_version="1.0.0",
+        prompt_version="1.0.1",
         artifact_type=ArtifactType.SQL,
         artifact_validation=ArtifactValidationTrace(valid=True, violations=()),
         request={
@@ -93,7 +93,7 @@ async def test_jsonl_trace_sink_writes_complete_utf8_input_and_output(tmp_path) 
             "success": True,
             "retryable": False,
             "prompt_name": "sql_generation",
-            "prompt_version": "1.0.0",
+            "prompt_version": "1.0.1",
             "artifact_type": "sql",
             "artifact_validation": {
                 "valid": True,

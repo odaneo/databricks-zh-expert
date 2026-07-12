@@ -113,6 +113,8 @@ class MarkdownArtifactParser:
             violations.append("missing_h1")
         if len(h1_headings) > 1:
             violations.append("multiple_h1")
+        if title == "标题":
+            violations.append("placeholder_title")
 
         h2_headings = _heading_texts(tokens, "h2")
         missing_sections = [

@@ -113,6 +113,13 @@ def test_document_rejects_multiple_h1_headings() -> None:
     assert get_violations(spec, content) == ("multiple_h1",)
 
 
+def test_document_rejects_a_placeholder_title() -> None:
+    spec = SPECS[PromptName.DATABRICKS_QA]
+    content = build_document(spec, title="标题")
+
+    assert get_violations(spec, content) == ("placeholder_title",)
+
+
 def test_document_rejects_a_missing_section() -> None:
     spec = SPECS[PromptName.DATABRICKS_QA]
     content = build_document(spec, spec.required_sections[:-1])
@@ -149,6 +156,39 @@ def test_pyspark_requires_a_python_fence() -> None:
         "code_fence_not_first",
         "missing_python_fence",
     )
+
+
+def test_code_artifact_allows_more_than_three_trailing_notes() -> None:
+    content = """```sql
+SELECT 1;
+```
+
+- 第一条说明
+- 第二条说明
+- 第三条说明
+- 第四条说明"""
+
+    artifact = MarkdownArtifactParser().parse(
+        SPECS[PromptName.SQL_GENERATION],
+        content,
+    )
+
+    assert artifact.content == content
+
+
+def test_code_artifact_allows_trailing_explanation() -> None:
+    content = """```python
+print(1)
+```
+
+这是一段额外解释。"""
+
+    artifact = MarkdownArtifactParser().parse(
+        SPECS[PromptName.PYSPARK_GENERATION],
+        content,
+    )
+
+    assert artifact.content == content
 
 
 @pytest.mark.parametrize(

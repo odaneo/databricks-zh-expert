@@ -62,7 +62,7 @@ def test_code_prompts_declare_their_fence_languages() -> None:
 
 
 def test_every_prompt_has_a_semantic_version() -> None:
-    assert all(spec.version == "1.0.0" for spec in PROMPT_SPECS)
+    assert all(spec.version == "1.0.1" for spec in PROMPT_SPECS)
 
 
 def test_code_prompts_do_not_require_document_sections() -> None:

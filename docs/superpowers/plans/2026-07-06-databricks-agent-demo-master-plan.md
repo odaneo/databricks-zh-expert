@@ -859,7 +859,8 @@ Agent 生成的 SQL 和 PySpark 可能存在环境差异，不能默认可执行
 
 ## 8. 近期最推荐的下一步
 
-阶段 1 和阶段 2 已完成。下一步建议细化“阶段 3：Prompt Registry 和 Markdown Artifact”，先固定顾问问答、SQL、PySpark 与工作流设计的输入输出契约，再实现模板注册、结构化生成和 Markdown 交付物。
+阶段 1 至阶段 3 已完成。下一步建议细化“阶段 4：预置 Databricks 知识库 RAG”，先固定知识来源、
+文档版本、解析边界、Embedding 配置和引用结构，再实现离线索引构建与只读检索问答。
 
 已完成阶段的详细设计和实施步骤见：
 
@@ -867,3 +868,5 @@ Agent 生成的 SQL 和 PySpark 可能存在环境差异，不能默认可执行
 2. `docs/superpowers/plans/2026-07-10-stage-1-backend-plan.md`。
 3. `docs/superpowers/specs/2026-07-11-stage-2-model-gateway-design.md`。
 4. `docs/superpowers/plans/2026-07-11-stage-2-model-gateway-plan.md`。
+5. `docs/superpowers/specs/2026-07-11-stage-3-prompt-registry-markdown-artifact-design.md`。
+6. `docs/superpowers/plans/2026-07-11-stage-3-prompt-registry-markdown-artifact-plan.md`。

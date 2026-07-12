@@ -206,7 +206,7 @@ class ArtifactValidationError(ValueError):
 
 - [x] **步骤 5：实现固定 Prompt 目录**
 
-`PromptSpec` 使用冻结 dataclass，包含设计规格中的九个字段。八个定义的版本统一为 `1.0.0`，映射
+`PromptSpec` 使用冻结 dataclass，包含设计规格中的九个字段。八个定义的当前版本统一为 `1.0.1`，映射
 和必需章节必须与设计规格第 7、8 节一致。关键声明为：
 
 ```python
@@ -316,7 +316,7 @@ from databricks_zh_expert.prompts.registry import (
 def test_default_prompt_renders_a_chinese_system_message() -> None:
     rendered = PromptRegistry.create_default().render(None)
     assert rendered.name is PromptName.DATABRICKS_QA
-    assert rendered.version == "1.0.0"
+    assert rendered.version == "1.0.1"
     assert "始终使用中文" in rendered.system_message
     assert "## 结论" in rendered.system_message
     assert "{{" not in rendered.system_message
@@ -365,10 +365,10 @@ uv run --locked pytest tests/unit/test_prompt_renderer.py -q
 {% if code_fence_language %}
 - 第一块内容必须是语言标识为 `{{ code_fence_language }}` 的 fenced code block。
 - 不输出一级标题或固定文档章节。
-- 用简短代码注释说明用途、输入、参数、关键假设和待确认项。
-- 确有必要时只在代码块后补充少量简短列表项，不先写长篇解释。
+- 优先使用简短代码注释说明用途、输入、参数、关键假设和待确认项；必要时可在代码块后简短补充。
 {% else %}
-- 第一行必须是唯一的一级标题 `# 标题`。
+- 第一行必须是唯一的一级标题，例如 `# 每日销售分析工作流设计`。
+- 根据用户需求生成简短、具体的一级标题；不得使用 `# 标题` 占位标题。
 - 必须按以下顺序包含二级标题：
 {% for section in required_sections %}
   - `## {{ section }}`
@@ -516,8 +516,9 @@ def test_invalid_markdown_reports_stable_reason(content: str, reason: str) -> No
     assert reason in caught.value.violations
 ```
 
-再分别测试 `missing_section`、`section_order_invalid`、`code_fence_not_first`、
-`missing_sql_fence` 和 `missing_python_fence`。SQL/PySpark 只有代码围栏时必须通过。
+再分别测试 `placeholder_title`、`missing_section`、`section_order_invalid`、
+`code_fence_not_first`、`missing_sql_fence` 和 `missing_python_fence`。SQL/PySpark 只有代码围栏时必须
+通过，正确代码围栏后的普通说明或超过三条列表项同样属于合法内容。
 
 - [x] **步骤 3：运行测试并确认 parser 尚不存在**
 
@@ -554,9 +555,11 @@ def normalize_markdown(content: str) -> str:
 3. 代码型 Artifact 的第一枚 block token 必须是 `fence`，否则产生 `code_fence_not_first`。
 4. `fence.info` 的首个词必须等于要求语言；SQL 和 PySpark 分别产生稳定的 missing reason。
 5. 代码型 Artifact 不检查 H1/H2，标题固定使用 `spec.display_name`。
-6. 文档型 Artifact 的第一枚 block token 必须是唯一 H1，其下一枚 `inline` token 提供标题。
-7. 文档型 Artifact 的 H2 文本列表必须包含 `spec.required_sections` 的有序子序列。
-8. 一次收集所有违反项，去重后按检查顺序保存到 tuple。
+6. 代码围栏后的内容保持模型原文，解析器不校验说明形式、列表数量或表达篇幅。
+7. 文档型 Artifact 的第一枚 block token 必须是唯一 H1，其下一枚 `inline` token 提供标题。
+8. 文档标题不能是 `标题` 占位值。
+9. 文档型 Artifact 的 H2 文本列表必须包含 `spec.required_sections` 的有序子序列。
+10. 一次收集所有违反项，去重后按检查顺序保存到 tuple。
 
 - [x] **步骤 6：运行聚焦测试和静态检查**
 
@@ -838,7 +841,7 @@ git commit -m "feat: expose prompt registry api"
 核心用例：
 
 1. 省略 Prompt 时第一条 ModelMessage 是 `databricks_qa` system message。
-2. 显式 SQL Prompt 时 model_calls 写入 `sql_generation`、`1.0.0`、`sql`。
+2. 显式 SQL Prompt 时 model_calls 写入 `sql_generation`、`1.0.1`、`sql`。
 3. 历史 `system` message 被过滤，当前 system message 只有一条且位于第一项。
 4. 合法 Markdown 保存 assistant message 和 `ArtifactType.SQL`。
 5. `knowledge_qa` 在保存 user message和调用模型前返回 `prompt_not_available`。
@@ -850,7 +853,7 @@ git commit -m "feat: expose prompt registry api"
 payload = json.loads(JsonlModelTraceSink._serialize(trace))
 assert payload["schema_version"] == "1.3"
 assert payload["trace"]["prompt_name"] == "sql_generation"
-assert payload["trace"]["prompt_version"] == "1.0.0"
+assert payload["trace"]["prompt_version"] == "1.0.1"
 assert payload["trace"]["artifact_type"] == "sql"
 assert payload["trace"]["artifact_validation"] == {
     "valid": True,
@@ -1031,7 +1034,7 @@ git commit -m "feat: compose prompts and markdown artifacts"
 
 ```python
 assert payload["prompt_name"] == "sql_generation"
-assert payload["prompt_version"] == "1.0.0"
+assert payload["prompt_version"] == "1.0.1"
 assert payload["artifact"] == {
     "type": "sql",
     "format": "markdown",
@@ -1237,7 +1240,7 @@ docker compose exec postgres psql -U databricks_agent -d databricks_agent -c "SE
 ```
 
 预期：两条成功记录分别为 `workflow_design/workflow_design` 和 `sql_generation/sql`，版本均为
-`1.0.0`，`artifact_valid=true`、`artifact_error_code=null`、`attempt_number=1`。
+验收当时版本均为 `1.0.0`，`artifact_valid=true`、`artifact_error_code=null`、`attempt_number=1`。
 
 - [x] **步骤 5：检查 Trace 1.3 和 API Key 脱敏**
 
@@ -1267,6 +1270,7 @@ docker compose exec postgres psql -U databricks_agent -d databricks_agent -c "SE
 2. OpenAI SQL：session ID `02173524-ef78-4b02-8ae9-016d3a79ad1d`，
    `gpt5.4mini`、`sql_generation`、attempt 1、Artifact 校验通过。
 3. 数据库保留 2 个 sessions、4 条 messages、2 条 model_calls；本地 Trace 保留且双 API Key 脱敏通过。
+4. 上述记录属于 Prompt `1.0.0` 历史审计；收尾版本升级到 `1.0.1` 后不重写、不替换这些记录。
 
 - [x] **步骤 7：复跑最终门禁并停止临时 API**
 
@@ -1291,6 +1295,27 @@ git commit -m "feat: complete stage three prompt artifacts"
 
 ---
 
+### 任务 10：根据真实 Trace 校准输出契约
+
+**范围：**
+
+- 修改文档型 Prompt，要求具体标题并拒绝 `# 标题` 占位值。
+- 代码型 Artifact 的简洁性只由 Prompt 引导，解析器不限制尾部说明的形式或数量。
+- 公共模板变化后把八个 Prompt 的当前版本升级为 `1.0.1`，保留历史 `1.0.0` 审计数据。
+- 更新总计划，阶段 1 至阶段 3 标记为已完成，下一步进入阶段 4。
+- 按用户决定不修改最近 20 条消息、跨 Prompt 历史或其他上下文组装行为。
+
+- [x] **步骤 1：先写占位标题拒绝、代码尾部放宽和 Prompt 版本测试并确认失败**
+- [x] **步骤 2：修改模板、解析器和 Prompt Registry，运行 33 条聚焦测试并确认通过**
+- [x] **步骤 3：同步设计规格、实施计划和总计划**
+- [x] **步骤 4：运行 Ruff、Pyright、完整 pytest、Alembic，并只读复核验收数据**
+
+实际结果：Ruff 通过，Pyright 为 0 errors，157 条测试全部通过，覆盖率为 93.95%，Alembic 位于
+`0003_prompt_artifacts (head)` 且无 schema drift。原有验收数据保持 2 个 sessions、4 条 messages、
+2 条 model_calls，本地 Trace 仍为 11 条 `1.3` 记录，其中两条属于阶段 3 验收。
+
+---
+
 ## 阶段 3 验收清单
 
 - [x] 固定目录包含八个 Prompt，七个可用，`knowledge_qa` 在阶段 4 前不可用。
@@ -1300,12 +1325,13 @@ git commit -m "feat: complete stage three prompt artifacts"
 - [x] 所有模板使用 Jinja2 `StrictUndefined` 并在应用启动时完成预检。
 - [x] system message 是每次模型请求第一条消息，历史 system message 不会重复注入。
 - [x] Markdown 使用 CommonMark AST 校验，不通过正则模拟完整语法。
-- [x] 五类文档型 Artifact 的 H1、必需章节和章节顺序均受校验。
-- [x] SQL 和 PySpark 不要求 H1/H2，分别直接以 `sql` 和 `python` fenced code block 开头。
+- [x] 五类文档型 Artifact 的具体 H1、必需章节和章节顺序均受校验，占位标题被拒绝。
+- [x] SQL 和 PySpark 直接以正确 fenced code block 开头，尾部说明保持原文且不做风格硬校验。
 - [x] 原始 HTML 被拒绝，外层单个 Markdown 围栏可被规范化。
 - [x] Artifact 无效不保存 assistant message、不触发 fallback、不自动进行第二次模型调用。
 - [x] 历史 `messages.artifact_type='markdown'` 已迁移为 `answer`，未知类型受数据库约束拒绝。
 - [x] 每条新 model_call 保存 Prompt 名称、版本、目标 Artifact 和结构校验结果。
+- [x] 当前 Prompt 版本为 `1.0.1`，历史验收记录继续保留 `1.0.0`。
 - [x] Trace 1.3 保存实际 system message、Prompt 元数据和 Artifact 校验结果，且不包含真实 API Key。
 - [x] 会话演示数据仍为 30 个 sessions、300 个 messages，且不再使用 `markdown` 业务类型。
 - [x] DeepSeek 工作流和 OpenAI SQL 各完成一次真实结构化 Markdown 冒烟。

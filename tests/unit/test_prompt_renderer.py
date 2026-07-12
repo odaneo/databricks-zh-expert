@@ -29,7 +29,7 @@ def test_default_prompt_renders_a_chinese_system_message() -> None:
     rendered = PromptRegistry.create_default().render(None)
 
     assert rendered.name is PromptName.DATABRICKS_QA
-    assert rendered.version == "1.0.0"
+    assert rendered.version == "1.0.1"
     assert rendered.artifact_type is ArtifactType.ANSWER
     assert "始终使用中文" in rendered.system_message
     assert "## 结论" in rendered.system_message
@@ -44,6 +44,7 @@ def test_sql_prompt_uses_a_compact_code_contract() -> None:
     assert "语言标识为 `sql`" in rendered.system_message
     assert "不输出一级标题或固定文档章节" in rendered.system_message
     assert "简短代码注释" in rendered.system_message
+    assert "必要时可在代码块后简短补充" in rendered.system_message
     assert "## 使用场景" not in rendered.system_message
 
 
@@ -60,6 +61,8 @@ def test_workflow_prompt_contains_its_document_sections() -> None:
     rendered = PromptRegistry.create_default().render(PromptName.WORKFLOW_DESIGN)
 
     assert "第一行必须是唯一的一级标题" in rendered.system_message
+    assert "根据用户需求生成简短、具体的一级标题" in rendered.system_message
+    assert "不得使用 `# 标题`" in rendered.system_message
     assert "## Bronze 层设计" in rendered.system_message
     assert "## Job 依赖关系" in rendered.system_message
     assert "## 后续确认事项" in rendered.system_message

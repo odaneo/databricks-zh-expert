@@ -194,7 +194,7 @@ async def test_send_message_supports_requested_model_and_persists_fallback_attem
         "databricks_qa",
         "databricks_qa",
     ]
-    assert [call.prompt_version for call in saved_model_calls] == ["1.0.0", "1.0.0"]
+    assert [call.prompt_version for call in saved_model_calls] == ["1.0.1", "1.0.1"]
     assert [call.artifact_type for call in saved_model_calls] == ["answer", "answer"]
     assert [call.artifact_valid for call in saved_model_calls] == [None, True]
     assert [call.artifact_error_code for call in saved_model_calls] == [None, None]
@@ -223,7 +223,7 @@ async def test_send_message_accepts_sql_prompt_and_returns_artifact_metadata(
     assert response.status_code == 201
     payload = response.json()
     assert payload["prompt_name"] == "sql_generation"
-    assert payload["prompt_version"] == "1.0.0"
+    assert payload["prompt_version"] == "1.0.1"
     assert payload["artifact"] == {
         "type": "sql",
         "format": "markdown",
@@ -259,7 +259,7 @@ async def test_send_message_passes_none_when_model_is_omitted(
     assert response.json()["fallback_used"] is False
     assert response.json()["attempt_count"] == 1
     assert response.json()["prompt_name"] == "databricks_qa"
-    assert response.json()["prompt_version"] == "1.0.0"
+    assert response.json()["prompt_version"] == "1.0.1"
     assert response.json()["artifact"] == {
         "type": "answer",
         "format": "markdown",
