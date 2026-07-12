@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, Query, status
 from databricks_zh_expert.api.dependencies import get_chat_repository, get_chat_service
 from databricks_zh_expert.chat.repository import ChatRepository
 from databricks_zh_expert.chat.schemas import (
+    ArtifactMetadataResponse,
     MessageResponse,
     SendMessageRequest,
     SendMessageResponse,
@@ -75,7 +76,12 @@ async def send_message(
     payload: SendMessageRequest,
     service: Annotated[ChatService, Depends(get_chat_service)],
 ) -> SendMessageResponse:
-    result = await service.send_message(session_id, payload.content, payload.model)
+    result = await service.send_message(
+        session_id=session_id,
+        content=payload.content,
+        requested_model=payload.model,
+        requested_prompt=payload.prompt,
+    )
     return SendMessageResponse(
         session_id=session_id,
         user_message=MessageResponse.model_validate(result.user_message),
@@ -86,4 +92,10 @@ async def send_message(
         used_model=result.used_model,
         fallback_used=result.fallback_used,
         attempt_count=result.attempt_count,
+        prompt_name=result.prompt_name,
+        prompt_version=result.prompt_version,
+        artifact=ArtifactMetadataResponse(
+            type=result.artifact.artifact_type,
+            title=result.artifact.title,
+        ),
     )

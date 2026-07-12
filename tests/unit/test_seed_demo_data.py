@@ -4,6 +4,7 @@ from io import BytesIO, TextIOWrapper
 
 import pytest
 
+from databricks_zh_expert.artifacts.markdown import MarkdownArtifactParser
 from databricks_zh_expert.artifacts.types import ArtifactType
 from databricks_zh_expert.devtools.seed_demo_data import (
     SeedResult,
@@ -11,6 +12,7 @@ from databricks_zh_expert.devtools.seed_demo_data import (
     seed_demo_data,
     write_seed_summary,
 )
+from databricks_zh_expert.prompts.registry import PROMPT_SPECS
 
 
 def test_build_demo_records_creates_expected_sessions_and_messages() -> None:
@@ -23,11 +25,20 @@ def test_build_demo_records_creates_expected_sessions_and_messages() -> None:
     messages_per_session = Counter(message.session_id for message in messages)
     assert set(messages_per_session.values()) == {10}
     assert {message.role for message in messages} == {"user", "assistant"}
-    assistant_artifact_types = {
-        message.artifact_type for message in messages if message.role == "assistant"
-    }
-    assert assistant_artifact_types <= {artifact.value for artifact in ArtifactType} | {None}
+    user_messages = [message for message in messages if message.role == "user"]
+    assistant_messages = [message for message in messages if message.role == "assistant"]
+    assert all(message.artifact_type is None for message in user_messages)
+    assistant_artifact_types = {message.artifact_type for message in assistant_messages}
+    assert assistant_artifact_types == {artifact.value for artifact in ArtifactType}
     assert "markdown" not in assistant_artifact_types
+
+    parser = MarkdownArtifactParser()
+    specs_by_artifact = {spec.artifact_type: spec for spec in PROMPT_SPECS if spec.available}
+    for message in assistant_messages:
+        assert message.artifact_type is not None
+        artifact_type = ArtifactType(message.artifact_type)
+        parsed = parser.parse(specs_by_artifact[artifact_type], message.content)
+        assert parsed.artifact_type is artifact_type
 
 
 def test_write_seed_summary_supports_a_cp932_console() -> None:

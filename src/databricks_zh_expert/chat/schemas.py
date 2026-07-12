@@ -1,9 +1,12 @@
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from databricks_zh_expert.artifacts.types import ArtifactType
 from databricks_zh_expert.llm.model_registry import ModelAlias
+from databricks_zh_expert.prompts.registry import PromptName
 
 
 class SessionCreate(BaseModel):
@@ -16,7 +19,7 @@ class MessageResponse(BaseModel):
     id: UUID
     role: str
     content: str
-    artifact_type: str | None
+    artifact_type: ArtifactType | None
     created_at: datetime
 
 
@@ -36,6 +39,13 @@ class SessionDetail(SessionResponse):
 class SendMessageRequest(BaseModel):
     content: str = Field(min_length=1, max_length=20_000)
     model: ModelAlias | None = None
+    prompt: PromptName | None = None
+
+
+class ArtifactMetadataResponse(BaseModel):
+    type: ArtifactType
+    format: Literal["markdown"] = "markdown"
+    title: str
 
 
 class SendMessageResponse(BaseModel):
@@ -48,3 +58,6 @@ class SendMessageResponse(BaseModel):
     used_model: ModelAlias
     fallback_used: bool
     attempt_count: int
+    prompt_name: PromptName
+    prompt_version: str
+    artifact: ArtifactMetadataResponse

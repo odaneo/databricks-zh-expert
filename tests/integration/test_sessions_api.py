@@ -6,6 +6,7 @@ from httpx import AsyncClient
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from databricks_zh_expert.artifacts.types import ArtifactType
 from databricks_zh_expert.db.models import ChatSession, Message
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
@@ -102,6 +103,7 @@ async def test_get_session_lists_messages_in_creation_order(
                 session_id=session_id,
                 role="assistant",
                 content="第二条",
+                artifact_type=ArtifactType.SQL.value,
                 created_at=datetime(2026, 1, 2, tzinfo=UTC),
             ),
             Message(
@@ -120,4 +122,8 @@ async def test_get_session_lists_messages_in_creation_order(
     assert [message["content"] for message in response.json()["messages"]] == [
         "第一条",
         "第二条",
+    ]
+    assert [message["artifact_type"] for message in response.json()["messages"]] == [
+        None,
+        "sql",
     ]

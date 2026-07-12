@@ -1,9 +1,41 @@
+from datetime import UTC, datetime
 from typing import cast
+from uuid import uuid4
 
+import pytest
+from pydantic import ValidationError
 from sqlalchemy import CheckConstraint, ForeignKeyConstraint, Table, UniqueConstraint
 
+from databricks_zh_expert.artifacts.types import ArtifactType
+from databricks_zh_expert.chat.schemas import MessageResponse
 from databricks_zh_expert.db.base import Base
 from databricks_zh_expert.db.models import ChatSession, Message, ModelCall
+
+
+def test_message_response_uses_the_fixed_artifact_catalog() -> None:
+    message_id = uuid4()
+    created_at = datetime(2026, 1, 1, tzinfo=UTC)
+    response = MessageResponse.model_validate(
+        {
+            "id": message_id,
+            "role": "assistant",
+            "content": "```sql\nSELECT 1;\n```",
+            "artifact_type": "sql",
+            "created_at": created_at,
+        }
+    )
+
+    assert response.artifact_type is ArtifactType.SQL
+    with pytest.raises(ValidationError):
+        MessageResponse.model_validate(
+            {
+                "id": message_id,
+                "role": "assistant",
+                "content": "历史回答",
+                "artifact_type": "markdown",
+                "created_at": created_at,
+            }
+        )
 
 
 def test_models_register_expected_tables_and_columns() -> None:

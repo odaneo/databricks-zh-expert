@@ -13,6 +13,7 @@ from databricks_zh_expert.core.config import Settings, get_settings
 from databricks_zh_expert.core.runtime import selector_event_loop_factory
 from databricks_zh_expert.db.models import ChatSession, Message
 from databricks_zh_expert.db.session import Database
+from databricks_zh_expert.prompts.registry import PROMPT_SPECS, PromptSpec
 
 DEMO_TITLE_PREFIX = "[演示数据]"
 DEMO_TITLES = (
@@ -47,13 +48,48 @@ DEMO_TITLES = (
     "灾备与恢复建议",
     "项目交付设计书",
 )
-ARTIFACT_TYPES = (
-    ArtifactType.ANSWER.value,
-    ArtifactType.SQL.value,
-    ArtifactType.PYSPARK.value,
-    ArtifactType.WORKFLOW_DESIGN.value,
-    None,
-)
+ARTIFACT_TYPES: tuple[ArtifactType, ...] = tuple(ArtifactType)
+ARTIFACT_SPECS: dict[ArtifactType, PromptSpec] = {
+    spec.artifact_type: spec for spec in PROMPT_SPECS if spec.available
+}
+
+
+def build_demo_artifact(
+    title: str,
+    round_number: int,
+    artifact_type: ArtifactType,
+) -> str:
+    spec = ARTIFACT_SPECS[artifact_type]
+    if artifact_type is ArtifactType.SQL:
+        return (
+            "```sql\n"
+            f"-- 用途：为“{title}”提供第 {round_number} 轮演示查询。\n"
+            "-- 前置条件：请确认 catalog、schema、表名和统计口径。\n"
+            "SELECT *\n"
+            "FROM catalog.schema.source_table\n"
+            "LIMIT 100;\n"
+            "```"
+        )
+    if artifact_type is ArtifactType.PYSPARK:
+        return (
+            "```python\n"
+            f"# 用途：为“{title}”提供第 {round_number} 轮演示处理。\n"
+            "# 前置条件：请确认 catalog、schema、表名和输出位置。\n"
+            'source_df = spark.table("catalog.schema.source_table")\n'
+            "display(source_df.limit(100))\n"
+            "```"
+        )
+
+    lines = [f"# {title} - 第 {round_number} 轮"]
+    for section in spec.required_sections:
+        lines.extend(
+            (
+                "",
+                f"## {section}",
+                f"围绕“{title}”的第 {round_number} 轮演示内容，实施前需结合项目环境确认。",
+            )
+        )
+    return "\n".join(lines)
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,6 +113,8 @@ def build_demo_records(
         session_messages: list[Message] = []
 
         for pair_index in range(5):
+            round_number = pair_index + 1
+            artifact_type = ARTIFACT_TYPES[(session_index * 5 + pair_index) % len(ARTIFACT_TYPES)]
             user_time = created_at + timedelta(minutes=pair_index * 20 + 1)
             assistant_time = user_time + timedelta(minutes=2)
             session_messages.extend(
@@ -85,7 +123,7 @@ def build_demo_records(
                         id=uuid4(),
                         session_id=session_id,
                         role="user",
-                        content=f"请为“{title}”提供第 {pair_index + 1} 轮分析建议。",
+                        content=f"请为“{title}”提供第 {round_number} 轮分析建议。",
                         artifact_type=None,
                         created_at=user_time,
                     ),
@@ -93,11 +131,12 @@ def build_demo_records(
                         id=uuid4(),
                         session_id=session_id,
                         role="assistant",
-                        content=(
-                            f"## {title}\n\n"
-                            f"这是第 {pair_index + 1} 轮演示回答，包含设计假设、实施步骤和风险点。"
+                        content=build_demo_artifact(
+                            title,
+                            round_number,
+                            artifact_type,
                         ),
-                        artifact_type=ARTIFACT_TYPES[pair_index],
+                        artifact_type=artifact_type.value,
                         created_at=assistant_time,
                     ),
                 ]

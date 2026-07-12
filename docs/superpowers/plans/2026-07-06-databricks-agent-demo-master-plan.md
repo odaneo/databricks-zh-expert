@@ -293,9 +293,9 @@ DEEPSEEK_API_KEY=
 
 ### 技术栈
 
-1. Jinja2 或 Python 字符串模板。
-2. Markdown。
-3. Pydantic。
+1. Jinja2 固定版本模板。
+2. markdown-it-py 和 CommonMark AST 校验。
+3. Pydantic API 契约。
 
 ### Prompt 分类
 
@@ -303,9 +303,12 @@ DEEPSEEK_API_KEY=
 2. `sql_generation`：Databricks SQL 生成。
 3. `pyspark_generation`：PySpark 生成。
 4. `workflow_design`：工作流设计。
-5. `knowledge_qa`：基于预置 Databricks 知识库问答。
-6. `proposal_generation`：提案或设计书草案。
-7. `self_check`：输出自检。
+5. `document_summary`：当前会话文档或文本摘要。
+6. `knowledge_qa`：基于预置 Databricks 知识库问答，阶段 4 前注册但不可用。
+7. `proposal_generation`：提案或设计书草案。
+8. `self_check`：输出自检。
+
+消息请求通过可选 `prompt` 别名显式选择任务；省略时使用 `databricks_qa`。阶段 3 不做自动意图分类。
 
 ### Artifact 类型
 
@@ -321,7 +324,11 @@ checklist
 
 ### Markdown 输出规则
 
-所有专业输出尽量包含：
+五类文档型 Artifact 使用唯一 H1 和固定顺序的 H2 章节；SQL 与 PySpark 直接输出带简短注释的
+`sql` 或 `python` 代码围栏，不强制标题和长文档章节。模型输出由 CommonMark AST 直接校验，
+格式不合格时返回错误，不自动修复或再次调用模型。
+
+文档型专业输出按任务包含：
 
 1. 标题。
 2. 适用场景。
@@ -334,7 +341,11 @@ checklist
 
 ### 完成标准
 
-同一个 Chat API 可以根据用户意图选择不同 Prompt，并输出结构化 Markdown。
+1. `GET /api/prompts` 返回固定 Prompt 目录，不暴露模板正文或路径。
+2. 同一个 Chat API 接受可选 Prompt 别名并输出结构化 Markdown Artifact。
+3. `knowledge_qa` 在阶段 4 前明确返回不可用错误。
+4. `model_calls` 保存 Prompt、Artifact 和结构校验审计字段。
+5. Trace 1.3 保存实际 system message、Prompt 元数据和 Artifact 校验结果。
 
 ---
 

@@ -1017,7 +1017,7 @@ git commit -m "feat: compose prompts and markdown artifacts"
 - 响应增加：`prompt_name`、`prompt_version`、`artifact`。
 - 历史消息 `artifact_type` 使用 `ArtifactType | None`。
 
-- [ ] **步骤 1：写消息 API 失败测试**
+- [x] **步骤 1：写消息 API 失败测试**
 
 至少覆盖：
 
@@ -1040,7 +1040,7 @@ assert payload["artifact"] == {
 assert payload["assistant_message"]["artifact_type"] == "sql"
 ```
 
-- [ ] **步骤 2：实现 Pydantic 契约**
+- [x] **步骤 2：实现 Pydantic 契约**
 
 ```python
 class ArtifactMetadataResponse(BaseModel):
@@ -1058,7 +1058,7 @@ class SendMessageRequest(BaseModel):
 `MessageResponse.artifact_type` 改为 `ArtifactType | None`。`SendMessageResponse` 增加
 `prompt_name: PromptName`、`prompt_version: str` 和 `artifact: ArtifactMetadataResponse`。
 
-- [ ] **步骤 3：更新路由映射**
+- [x] **步骤 3：更新路由映射**
 
 路由调用使用命名参数，避免模型和 Prompt 位置颠倒：
 
@@ -1073,15 +1073,15 @@ result = await service.send_message(
 
 响应 Artifact 从 `result.artifact` 构造，不重复 content。
 
-- [ ] **步骤 4：把演示数据改成合法业务 Artifact**
+- [x] **步骤 4：把演示数据改成合法业务 Artifact**
 
 1. `ARTIFACT_TYPES` 只使用 `ArtifactType` 值，不再出现 `markdown`。
-2. assistant 演示内容第一行改为 H1。
+2. 五类文档型 assistant 演示内容第一行改为 H1。
 3. 五类文档型内容生成最小合法标题和章节。
 4. SQL 和 PySpark 演示数据直接输出带简短注释的正确语言代码围栏，不生成固定章节。
 5. 保持 30 个 sessions 和 300 个 messages，可重复删除并重建。
 
-- [ ] **步骤 5：运行 API、会话和演示数据测试**
+- [x] **步骤 5：运行 API、会话和演示数据测试**
 
 ```powershell
 uv run --locked pytest tests/integration/test_messages_api.py tests/integration/test_sessions_api.py tests/unit/test_models.py tests/unit/test_seed_demo_data.py -q
@@ -1090,7 +1090,7 @@ uv run --locked ruff check src tests
 uv run --locked pyright
 ```
 
-- [ ] **步骤 6：重建开发演示数据并抽查类型**
+- [x] **步骤 6：重建开发演示数据并抽查类型**
 
 ```powershell
 uv run --locked python -m databricks_zh_expert.devtools.seed_demo_data
@@ -1099,12 +1099,9 @@ docker compose exec postgres psql -U databricks_agent -d databricks_agent -c "SE
 
 预期：不存在 `artifact_type='markdown'`，会话和消息总数仍为 30 与 300。
 
-- [ ] **步骤 7：提交任务 7**
+- [x] **步骤 7：与任务 8、任务 9 合并提交**
 
-```powershell
-git add src/databricks_zh_expert/chat/schemas.py src/databricks_zh_expert/api/chat.py src/databricks_zh_expert/devtools/seed_demo_data.py tests/integration/test_messages_api.py tests/integration/test_sessions_api.py tests/unit/test_models.py tests/unit/test_seed_demo_data.py
-git commit -m "feat: expose prompt artifact chat contract"
-```
+本次按用户要求不单独提交，待任务 8、任务 9 完成后一次提交任务 7 至任务 9 的全部变更。
 
 ---
 
@@ -1123,7 +1120,7 @@ git commit -m "feat: expose prompt artifact chat contract"
 - README 和 `.env.example` 不因没有启动变化而膨胀。
 - 完整自动测试、类型检查、迁移检查全部通过。
 
-- [ ] **步骤 1：同步总计划阶段 3**
+- [x] **步骤 1：同步总计划阶段 3**
 
 更新内容：
 
@@ -1133,12 +1130,12 @@ git commit -m "feat: expose prompt artifact chat contract"
 4. 说明直接 Markdown 加 AST 校验，不使用自动修复。
 5. 完成标准增加 Prompt 列表 API、Trace 1.3 和 Artifact 审计。
 
-- [ ] **步骤 2：确认启动文档无需修改**
+- [x] **步骤 2：确认启动文档无需修改**
 
 README 已包含 `uv sync --locked`，新增依赖会自动安装；阶段 3 没有新环境变量。因此不增加依赖说明、
 模板说明、测试输出或 API 示例。`.env.example` 保持不变。
 
-- [ ] **步骤 3：执行锁文件和迁移门禁**
+- [x] **步骤 3：执行锁文件和迁移门禁**
 
 ```powershell
 uv lock --check
@@ -1148,7 +1145,7 @@ uv run --locked alembic check
 
 预期：current 为 `0003_prompt_artifacts (head)`，没有 schema drift。
 
-- [ ] **步骤 4：执行完整代码质量门禁**
+- [x] **步骤 4：执行完整代码质量门禁**
 
 ```powershell
 uv run --locked ruff format --check .
@@ -1159,7 +1156,7 @@ uv run --locked pytest --cov=databricks_zh_expert --cov-report=term-missing
 
 预期：Ruff 通过、Pyright 为 0 errors、全部测试通过、分支覆盖率不低于 80%。
 
-- [ ] **步骤 5：检查模板和敏感文件未误入提交**
+- [x] **步骤 5：检查模板和敏感文件未误入提交**
 
 ```powershell
 git status --short --untracked-files=all
@@ -1169,12 +1166,9 @@ git check-ignore .env .local/logs/model-calls.jsonl
 
 确认 `.env` 和 Trace 仍被忽略，九个 Jinja2 模板属于预期源码。
 
-- [ ] **步骤 6：提交任务 8**
+- [x] **步骤 6：与任务 7、任务 9 合并提交**
 
-```powershell
-git add docs/superpowers/plans/2026-07-06-databricks-agent-demo-master-plan.md docs/superpowers/plans/2026-07-11-stage-3-prompt-registry-markdown-artifact-plan.md
-git commit -m "docs: align stage three prompt artifacts"
-```
+本次按用户要求不单独提交，待任务 9 完成后一次提交任务 7 至任务 9 的全部变更。
 
 ---
 
@@ -1189,9 +1183,9 @@ git commit -m "docs: align stage three prompt artifacts"
 
 - DeepSeek 工作流 Artifact 和 OpenAI SQL Artifact 各成功一次。
 - 数据库审计、Trace 1.3、Markdown 结构与密钥脱敏通过。
-- 本次验收数据库数据精确清理，本地 Trace 保留。
+- 本次验收数据库会话、消息和 model_calls 按精确 ID 核对后保留，本地 Trace 同样保留。
 
-- [ ] **步骤 1：启动服务并检查 Prompt 列表**
+- [x] **步骤 1：启动服务并检查 Prompt 列表**
 
 ```powershell
 uv run --locked databricks-zh-expert
@@ -1207,7 +1201,7 @@ $knowledge = $prompts.prompts | Where-Object { $_.name -eq "knowledge_qa" }
 if ($knowledge.available -ne $false) { throw "knowledge_qa 不应在阶段 3 启用。" }
 ```
 
-- [ ] **步骤 2：真实生成 DeepSeek 工作流 Artifact**
+- [x] **步骤 2：真实生成 DeepSeek 工作流 Artifact**
 
 ```powershell
 $deepseekSession = Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/chat/sessions -ContentType "application/json; charset=utf-8" -Body (@{ title = "[阶段3验收] DeepSeek Workflow" } | ConvertTo-Json)
@@ -1221,7 +1215,7 @@ if ($deepseekResult.artifact.type -ne "workflow_design") { throw "DeepSeek Artif
 if ($deepseekResult.used_model -ne "deepseek-v4-flash") { throw "DeepSeek 实际模型不正确。" }
 ```
 
-- [ ] **步骤 3：真实生成 OpenAI SQL Artifact**
+- [x] **步骤 3：真实生成 OpenAI SQL Artifact**
 
 ```powershell
 $openaiSession = Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/chat/sessions -ContentType "application/json; charset=utf-8" -Body (@{ title = "[阶段3验收] OpenAI SQL" } | ConvertTo-Json)
@@ -1235,7 +1229,7 @@ if ($openaiResult.artifact.type -ne "sql") { throw "OpenAI Artifact 类型不正
 if ($openaiResult.used_model -ne "gpt5.4mini") { throw "OpenAI 实际模型不正确。" }
 ```
 
-- [ ] **步骤 4：按精确 ID 核对数据库审计**
+- [x] **步骤 4：按精确 ID 核对数据库审计**
 
 ```powershell
 $sessionIds = @($deepseekSession.id, $openaiSession.id)
@@ -1245,7 +1239,7 @@ docker compose exec postgres psql -U databricks_agent -d databricks_agent -c "SE
 预期：两条成功记录分别为 `workflow_design/workflow_design` 和 `sql_generation/sql`，版本均为
 `1.0.0`，`artifact_valid=true`、`artifact_error_code=null`、`attempt_number=1`。
 
-- [ ] **步骤 5：检查 Trace 1.3 和 API Key 脱敏**
+- [x] **步骤 5：检查 Trace 1.3 和 API Key 脱敏**
 
 使用 Python 解析 JSONL，按两个精确 session ID 选择记录并断言：
 
@@ -1257,16 +1251,24 @@ docker compose exec postgres psql -U databricks_agent -d databricks_agent -c "SE
 6. 完整 Trace 文件不包含 `OPENAI_API_KEY` 和 `DEEPSEEK_API_KEY` 的实际值。
 7. OpenAI 实际请求仍不包含 `temperature`。
 
-- [ ] **步骤 6：按精确会话 ID 清理验收数据**
+- [x] **步骤 6：按精确会话 ID 核对并保留验收数据**
 
 ```powershell
-docker compose exec postgres psql -U databricks_agent -d databricks_agent -c "DELETE FROM databricks_agent.sessions WHERE id IN ('$($sessionIds[0])', '$($sessionIds[1])') RETURNING id;"
+docker compose exec postgres psql -U databricks_agent -d databricks_agent -c "SELECT (SELECT count(*) FROM databricks_agent.sessions WHERE id IN ('$($sessionIds[0])', '$($sessionIds[1])')) AS sessions, (SELECT count(*) FROM databricks_agent.messages WHERE session_id IN ('$($sessionIds[0])', '$($sessionIds[1])')) AS messages, (SELECT count(*) FROM databricks_agent.model_calls WHERE session_id IN ('$($sessionIds[0])', '$($sessionIds[1])')) AS model_calls;"
 ```
 
-随后按相同 ID 查询 `sessions`、`messages` 和 `model_calls`，三者剩余数量都必须为 0。禁止使用标题
-通配符删除。
+预期本次两条成功验收记录对应 2 个 sessions、4 条 messages 和 2 条 model_calls。验收数据用于后续
+界面与审计检查，禁止执行 `DELETE` 或标题通配符清理；本地 Trace 同样保留。
 
-- [ ] **步骤 7：复跑最终门禁并停止临时 API**
+实际保留验收记录（2026-07-12）：
+
+1. DeepSeek Workflow：session ID `8a67159d-e90d-4171-9be1-c7dbe6de11c8`，
+   `deepseek-v4-flash`、`workflow_design`、attempt 1、Artifact 校验通过。
+2. OpenAI SQL：session ID `02173524-ef78-4b02-8ae9-016d3a79ad1d`，
+   `gpt5.4mini`、`sql_generation`、attempt 1、Artifact 校验通过。
+3. 数据库保留 2 个 sessions、4 条 messages、2 条 model_calls；本地 Trace 保留且双 API Key 脱敏通过。
+
+- [x] **步骤 7：复跑最终门禁并停止临时 API**
 
 ```powershell
 uv lock --check
@@ -1280,34 +1282,34 @@ uv run --locked pytest --cov=databricks_zh_expert --cov-report=term-missing
 
 只停止本任务启动并确认过进程链的临时 API，不停止用户已有进程。
 
-- [ ] **步骤 8：勾选阶段验收并提交任务 9**
+- [x] **步骤 8：勾选阶段验收并合并提交任务 7 至任务 9**
 
 ```powershell
-git add docs/superpowers/plans/2026-07-11-stage-3-prompt-registry-markdown-artifact-plan.md
-git commit -m "docs: complete stage three prompt artifact acceptance"
+git add src tests docs/superpowers/plans/2026-07-06-databricks-agent-demo-master-plan.md docs/superpowers/plans/2026-07-11-stage-3-prompt-registry-markdown-artifact-plan.md
+git commit -m "feat: complete stage three prompt artifacts"
 ```
 
 ---
 
 ## 阶段 3 验收清单
 
-- [ ] 固定目录包含八个 Prompt，七个可用，`knowledge_qa` 在阶段 4 前不可用。
-- [ ] Artifact 类型固定为 `answer`、`sql`、`pyspark`、`workflow_design`、`document_summary`、`proposal`、`checklist`。
-- [ ] 消息 API 接受可选 Prompt 别名，省略时使用 `databricks_qa`，非法值返回 422。
-- [ ] `GET /api/prompts` 不暴露模板正文、文件路径或 system message。
-- [ ] 所有模板使用 Jinja2 `StrictUndefined` 并在应用启动时完成预检。
-- [ ] system message 是每次模型请求第一条消息，历史 system message 不会重复注入。
-- [ ] Markdown 使用 CommonMark AST 校验，不通过正则模拟完整语法。
-- [ ] 五类文档型 Artifact 的 H1、必需章节和章节顺序均受校验。
-- [ ] SQL 和 PySpark 不要求 H1/H2，分别直接以 `sql` 和 `python` fenced code block 开头。
-- [ ] 原始 HTML 被拒绝，外层单个 Markdown 围栏可被规范化。
-- [ ] Artifact 无效不保存 assistant message、不触发 fallback、不自动进行第二次模型调用。
-- [ ] 历史 `messages.artifact_type='markdown'` 已迁移为 `answer`，未知类型受数据库约束拒绝。
-- [ ] 每条新 model_call 保存 Prompt 名称、版本、目标 Artifact 和结构校验结果。
-- [ ] Trace 1.3 保存实际 system message、Prompt 元数据和 Artifact 校验结果，且不包含真实 API Key。
-- [ ] 会话演示数据仍为 30 个 sessions、300 个 messages，且不再使用 `markdown` 业务类型。
-- [ ] DeepSeek 工作流和 OpenAI SQL 各完成一次真实结构化 Markdown 冒烟。
-- [ ] Ruff、Pyright、pytest、覆盖率、Alembic current 和 Alembic check 全部通过。
+- [x] 固定目录包含八个 Prompt，七个可用，`knowledge_qa` 在阶段 4 前不可用。
+- [x] Artifact 类型固定为 `answer`、`sql`、`pyspark`、`workflow_design`、`document_summary`、`proposal`、`checklist`。
+- [x] 消息 API 接受可选 Prompt 别名，省略时使用 `databricks_qa`，非法值返回 422。
+- [x] `GET /api/prompts` 不暴露模板正文、文件路径或 system message。
+- [x] 所有模板使用 Jinja2 `StrictUndefined` 并在应用启动时完成预检。
+- [x] system message 是每次模型请求第一条消息，历史 system message 不会重复注入。
+- [x] Markdown 使用 CommonMark AST 校验，不通过正则模拟完整语法。
+- [x] 五类文档型 Artifact 的 H1、必需章节和章节顺序均受校验。
+- [x] SQL 和 PySpark 不要求 H1/H2，分别直接以 `sql` 和 `python` fenced code block 开头。
+- [x] 原始 HTML 被拒绝，外层单个 Markdown 围栏可被规范化。
+- [x] Artifact 无效不保存 assistant message、不触发 fallback、不自动进行第二次模型调用。
+- [x] 历史 `messages.artifact_type='markdown'` 已迁移为 `answer`，未知类型受数据库约束拒绝。
+- [x] 每条新 model_call 保存 Prompt 名称、版本、目标 Artifact 和结构校验结果。
+- [x] Trace 1.3 保存实际 system message、Prompt 元数据和 Artifact 校验结果，且不包含真实 API Key。
+- [x] 会话演示数据仍为 30 个 sessions、300 个 messages，且不再使用 `markdown` 业务类型。
+- [x] DeepSeek 工作流和 OpenAI SQL 各完成一次真实结构化 Markdown 冒烟。
+- [x] Ruff、Pyright、pytest、覆盖率、Alembic current 和 Alembic check 全部通过。
 
 ## 参考资料
 

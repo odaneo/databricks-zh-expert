@@ -31,12 +31,19 @@ VALID_ANSWER = """# Databricks 工作流建议
 
 ## 人工确认事项
 确认数据源和调度时间。"""
+VALID_SQL = """```sql
+-- 汇总每日销售额
+SELECT business_date, SUM(amount) AS total_amount
+FROM silver_sales
+GROUP BY business_date;
+```"""
 
 
 class FakeModelGateway:
     def __init__(self) -> None:
         self.invocation_id = uuid4()
         self.requested_models: list[ModelAlias | None] = []
+        self.system_messages: list[str] = []
 
     @property
     def called(self) -> bool:
@@ -50,7 +57,9 @@ class FakeModelGateway:
         self.requested_models.append(requested_model)
         assert messages[0].role == "system"
         assert "始终使用中文" in messages[0].content
+        self.system_messages.append(messages[0].content)
         assert messages[-1].content == "设计一个销售工作流"
+        response_content = VALID_SQL if "语言标识为 `sql`" in messages[0].content else VALID_ANSWER
 
         if requested_model is ModelAlias.GPT_55:
             yield ModelAttempt(
@@ -111,13 +120,13 @@ class FakeModelGateway:
                         "index": 0,
                         "message": {
                             "role": "assistant",
-                            "content": VALID_ANSWER,
+                            "content": response_content,
                         },
                         "finish_reason": "stop",
                     }
                 ],
             },
-            content=VALID_ANSWER,
+            content=response_content,
             prompt_tokens=20,
             completion_tokens=15,
             latency_ms=125,
@@ -191,6 +200,41 @@ async def test_send_message_supports_requested_model_and_persists_fallback_attem
     assert [call.artifact_error_code for call in saved_model_calls] == [None, None]
 
 
+async def test_send_message_accepts_sql_prompt_and_returns_artifact_metadata(
+    client: AsyncClient,
+    test_app: FastAPI,
+) -> None:
+    fake_gateway = FakeModelGateway()
+    test_app.dependency_overrides[get_model_gateway] = lambda: fake_gateway
+    create_response = await client.post(
+        "/api/chat/sessions",
+        json={"title": "SQL 生成"},
+    )
+    session_id = UUID(create_response.json()["id"])
+
+    response = await client.post(
+        f"/api/chat/sessions/{session_id}/messages",
+        json={
+            "content": "设计一个销售工作流",
+            "prompt": "sql_generation",
+        },
+    )
+
+    assert response.status_code == 201
+    payload = response.json()
+    assert payload["prompt_name"] == "sql_generation"
+    assert payload["prompt_version"] == "1.0.0"
+    assert payload["artifact"] == {
+        "type": "sql",
+        "format": "markdown",
+        "title": "Databricks SQL",
+    }
+    assert payload["assistant_message"]["content"] == VALID_SQL
+    assert payload["assistant_message"]["artifact_type"] == "sql"
+    assert "content" not in payload["artifact"]
+    assert "语言标识为 `sql`" in fake_gateway.system_messages[0]
+
+
 async def test_send_message_passes_none_when_model_is_omitted(
     client: AsyncClient,
     test_app: FastAPI,
@@ -214,6 +258,57 @@ async def test_send_message_passes_none_when_model_is_omitted(
     assert response.json()["used_model"] == "deepseek-v4-flash"
     assert response.json()["fallback_used"] is False
     assert response.json()["attempt_count"] == 1
+    assert response.json()["prompt_name"] == "databricks_qa"
+    assert response.json()["prompt_version"] == "1.0.0"
+    assert response.json()["artifact"] == {
+        "type": "answer",
+        "format": "markdown",
+        "title": "Databricks 工作流建议",
+    }
+
+
+async def test_send_message_rejects_unknown_prompt_before_calling_gateway(
+    client: AsyncClient,
+    test_app: FastAPI,
+) -> None:
+    fake_gateway = FakeModelGateway()
+    test_app.dependency_overrides[get_model_gateway] = lambda: fake_gateway
+
+    response = await client.post(
+        "/api/chat/sessions/00000000-0000-0000-0000-000000000000/messages",
+        json={"content": "测试", "prompt": "unknown"},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["code"] == "validation_error"
+    assert fake_gateway.called is False
+
+
+async def test_send_message_rejects_reserved_prompt_without_persisting_message(
+    client: AsyncClient,
+    test_app: FastAPI,
+) -> None:
+    fake_gateway = FakeModelGateway()
+    test_app.dependency_overrides[get_model_gateway] = lambda: fake_gateway
+    create_response = await client.post(
+        "/api/chat/sessions",
+        json={"title": "知识库问答"},
+    )
+    session_id = UUID(create_response.json()["id"])
+
+    response = await client.post(
+        f"/api/chat/sessions/{session_id}/messages",
+        json={
+            "content": "设计一个销售工作流",
+            "prompt": "knowledge_qa",
+        },
+    )
+
+    assert response.status_code == 409
+    assert response.json()["code"] == "prompt_not_available"
+    assert fake_gateway.called is False
+    detail_response = await client.get(f"/api/chat/sessions/{session_id}")
+    assert detail_response.json()["messages"] == []
 
 
 async def test_send_message_rejects_unknown_model_before_calling_gateway(
