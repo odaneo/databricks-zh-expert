@@ -824,6 +824,7 @@ git commit -m "feat: expose prompt registry api"
 - 修改：`src/databricks_zh_expert/observability/model_trace.py`
 - 修改：`tests/unit/test_chat_service.py`
 - 修改：`tests/unit/test_model_trace.py`
+- 修改：`tests/integration/test_messages_api.py`
 
 **接口：**
 
@@ -832,7 +833,7 @@ git commit -m "feat: expose prompt registry api"
 - `SendMessageResult` 增加 `prompt_name`、`prompt_version`、`artifact`。
 - Trace schema 升级到 `1.3`。
 
-- [ ] **步骤 1：为 ChatService 写 Prompt 组装失败测试**
+- [x] **步骤 1：为 ChatService 写 Prompt 组装失败测试**
 
 核心用例：
 
@@ -843,7 +844,7 @@ git commit -m "feat: expose prompt registry api"
 5. `knowledge_qa` 在保存 user message和调用模型前返回 `prompt_not_available`。
 6. `ArtifactValidationError` 返回 `artifact_invalid`，模型只调用一次，assistant message 数量不增加，model_call 保存 `artifact_valid=false`。
 
-- [ ] **步骤 2：为 Trace 1.3 写失败测试**
+- [x] **步骤 2：为 Trace 1.3 写失败测试**
 
 ```python
 payload = json.loads(JsonlModelTraceSink._serialize(trace))
@@ -858,13 +859,13 @@ assert payload["trace"]["artifact_validation"] == {
 assert payload["request"]["messages"][0]["role"] == "system"
 ```
 
-- [ ] **步骤 3：运行测试并确认新行为尚未实现**
+- [x] **步骤 3：运行测试并确认新行为尚未实现**
 
 ```powershell
 uv run --locked pytest tests/unit/test_chat_service.py tests/unit/test_model_trace.py -q
 ```
 
-- [ ] **步骤 4：扩展 ChatService 构造函数和调用顺序**
+- [x] **步骤 4：扩展 ChatService 构造函数和调用顺序**
 
 构造函数增加：
 
@@ -899,7 +900,7 @@ model_messages = [
 ]
 ```
 
-- [ ] **步骤 5：计算并持久化 Prompt 与 Artifact 校验元数据**
+- [x] **步骤 5：计算并持久化 Prompt 与 Artifact 校验元数据**
 
 先把 `ChatRepository.create_model_call()` 扩展为五个必填关键字参数：
 
@@ -936,7 +937,7 @@ raise AppError(
 
 普通应用日志只记录 violation reason、PromptName 和 invocation ID，不记录完整模型内容。
 
-- [ ] **步骤 6：保存 Artifact 并扩展结果**
+- [x] **步骤 6：保存 Artifact 并扩展结果**
 
 合法 Artifact 使用：
 
@@ -952,7 +953,7 @@ assistant_message = await self.repository.create_message(
 `SendMessageResult` 保存 `rendered_prompt.name`、`rendered_prompt.version` 和完整
 `MarkdownArtifact`，供 API 构造元数据。
 
-- [ ] **步骤 7：升级 Trace dataclass 和序列化**
+- [x] **步骤 7：升级 Trace dataclass 和序列化**
 
 增加结构化 Trace 类型：
 
@@ -975,18 +976,21 @@ artifact_validation: ArtifactValidationTrace | None
 `build_trace()` 从 `RenderedPrompt` 复制 Prompt 字段，并接收本次校验结果。供应商失败时校验结果为空；
 供应商成功时为 true 或 false 和稳定原因码列表。JSONL schema 设为 `1.3`，旧日志文件不重写。
 
-- [ ] **步骤 8：更新依赖注入并运行聚焦门禁**
+- [x] **步骤 8：更新依赖注入并运行聚焦门禁**
 
-`get_chat_service()` 注入 PromptRegistry 和 MarkdownArtifactParser。随后运行：
+`get_chat_service()` 注入 PromptRegistry 和 MarkdownArtifactParser。现有消息 API 测试的 Fake
+Gateway 同步改为最小合法 `databricks_qa` Artifact，并通过测试数据库断言 Prompt 与 Artifact
+审计字段；此处不提前扩展任务 7 的请求或响应契约。随后运行：
 
 ```powershell
 uv run --locked pytest tests/unit/test_chat_service.py tests/unit/test_model_trace.py -q
+uv run --locked pytest tests/integration/test_messages_api.py -q
 uv run --locked ruff format --check src tests
 uv run --locked ruff check src tests
 uv run --locked pyright
 ```
 
-- [ ] **步骤 9：提交任务 6**
+- [x] **步骤 9：提交任务 6**
 
 ```powershell
 git add src/databricks_zh_expert/chat/service.py src/databricks_zh_expert/chat/repository.py src/databricks_zh_expert/api/dependencies.py src/databricks_zh_expert/observability/model_trace.py tests/unit/test_chat_service.py tests/unit/test_model_trace.py

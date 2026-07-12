@@ -77,5 +77,13 @@ def get_chat_service(
     repository: Annotated[ChatRepository, Depends(get_chat_repository)],
     model_gateway: Annotated[ModelGateway, Depends(get_model_gateway)],
     trace_sink: Annotated[ModelTraceSink, Depends(get_model_trace_sink)],
+    prompt_registry: Annotated[PromptRegistry, Depends(get_prompt_registry)],
+    artifact_parser: Annotated[MarkdownArtifactParser, Depends(get_artifact_parser)],
 ) -> ChatService:
-    return ChatService(repository, model_gateway, trace_sink)
+    return ChatService(
+        repository=repository,
+        model_gateway=model_gateway,
+        trace_sink=trace_sink,
+        prompt_registry=prompt_registry,
+        artifact_parser=artifact_parser,
+    )

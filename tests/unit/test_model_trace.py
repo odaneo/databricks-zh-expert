@@ -8,12 +8,15 @@ from uuid import uuid4
 
 import pytest
 
+from databricks_zh_expert.artifacts.types import ArtifactType
 from databricks_zh_expert.llm.client import JsonObject
 from databricks_zh_expert.llm.model_registry import ModelAlias
 from databricks_zh_expert.observability.model_trace import (
+    ArtifactValidationTrace,
     JsonlModelTraceSink,
     ModelCallTrace,
 )
+from databricks_zh_expert.prompts.registry import PromptName
 
 
 def make_trace() -> ModelCallTrace:
@@ -29,11 +32,15 @@ def make_trace() -> ModelCallTrace:
         latency_ms=1250,
         success=True,
         retryable=False,
+        prompt_name=PromptName.SQL_GENERATION,
+        prompt_version="1.0.0",
+        artifact_type=ArtifactType.SQL,
+        artifact_validation=ArtifactValidationTrace(valid=True, violations=()),
         request={
             "model": "deepseek/deepseek-v4-flash",
             "messages": [
+                {"role": "system", "content": "始终使用中文并直接输出 SQL。"},
                 {"role": "user", "content": "请分析销售数据。"},
-                {"role": "assistant", "content": "请提供字段定义。"},
             ],
         },
         response={
@@ -71,7 +78,7 @@ async def test_jsonl_trace_sink_writes_complete_utf8_input_and_output(tmp_path) 
 
     payload = json.loads(trace_path.read_text(encoding="utf-8"))
     assert payload == {
-        "schema_version": "1.2",
+        "schema_version": "1.3",
         "protocol": "openai.chat.completions",
         "trace": {
             "model_call_id": str(trace.model_call_id),
@@ -85,11 +92,30 @@ async def test_jsonl_trace_sink_writes_complete_utf8_input_and_output(tmp_path) 
             "latency_ms": 1250,
             "success": True,
             "retryable": False,
+            "prompt_name": "sql_generation",
+            "prompt_version": "1.0.0",
+            "artifact_type": "sql",
+            "artifact_validation": {
+                "valid": True,
+                "violations": [],
+            },
         },
         "request": trace.request,
         "response": trace.response,
         "error": None,
     }
+
+
+def test_trace_serializes_missing_artifact_validation_for_provider_failure() -> None:
+    trace = replace(
+        make_trace(),
+        success=False,
+        artifact_validation=None,
+    )
+
+    payload = json.loads(JsonlModelTraceSink._serialize(trace))
+
+    assert payload["trace"]["artifact_validation"] is None
 
 
 @pytest.mark.asyncio

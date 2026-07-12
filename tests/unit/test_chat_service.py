@@ -1,3 +1,4 @@
+import logging
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
 from typing import cast
@@ -5,6 +6,8 @@ from uuid import UUID, uuid4
 
 import pytest
 
+from databricks_zh_expert.artifacts.markdown import MarkdownArtifactParser
+from databricks_zh_expert.artifacts.types import ArtifactType
 from databricks_zh_expert.chat.repository import ChatRepository
 from databricks_zh_expert.chat.service import ChatService
 from databricks_zh_expert.core.errors import AppError
@@ -17,8 +20,29 @@ from databricks_zh_expert.llm.gateway import (
 )
 from databricks_zh_expert.llm.model_registry import ModelAlias, ModelProvider
 from databricks_zh_expert.observability.model_trace import ModelCallTrace, ModelTraceSink
+from databricks_zh_expert.prompts.registry import PromptName, PromptRegistry
 
 NOW = datetime(2026, 1, 1, tzinfo=UTC)
+VALID_ANSWER = """# Databricks 分析建议
+
+## 结论
+建议使用分层工作流。
+
+## 适用场景
+每日销售分析。
+
+## 详细说明
+使用 Bronze、Silver、Gold 三层。
+
+## 注意事项
+先确认源数据质量。
+
+## 人工确认事项
+确认调度时间。"""
+VALID_SQL = """```sql
+-- 汇总销售数据
+SELECT 1;
+```"""
 
 
 def make_session() -> ChatSession:
@@ -64,7 +88,7 @@ def make_attempt(
     attempt_number: int,
     success: bool,
     retryable: bool = False,
-    content: str = "这是一个 Markdown 回答。",
+    content: str = VALID_ANSWER,
     error_code: str = "model_provider_unavailable",
     error_message: str = "模型服务暂时不可用。",
 ) -> ModelAttempt:
@@ -172,6 +196,11 @@ class FakeChatRepository:
         retryable: bool,
         error_code: str | None,
         error_message: str | None,
+        prompt_name: str,
+        prompt_version: str,
+        artifact_type: str,
+        artifact_valid: bool | None,
+        artifact_error_code: str | None,
     ) -> ModelCall:
         self.model_call_requests += 1
         if self.model_call_requests == self.fail_model_call_number:
@@ -190,6 +219,11 @@ class FakeChatRepository:
             success=success,
             retryable=retryable,
             error_code=error_code,
+            prompt_name=prompt_name,
+            prompt_version=prompt_version,
+            artifact_type=artifact_type,
+            artifact_valid=artifact_valid,
+            artifact_error_code=artifact_error_code,
             error_message=error_message,
             created_at=NOW + timedelta(milliseconds=attempt_number),
         )
@@ -211,6 +245,7 @@ class FakeModelGateway:
         self.received_requested_model: ModelAlias | None = None
         self.resumed = False
         self.called = False
+        self.yielded_attempts = 0
 
     async def run(
         self,
@@ -223,6 +258,7 @@ class FakeModelGateway:
         for index, attempt in enumerate(self.attempts):
             if index > 0:
                 self.resumed = True
+            self.yielded_attempts += 1
             yield attempt
         if self.failure is not None:
             raise self.failure
@@ -246,6 +282,8 @@ def build_service(
         cast(ChatRepository, repository),
         cast(ModelGateway, model_gateway),
         cast(ModelTraceSink, trace_sink),
+        PromptRegistry.create_default(),
+        MarkdownArtifactParser(),
     )
     return service, trace_sink
 
@@ -285,8 +323,12 @@ async def test_send_message_persists_each_fallback_attempt_before_reply() -> Non
     )
 
     assert result.user_message.content == "设计一个销售工作流"
-    assert result.assistant_message.content == "这是一个 Markdown 回答。"
+    assert result.assistant_message.content == VALID_ANSWER
     assert result.assistant_message.artifact_type == "answer"
+    assert result.prompt_name is PromptName.DATABRICKS_QA
+    assert result.prompt_version == "1.0.0"
+    assert result.artifact.artifact_type is ArtifactType.ANSWER
+    assert result.artifact.title == "Databricks 分析建议"
     assert result.model_invocation_id == invocation_id
     assert result.requested_model is ModelAlias.GPT_55
     assert result.used_model is ModelAlias.GPT_54_MINI
@@ -296,6 +338,13 @@ async def test_send_message_persists_each_fallback_attempt_before_reply() -> Non
     assert [call.attempt_number for call in repository.model_calls] == [1, 2]
     assert repository.model_calls[0].success is False
     assert repository.model_calls[1].success is True
+    assert repository.model_calls[0].prompt_name == "databricks_qa"
+    assert repository.model_calls[0].prompt_version == "1.0.0"
+    assert repository.model_calls[0].artifact_type == "answer"
+    assert repository.model_calls[0].artifact_valid is None
+    assert repository.model_calls[0].artifact_error_code is None
+    assert repository.model_calls[1].artifact_valid is True
+    assert repository.model_calls[1].artifact_error_code is None
     assert repository.model_calls[0].invocation_id == repository.model_calls[1].invocation_id
     assert repository.events[-4:] == [
         "message:user",
@@ -303,7 +352,9 @@ async def test_send_message_persists_each_fallback_attempt_before_reply() -> Non
         "model_call:2",
         "message:assistant",
     ]
-    assert [message.content for message in gateway.received_messages] == [
+    assert gateway.received_messages[0].role == "system"
+    assert "始终使用中文" in gateway.received_messages[0].content
+    assert [message.content for message in gateway.received_messages[1:]] == [
         message.content for message in repository.messages[-21:-1]
     ]
     assert gateway.received_requested_model is ModelAlias.GPT_55
@@ -311,8 +362,147 @@ async def test_send_message_persists_each_fallback_attempt_before_reply() -> Non
     assert [trace.attempt_number for trace in trace_sink.traces] == [1, 2]
     assert trace_sink.traces[0].response is None
     assert trace_sink.traces[0].error is not None
+    assert trace_sink.traces[0].artifact_validation is None
     assert trace_sink.traces[1].response is not None
     assert trace_sink.traces[1].error is None
+    assert trace_sink.traces[1].artifact_validation is not None
+    assert trace_sink.traces[1].artifact_validation.valid is True
+    assert trace_sink.traces[1].artifact_validation.violations == ()
+
+
+@pytest.mark.asyncio
+async def test_explicit_sql_prompt_persists_sql_artifact_audit() -> None:
+    session = make_session()
+    repository = FakeChatRepository(session)
+    gateway = FakeModelGateway(
+        [
+            make_attempt(
+                invocation_id=uuid4(),
+                model_alias=ModelAlias.GPT_55,
+                attempt_number=1,
+                success=True,
+                content=VALID_SQL,
+            )
+        ]
+    )
+    service, trace_sink = build_service(repository, gateway)
+
+    result = await service.send_message(
+        session_id=session.id,
+        content="生成销售汇总 SQL",
+        requested_model=ModelAlias.GPT_55,
+        requested_prompt=PromptName.SQL_GENERATION,
+    )
+
+    assert gateway.received_messages[0].role == "system"
+    assert "语言标识为 `sql`" in gateway.received_messages[0].content
+    assert result.prompt_name is PromptName.SQL_GENERATION
+    assert result.prompt_version == "1.0.0"
+    assert result.artifact.artifact_type is ArtifactType.SQL
+    assert result.artifact.content == VALID_SQL
+    assert result.assistant_message.artifact_type == "sql"
+    assert repository.model_calls[0].prompt_name == "sql_generation"
+    assert repository.model_calls[0].prompt_version == "1.0.0"
+    assert repository.model_calls[0].artifact_type == "sql"
+    assert repository.model_calls[0].artifact_valid is True
+    assert repository.model_calls[0].artifact_error_code is None
+    assert trace_sink.traces[0].prompt_name is PromptName.SQL_GENERATION
+    assert trace_sink.traces[0].artifact_type is ArtifactType.SQL
+
+
+@pytest.mark.asyncio
+async def test_historical_system_messages_are_replaced_by_current_prompt() -> None:
+    session = make_session()
+    historical_messages = [
+        make_message(session.id, "system", "旧系统提示", 0),
+        make_message(session.id, "user", "历史问题", 1),
+        make_message(session.id, "assistant", "历史回答", 2),
+    ]
+    repository = FakeChatRepository(session, historical_messages)
+    gateway = FakeModelGateway(
+        [
+            make_attempt(
+                invocation_id=uuid4(),
+                model_alias=ModelAlias.GPT_55,
+                attempt_number=1,
+                success=True,
+            )
+        ]
+    )
+    service, _ = build_service(repository, gateway)
+
+    await service.send_message(session.id, "当前问题")
+
+    assert [message.role for message in gateway.received_messages] == [
+        "system",
+        "user",
+        "assistant",
+        "user",
+    ]
+    assert "旧系统提示" not in {message.content for message in gateway.received_messages}
+
+
+@pytest.mark.asyncio
+async def test_reserved_prompt_is_rejected_before_user_message_and_model_call() -> None:
+    session = make_session()
+    repository = FakeChatRepository(session)
+    gateway = FakeModelGateway([])
+    service, trace_sink = build_service(repository, gateway)
+
+    with pytest.raises(AppError) as error:
+        await service.send_message(
+            session_id=session.id,
+            content="查询预置知识库",
+            requested_prompt=PromptName.KNOWLEDGE_QA,
+        )
+
+    assert error.value.code == "prompt_not_available"
+    assert error.value.status_code == 409
+    assert repository.messages == []
+    assert repository.model_calls == []
+    assert trace_sink.traces == []
+    assert gateway.called is False
+
+
+@pytest.mark.asyncio
+async def test_invalid_artifact_is_audited_without_assistant_message_or_fallback(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    session = make_session()
+    invalid_content = "# 不完整且不应写入日志的回答"
+    invocation_id = uuid4()
+    repository = FakeChatRepository(session)
+    gateway = FakeModelGateway(
+        [
+            make_attempt(
+                invocation_id=invocation_id,
+                model_alias=ModelAlias.GPT_55,
+                attempt_number=1,
+                success=True,
+                content=invalid_content,
+            )
+        ]
+    )
+    service, trace_sink = build_service(repository, gateway)
+
+    with caplog.at_level(logging.WARNING), pytest.raises(AppError) as error:
+        await service.send_message(session.id, "生成分析建议")
+
+    assert error.value.code == "artifact_invalid"
+    assert error.value.status_code == 502
+    assert [message.role for message in repository.messages] == ["user"]
+    assert gateway.yielded_attempts == 1
+    assert len(repository.model_calls) == 1
+    assert repository.model_calls[0].artifact_valid is False
+    assert repository.model_calls[0].artifact_error_code == "artifact_invalid"
+    assert len(trace_sink.traces) == 1
+    assert trace_sink.traces[0].artifact_validation is not None
+    assert trace_sink.traces[0].artifact_validation.valid is False
+    assert "missing_section" in trace_sink.traces[0].artifact_validation.violations
+    assert "databricks_qa" in caplog.text
+    assert str(invocation_id) in caplog.text
+    assert "missing_section" in caplog.text
+    assert invalid_content not in caplog.text
 
 
 @pytest.mark.asyncio

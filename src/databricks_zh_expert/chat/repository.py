@@ -92,6 +92,11 @@ class ChatRepository:
         retryable: bool,
         error_code: str | None,
         error_message: str | None,
+        prompt_name: str,
+        prompt_version: str,
+        artifact_type: str,
+        artifact_valid: bool | None,
+        artifact_error_code: str | None,
     ) -> ModelCall:
         model_call = ModelCall(
             session_id=session_id,
@@ -106,6 +111,11 @@ class ChatRepository:
             success=success,
             retryable=retryable,
             error_code=error_code,
+            prompt_name=prompt_name,
+            prompt_version=prompt_version,
+            artifact_type=artifact_type,
+            artifact_valid=artifact_valid,
+            artifact_error_code=artifact_error_code,
             error_message=error_message,
         )
         self.db.add(model_call)

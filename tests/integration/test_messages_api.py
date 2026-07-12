@@ -15,6 +15,23 @@ from databricks_zh_expert.llm.model_registry import ModelAlias, ModelProvider
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
+VALID_ANSWER = """# Databricks 工作流建议
+
+## 结论
+建议使用 Bronze、Silver、Gold 三层工作流。
+
+## 适用场景
+每日销售分析。
+
+## 详细说明
+按数据质量和业务口径逐层处理。
+
+## 注意事项
+需要监控数据延迟与失败重试。
+
+## 人工确认事项
+确认数据源和调度时间。"""
+
 
 class FakeModelGateway:
     def __init__(self) -> None:
@@ -31,6 +48,8 @@ class FakeModelGateway:
         requested_model: ModelAlias | None,
     ) -> AsyncIterator[ModelAttempt]:
         self.requested_models.append(requested_model)
+        assert messages[0].role == "system"
+        assert "始终使用中文" in messages[0].content
         assert messages[-1].content == "设计一个销售工作流"
 
         if requested_model is ModelAlias.GPT_55:
@@ -92,13 +111,13 @@ class FakeModelGateway:
                         "index": 0,
                         "message": {
                             "role": "assistant",
-                            "content": "## 工作流方案\n\n使用 Bronze、Silver、Gold 三层。",
+                            "content": VALID_ANSWER,
                         },
                         "finish_reason": "stop",
                     }
                 ],
             },
-            content="## 工作流方案\n\n使用 Bronze、Silver、Gold 三层。",
+            content=VALID_ANSWER,
             prompt_tokens=20,
             completion_tokens=15,
             latency_ms=125,
@@ -130,7 +149,8 @@ async def test_send_message_supports_requested_model_and_persists_fallback_attem
     payload = response.json()
     assert payload["session_id"] == str(session_id)
     assert payload["user_message"]["content"] == "设计一个销售工作流"
-    assert payload["assistant_message"]["content"].startswith("## 工作流方案")
+    assert payload["assistant_message"]["content"] == VALID_ANSWER
+    assert payload["assistant_message"]["artifact_type"] == "answer"
     assert payload["model_invocation_id"] == str(fake_gateway.invocation_id)
     assert payload["requested_model"] == "gpt5.5"
     assert payload["used_model"] == "gpt5.4mini"
@@ -161,6 +181,14 @@ async def test_send_message_supports_requested_model_and_persists_fallback_attem
     assert [call.retryable for call in saved_model_calls] == [True, False]
     assert saved_model_calls[0].error_code == "rate_limit"
     assert saved_model_calls[1].error_code is None
+    assert [call.prompt_name for call in saved_model_calls] == [
+        "databricks_qa",
+        "databricks_qa",
+    ]
+    assert [call.prompt_version for call in saved_model_calls] == ["1.0.0", "1.0.0"]
+    assert [call.artifact_type for call in saved_model_calls] == ["answer", "answer"]
+    assert [call.artifact_valid for call in saved_model_calls] == [None, True]
+    assert [call.artifact_error_code for call in saved_model_calls] == [None, None]
 
 
 async def test_send_message_passes_none_when_model_is_omitted(

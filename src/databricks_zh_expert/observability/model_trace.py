@@ -7,10 +7,18 @@ from pathlib import Path
 from typing import Protocol
 from uuid import UUID
 
+from databricks_zh_expert.artifacts.types import ArtifactType
 from databricks_zh_expert.llm.client import JsonObject
 from databricks_zh_expert.llm.model_registry import ModelAlias
+from databricks_zh_expert.prompts.registry import PromptName
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True, slots=True)
+class ArtifactValidationTrace:
+    valid: bool
+    violations: tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -26,6 +34,10 @@ class ModelCallTrace:
     latency_ms: int
     success: bool
     retryable: bool
+    prompt_name: PromptName
+    prompt_version: str
+    artifact_type: ArtifactType
+    artifact_validation: ArtifactValidationTrace | None
     request: JsonObject
     response: JsonObject | None
     error: JsonObject | None
@@ -65,7 +77,7 @@ class JsonlModelTraceSink:
     @staticmethod
     def _serialize(trace: ModelCallTrace) -> str:
         payload = {
-            "schema_version": "1.2",
+            "schema_version": "1.3",
             "protocol": "openai.chat.completions",
             "trace": {
                 "model_call_id": str(trace.model_call_id),
@@ -79,6 +91,17 @@ class JsonlModelTraceSink:
                 "latency_ms": trace.latency_ms,
                 "success": trace.success,
                 "retryable": trace.retryable,
+                "prompt_name": trace.prompt_name,
+                "prompt_version": trace.prompt_version,
+                "artifact_type": trace.artifact_type,
+                "artifact_validation": (
+                    {
+                        "valid": trace.artifact_validation.valid,
+                        "violations": list(trace.artifact_validation.violations),
+                    }
+                    if trace.artifact_validation is not None
+                    else None
+                ),
             },
             "request": trace.request,
             "response": trace.response,
