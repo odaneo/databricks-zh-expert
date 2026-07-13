@@ -341,7 +341,7 @@ class EmbeddingClient(Protocol):
     async def embed_query(self, text: str) -> EmbeddingResult: ...
 ```
 
-- [ ] **步骤 1：写 Chunk 失败测试**
+- [x] **步骤 1：写 Chunk 失败测试**
 
 至少覆盖：
 
@@ -352,7 +352,7 @@ class EmbeddingClient(Protocol):
 5. 相同输入两次生成相同顺序、token 数和 SHA-256。
 6. 空章节不生成 Chunk。
 
-- [ ] **步骤 2：写 Embedding 失败测试**
+- [x] **步骤 2：写 Embedding 失败测试**
 
 注入 Fake OpenAI client，覆盖：
 
@@ -363,18 +363,20 @@ class EmbeddingClient(Protocol):
 5. 缺少 Key 只使知识能力失败，不影响普通 DeepSeek 聊天和 `create_app`。
 6. 日志不保存正文或向量数组，只保存模型、数量、token、延迟和状态。
 
-- [ ] **步骤 3：确认测试失败**
+- [x] **步骤 3：确认测试失败**
 
 ```powershell
 uv run --locked pytest tests/unit/test_knowledge_chunker.py tests/unit/test_embeddings.py -q
 ```
 
-- [ ] **步骤 4：实现 Chunker 和 AsyncOpenAI 适配器**
+- [x] **步骤 4：实现 Chunker 和 AsyncOpenAI 适配器**
 
 Chunker 使用 markdown-it token 的 heading 与 source map，不以字符数作为唯一切分依据；token 编码固定
-`cl100k_base`。Embedding 生产实现直接使用官方 `AsyncOpenAI`，不经过 LiteLLM。
+`cl100k_base`。每个 Chunk 带完整 H1-H3 标题前缀；短代码围栏、表格和列表保持完整，超长代码围栏拆成
+多个闭合代码块。Embedding 生产实现直接使用官方 `AsyncOpenAI`，不经过 LiteLLM；拒绝空文本和超过
+2048 项的单批输入，并严格校验返回模型、数量、index、维度和有限浮点数。
 
-- [ ] **步骤 5：验证并提交**
+- [x] **步骤 5：验证并提交**
 
 ```powershell
 uv run --locked pytest tests/unit/test_knowledge_chunker.py tests/unit/test_embeddings.py -q
