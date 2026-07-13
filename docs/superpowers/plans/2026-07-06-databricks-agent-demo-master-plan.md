@@ -886,8 +886,8 @@ Agent 生成的 SQL 和 PySpark 可能存在环境差异，不能默认可执行
 
 ## 8. 近期最推荐的下一步
 
-阶段 1 至阶段 3 和阶段 4 任务 1 已完成。下一步执行阶段 4 任务 2：实现官方目录发现、受限 HTTP 抓取和
-HTML / Markdown 正文规范化；自动测试继续使用本地 fixture，不访问真实网络。
+阶段 1 至阶段 3 和阶段 4 任务 1 至任务 2 已完成。下一步执行阶段 4 任务 3：实现确定性 Markdown
+Chunk 和独立 OpenAI EmbeddingClient；自动测试继续使用本地 fixture 和 Fake Client，不访问真实网络。
 
 已完成阶段的详细设计和实施步骤见：
 

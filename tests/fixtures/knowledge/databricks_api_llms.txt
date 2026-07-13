@@ -1,0 +1,16 @@
+# Databricks REST API
+
+## Jobs
+
+- [Create a new job](markdown/Jobs/Jobs/Create.md)
+- [Get a single job](markdown/Jobs/Jobs/Get.md)
+- [Delete a job](markdown/Jobs/Jobs/Delete.md)
+
+## Pipelines
+
+- [Create a pipeline](markdown/Pipelines/Pipelines/Create.md)
+- [Edit a pipeline](markdown/Pipelines/Pipelines/Update.md)
+
+## SQL Warehouses
+
+- [Create a warehouse](markdown/Sql/Warehouses/Create.md)

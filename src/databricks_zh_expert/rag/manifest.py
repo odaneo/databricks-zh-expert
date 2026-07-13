@@ -1,6 +1,5 @@
 from pathlib import Path
 from typing import Annotated, Literal, Self
-from urllib.parse import urlsplit
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
@@ -15,6 +14,7 @@ from databricks_zh_expert.rag.types import (
     KnowledgeManifest,
     SourceCatalog,
 )
+from databricks_zh_expert.rag.urls import validate_official_url
 
 StableKey = Annotated[
     str,
@@ -34,19 +34,6 @@ class _StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
-def _validate_official_url(value: str) -> str:
-    parsed = urlsplit(value)
-    if parsed.scheme != "https":
-        raise ValueError("Databricks URL 必须使用 HTTPS。")
-    if parsed.hostname != "docs.databricks.com":
-        raise ValueError("Databricks URL 必须属于 docs.databricks.com。")
-    if parsed.username is not None or parsed.password is not None or parsed.port is not None:
-        raise ValueError("Databricks URL 不能包含凭据或自定义端口。")
-    if parsed.query or parsed.fragment:
-        raise ValueError("Databricks URL 不能包含 query 或 fragment。")
-    return value
-
-
 class _IngestionModel(_StrictModel):
     chunk_size_tokens: int = Field(gt=0, le=8192)
     chunk_overlap_tokens: int = Field(ge=0, le=4096)
@@ -63,7 +50,7 @@ class _GeneralDocumentModel(_StrictModel):
     url: str
     category: KnowledgeCategory
 
-    _official_url = field_validator("url")(_validate_official_url)
+    _official_url = field_validator("url")(validate_official_url)
 
 
 class _ApiOperationModel(_StrictModel):
@@ -93,7 +80,7 @@ class _CatalogModel(_StrictModel):
     include_urls: tuple[_GeneralDocumentModel, ...] = ()
     include_modules: tuple[_ApiModuleModel, ...] = ()
 
-    _official_index_url = field_validator("index_url")(_validate_official_url)
+    _official_index_url = field_validator("index_url")(validate_official_url)
 
     @model_validator(mode="after")
     def validate_catalog_shape(self) -> Self:

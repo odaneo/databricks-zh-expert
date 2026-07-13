@@ -226,6 +226,10 @@ git commit -m "feat: define databricks knowledge sources"
 - 创建：`src/databricks_zh_expert/rag/catalogs.py`
 - 创建：`src/databricks_zh_expert/rag/fetcher.py`
 - 创建：`src/databricks_zh_expert/rag/normalizer.py`
+- 创建：`src/databricks_zh_expert/rag/urls.py`
+- 修改：`src/databricks_zh_expert/rag/constants.py`
+- 修改：`src/databricks_zh_expert/rag/types.py`
+- 修改：`src/databricks_zh_expert/rag/manifest.py`
 - 创建：`tests/fixtures/knowledge/databricks_llms.txt`
 - 创建：`tests/fixtures/knowledge/databricks_api_llms.txt`
 - 创建：`tests/fixtures/knowledge/docs_page.html`
@@ -244,6 +248,8 @@ class KnowledgeCatalogParser:
 
 
 class KnowledgeFetcher:
+    async def fetch_catalog(self, catalog: SourceCatalog) -> CatalogFetchResult: ...
+
     async def fetch(
         self,
         source: DiscoveredSource,
@@ -255,7 +261,7 @@ class KnowledgeNormalizer:
     def normalize(self, fetched: FetchResult) -> NormalizedDocument: ...
 ```
 
-- [ ] **步骤 1：写目录解析失败测试**
+- [x] **步骤 1：写目录解析失败测试**
 
 使用 `markdown-it-py` token 提取标题和链接，不用正则拼 Markdown。覆盖：
 
@@ -265,7 +271,7 @@ class KnowledgeNormalizer:
 4. 白名单项在目录中不存在时失败，不直接绕过目录抓取。
 5. 目录正文不会作为知识文档返回。
 
-- [ ] **步骤 2：写 HTTP 安全失败测试**
+- [x] **步骤 2：写 HTTP 安全失败测试**
 
 使用 `httpx.MockTransport` 覆盖：
 
@@ -276,7 +282,7 @@ class KnowledgeNormalizer:
 5. 429 / 5xx 最多重试 2 次，普通 4xx 不重试。
 6. 日志不输出 Authorization 或 API Key。
 
-- [ ] **步骤 3：写规范化失败测试**
+- [x] **步骤 3：写规范化失败测试**
 
 覆盖：
 
@@ -287,19 +293,19 @@ class KnowledgeNormalizer:
 5. canonical URL、标题和来源更新时间正确。
 6. 缺少正文或正文过短时失败。
 
-- [ ] **步骤 4：确认测试失败**
+- [x] **步骤 4：确认测试失败**
 
 ```powershell
 uv run --locked pytest tests/unit/test_knowledge_sources.py -q
 ```
 
-- [ ] **步骤 5：实现发现、抓取和规范化**
+- [x] **步骤 5：实现发现、抓取和规范化**
 
-目录解析使用 Markdown AST；URL 处理使用 `urllib.parse`；HTML 使用 Beautiful Soup 定位正文，再用
-markdownify 转换。Fetcher 注入 `httpx.AsyncClient` 和等待函数，便于测试。此任务不保存原始 HTML 或
-`llms.txt`。
+目录解析使用 Markdown AST；URL 处理使用统一的官方 HTTPS URL 校验器；HTML 使用 Beautiful Soup
+定位正文，再用 markdownify 转换。Fetcher 注入 `httpx.AsyncClient` 和等待函数，手动校验每一次
+重定向，并为后续同步任务提供独立的 `fetch_catalog()`。此任务不保存原始 HTML 或 `llms.txt`。
 
-- [ ] **步骤 6：验证并提交**
+- [x] **步骤 6：验证并提交**
 
 ```powershell
 uv run --locked pytest tests/unit/test_knowledge_sources.py -q

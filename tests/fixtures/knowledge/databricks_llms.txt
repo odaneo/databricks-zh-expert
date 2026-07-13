@@ -1,0 +1,12 @@
+# Databricks Documentation
+
+## Core platform
+
+- [Delta Lake](https://docs.databricks.com/delta/) - Delta Lake concepts and guidance.
+- [Unselected compute](https://docs.databricks.com/compute/) - This page is not selected.
+- [Delta Lake duplicate](https://docs.databricks.com/delta/) - Duplicate links are ignored.
+
+## Data engineering
+
+- [Lakeflow Jobs](https://docs.databricks.com/jobs/) - Orchestrate data workflows with jobs.
+- [Auto Loader](https://docs.databricks.com/ingestion/cloud-object-storage/auto-loader/) - Incrementally ingest cloud files.

@@ -12,6 +12,11 @@ class SourceKind(StrEnum):
     API_MARKDOWN = "api_markdown"
 
 
+class FetchStatus(StrEnum):
+    FETCHED = "fetched"
+    NOT_MODIFIED = "not_modified"
+
+
 class KnowledgeCategory(StrEnum):
     ARCHITECTURE = "architecture"
     DELTA_LAKE = "delta_lake"
@@ -62,3 +67,56 @@ class KnowledgeManifest:
     chunk_size_tokens: int
     chunk_overlap_tokens: int
     catalogs: tuple[SourceCatalog, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class DiscoveredSource:
+    source_key: str
+    kind: SourceKind
+    title: str
+    url: str
+    category: KnowledgeCategory
+    catalog_id: str
+    cloud: str
+    locale: str
+    topic: str
+    summary: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class FetchCondition:
+    etag: str | None = None
+    last_modified: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class FetchResult:
+    source: DiscoveredSource
+    status: FetchStatus
+    final_url: str
+    content_type: str | None
+    body: str | None
+    etag: str | None
+    last_modified: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class CatalogFetchResult:
+    catalog_id: str
+    index_url: str
+    final_url: str
+    content_type: str
+    content: str
+    etag: str | None
+    last_modified: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class NormalizedDocument:
+    source: DiscoveredSource
+    title: str
+    canonical_url: str
+    normalized_content: str
+    source_updated_at: str | None
+    etag: str | None
+    last_modified: str | None
