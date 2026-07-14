@@ -42,11 +42,13 @@ def test_every_artifact_type_has_an_available_prompt() -> None:
     assert available_artifacts == set(ArtifactType)
 
 
-def test_knowledge_prompt_is_reserved_for_stage_four() -> None:
+def test_knowledge_prompt_is_available_with_citation_contract() -> None:
     knowledge = next(spec for spec in PROMPT_SPECS if spec.name is PromptName.KNOWLEDGE_QA)
 
-    assert knowledge.available is False
-    assert knowledge.unavailable_reason == "预置 Databricks 知识库将在阶段 4 启用。"
+    assert knowledge.available is True
+    assert knowledge.unavailable_reason is None
+    assert knowledge.version == "1.1.0"
+    assert knowledge.required_sections[-1] == "引用来源"
 
 
 def test_code_prompts_declare_their_fence_languages() -> None:
@@ -62,7 +64,14 @@ def test_code_prompts_declare_their_fence_languages() -> None:
 
 
 def test_every_prompt_has_a_semantic_version() -> None:
-    assert all(spec.version == "1.0.1" for spec in PROMPT_SPECS)
+    versions = {spec.name: spec.version for spec in PROMPT_SPECS}
+
+    assert versions[PromptName.KNOWLEDGE_QA] == "1.1.0"
+    assert all(
+        version == "1.0.1"
+        for name, version in versions.items()
+        if name is not PromptName.KNOWLEDGE_QA
+    )
 
 
 def test_code_prompts_do_not_require_document_sections() -> None:

@@ -8,6 +8,7 @@ from fastapi import FastAPI
 from databricks_zh_expert import __version__
 from databricks_zh_expert.api.chat import router as chat_router
 from databricks_zh_expert.api.health import router as health_router
+from databricks_zh_expert.api.knowledge import router as knowledge_router
 from databricks_zh_expert.api.models import router as models_router
 from databricks_zh_expert.api.prompts import router as prompts_router
 from databricks_zh_expert.artifacts.markdown import MarkdownArtifactParser
@@ -87,6 +88,7 @@ def create_app(
     register_exception_handlers(app)
     app.include_router(health_router)
     app.include_router(chat_router)
+    app.include_router(knowledge_router)
     app.include_router(models_router)
     app.include_router(prompts_router)
     return app

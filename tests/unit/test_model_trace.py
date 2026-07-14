@@ -15,6 +15,8 @@ from databricks_zh_expert.observability.model_trace import (
     ArtifactValidationTrace,
     JsonlModelTraceSink,
     ModelCallTrace,
+    RetrievalCandidateTrace,
+    RetrievalTrace,
 )
 from databricks_zh_expert.prompts.registry import PromptName
 
@@ -78,7 +80,7 @@ async def test_jsonl_trace_sink_writes_complete_utf8_input_and_output(tmp_path) 
 
     payload = json.loads(trace_path.read_text(encoding="utf-8"))
     assert payload == {
-        "schema_version": "1.3",
+        "schema_version": "1.4",
         "protocol": "openai.chat.completions",
         "trace": {
             "model_call_id": str(trace.model_call_id),
@@ -100,6 +102,7 @@ async def test_jsonl_trace_sink_writes_complete_utf8_input_and_output(tmp_path) 
                 "violations": [],
             },
         },
+        "retrieval": None,
         "request": trace.request,
         "response": trace.response,
         "error": None,
@@ -116,6 +119,96 @@ def test_trace_serializes_missing_artifact_validation_for_provider_failure() -> 
     payload = json.loads(JsonlModelTraceSink._serialize(trace))
 
     assert payload["trace"]["artifact_validation"] is None
+    assert payload["retrieval"] is None
+
+
+def test_trace_14_serializes_rag_scores_sources_and_actual_context() -> None:
+    context = "【不可信资料开始】\n[S1] Retry guidance.\n【不可信资料结束】"
+    retrieval = RetrievalTrace(
+        embedding_model="text-embedding-3-small",
+        latency_ms=37,
+        candidates=(
+            RetrievalCandidateTrace(
+                chunk_id=uuid4(),
+                rank=1,
+                vector_rank=1,
+                vector_score=0.92,
+                lexical_rank=2,
+                lexical_score=0.7,
+                fused_score=0.0325,
+                url="https://docs.databricks.com/aws/en/jobs/#retries",
+                selected=True,
+            ),
+        ),
+        selected_urls=("https://docs.databricks.com/aws/en/jobs/#retries",),
+    )
+    trace = replace(
+        make_trace(),
+        prompt_name=PromptName.KNOWLEDGE_QA,
+        prompt_version="1.1.0",
+        retrieval=retrieval,
+        request={
+            "model": "deepseek/deepseek-v4-flash",
+            "messages": [
+                {"role": "system", "content": "固定知识库系统 Prompt"},
+                {"role": "user", "content": context},
+                {"role": "user", "content": "如何配置失败重试？"},
+            ],
+        },
+    )
+
+    payload = json.loads(JsonlModelTraceSink._serialize(trace))
+
+    assert payload["schema_version"] == "1.4"
+    assert payload["retrieval"] == {
+        "embedding_model": "text-embedding-3-small",
+        "latency_ms": 37,
+        "candidates": [
+            {
+                "chunk_id": str(retrieval.candidates[0].chunk_id),
+                "rank": 1,
+                "vector_rank": 1,
+                "vector_score": 0.92,
+                "lexical_rank": 2,
+                "lexical_score": 0.7,
+                "fused_score": 0.0325,
+                "url": "https://docs.databricks.com/aws/en/jobs/#retries",
+                "selected": True,
+            }
+        ],
+        "selected_urls": ["https://docs.databricks.com/aws/en/jobs/#retries"],
+    }
+    assert payload["request"]["messages"][1]["content"] == context
+
+
+def test_rag_trace_does_not_contain_credentials_raw_html_or_embedding_arrays() -> None:
+    retrieval = RetrievalTrace(
+        embedding_model="text-embedding-3-small",
+        latency_ms=10,
+        candidates=(
+            RetrievalCandidateTrace(
+                chunk_id=uuid4(),
+                rank=1,
+                vector_rank=1,
+                vector_score=0.9,
+                lexical_rank=None,
+                lexical_score=None,
+                fused_score=1 / 61,
+                url="https://docs.databricks.com/aws/en/jobs/",
+                selected=True,
+            ),
+        ),
+        selected_urls=("https://docs.databricks.com/aws/en/jobs/",),
+    )
+    trace = replace(make_trace(), retrieval=retrieval)
+
+    serialized = JsonlModelTraceSink._serialize(trace)
+    payload = json.loads(serialized)
+
+    assert "sk-test-secret" not in serialized
+    assert "Authorization" not in serialized
+    assert "<html" not in serialized
+    assert "embedding" not in payload["retrieval"]["candidates"][0]
 
 
 @pytest.mark.asyncio

@@ -1,3 +1,4 @@
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import func, select, update
@@ -61,12 +62,14 @@ class ChatRepository:
         role: str,
         content: str,
         artifact_type: str | None = None,
+        source_citations: list[dict[str, Any]] | None = None,
     ) -> Message:
         message = Message(
             session_id=session_id,
             role=role,
             content=content,
             artifact_type=artifact_type,
+            source_citations=source_citations,
         )
         self.db.add(message)
         await self.db.execute(

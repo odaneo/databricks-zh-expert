@@ -36,8 +36,9 @@ async def test_list_prompts_exposes_catalog_without_template_text(
         for prompt in payload["prompts"]
     )
     knowledge = next(prompt for prompt in payload["prompts"] if prompt["name"] == "knowledge_qa")
-    assert knowledge["available"] is False
-    assert knowledge["unavailable_reason"] == "预置 Databricks 知识库将在阶段 4 启用。"
+    assert knowledge["available"] is True
+    assert knowledge["version"] == "1.1.0"
+    assert knowledge["unavailable_reason"] is None
     assert "base_system.jinja2" not in response.text
     assert "template_name" not in response.text
     assert "system_message" not in response.text

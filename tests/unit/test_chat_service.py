@@ -21,6 +21,14 @@ from databricks_zh_expert.llm.gateway import (
 from databricks_zh_expert.llm.model_registry import ModelAlias, ModelProvider
 from databricks_zh_expert.observability.model_trace import ModelCallTrace, ModelTraceSink
 from databricks_zh_expert.prompts.registry import PromptName, PromptRegistry
+from databricks_zh_expert.rag.context import (
+    KnowledgeContextBuilder,
+    KnowledgeContextNotFoundError,
+    RankedKnowledgeChunk,
+    RetrievalBundle,
+)
+from databricks_zh_expert.rag.embeddings import EmbeddingRequestError
+from databricks_zh_expert.rag.repository import KnowledgeIndexStatus
 
 NOW = datetime(2026, 1, 1, tzinfo=UTC)
 VALID_ANSWER = """# Databricks 分析建议
@@ -43,6 +51,26 @@ VALID_SQL = """```sql
 -- 汇总销售数据
 SELECT 1;
 ```"""
+VALID_KNOWLEDGE_ANSWER = """# Lakeflow Jobs 重试建议
+
+## 结论
+建议显式配置任务重试策略。
+
+## 适用场景
+存在临时网络或服务故障的工作流。
+
+## 详细说明
+结合任务幂等性设置重试次数和间隔。[S1]
+
+## 注意事项
+非幂等写入需要额外保护。
+
+## 人工确认事项
+确认失败类型和恢复目标。
+
+## 引用来源
+- [S1] Configure Lakeflow Jobs
+"""
 
 
 def make_session() -> ChatSession:
@@ -166,9 +194,11 @@ class FakeChatRepository:
         role: str,
         content: str,
         artifact_type: str | None = None,
+        source_citations: list[dict[str, object]] | None = None,
     ) -> Message:
         message = make_message(session_id, role, content, len(self.messages))
         message.artifact_type = artifact_type
+        message.source_citations = source_citations
         self.messages.append(message)
         self.events.append(f"message:{role}")
         return message
@@ -272,19 +302,108 @@ class FakeModelTraceSink:
         self.traces.append(trace)
 
 
+class FakeKnowledgeStatusProvider:
+    def __init__(
+        self,
+        status: KnowledgeIndexStatus,
+        *,
+        events: list[str] | None = None,
+    ) -> None:
+        self.status = status
+        self.events = events
+        self.calls = 0
+
+    async def get_index_status(self) -> KnowledgeIndexStatus:
+        self.calls += 1
+        if self.events is not None:
+            self.events.append("index_status")
+        return self.status
+
+
+class FakeKnowledgeRetriever:
+    def __init__(
+        self,
+        bundle: RetrievalBundle | None = None,
+        *,
+        error: Exception | None = None,
+        events: list[str] | None = None,
+    ) -> None:
+        self.bundle = bundle
+        self.error = error
+        self.events = events
+        self.queries: list[str] = []
+
+    async def retrieve(self, query: str) -> RetrievalBundle:
+        self.queries.append(query)
+        if self.events is not None:
+            self.events.append("retrieve")
+        if self.error is not None:
+            raise self.error
+        if self.bundle is None:
+            raise AssertionError("FakeKnowledgeRetriever 缺少 RetrievalBundle。")
+        return self.bundle
+
+
+def make_index_status(*, queryable: bool) -> KnowledgeIndexStatus:
+    return KnowledgeIndexStatus(
+        last_run_status="succeeded" if queryable else None,
+        active_document_count=1 if queryable else 0,
+        chunk_count=1 if queryable else 0,
+        embedding_model="text-embedding-3-small" if queryable else None,
+        embedding_dimensions=1536 if queryable else None,
+        queryable=queryable,
+    )
+
+
+def make_retrieval_bundle() -> RetrievalBundle:
+    chunk = RankedKnowledgeChunk(
+        chunk_id=UUID("00000000-0000-0000-0000-000000000101"),
+        chunk_hash="1" * 64,
+        document_id=UUID("00000000-0000-0000-0000-000000000201"),
+        source_key="docs-lakeflow-jobs",
+        title="Configure Lakeflow Jobs",
+        canonical_url="https://docs.databricks.com/aws/en/jobs/",
+        chunk_index=0,
+        heading_path=("Lakeflow Jobs", "Configure retries"),
+        content="Configure retries for transient task failures.",
+        token_count=8,
+        source_ref="https://docs.databricks.com/aws/en/jobs/configure-job#retries",
+        vector_similarity=0.92,
+        lexical_score=0.7,
+        vector_rank=1,
+        lexical_rank=1,
+        fused_score=(1 / 61) + (1 / 61),
+    )
+    return KnowledgeContextBuilder().build("如何配置失败重试？", (chunk,))
+
+
 def build_service(
     repository: FakeChatRepository,
     model_gateway: FakeModelGateway,
     trace_sink: FakeModelTraceSink | None = None,
+    *,
+    knowledge_retriever: FakeKnowledgeRetriever | None = None,
+    knowledge_status_provider: FakeKnowledgeStatusProvider | None = None,
 ) -> tuple[ChatService, FakeModelTraceSink]:
     trace_sink = trace_sink or FakeModelTraceSink()
-    service = ChatService(
-        cast(ChatRepository, repository),
-        cast(ModelGateway, model_gateway),
-        cast(ModelTraceSink, trace_sink),
-        PromptRegistry.create_default(),
-        MarkdownArtifactParser(),
-    )
+    if knowledge_retriever is None and knowledge_status_provider is None:
+        service = ChatService(
+            cast(ChatRepository, repository),
+            cast(ModelGateway, model_gateway),
+            cast(ModelTraceSink, trace_sink),
+            PromptRegistry.create_default(),
+            MarkdownArtifactParser(),
+        )
+    else:
+        service = ChatService(
+            cast(ChatRepository, repository),
+            cast(ModelGateway, model_gateway),
+            cast(ModelTraceSink, trace_sink),
+            PromptRegistry.create_default(),
+            MarkdownArtifactParser(),
+            knowledge_retriever=knowledge_retriever,
+            knowledge_status_provider=knowledge_status_provider,
+        )
     return service, trace_sink
 
 
@@ -443,25 +562,290 @@ async def test_historical_system_messages_are_replaced_by_current_prompt() -> No
 
 
 @pytest.mark.asyncio
-async def test_reserved_prompt_is_rejected_before_user_message_and_model_call() -> None:
+async def test_standard_prompt_does_not_access_knowledge_dependencies() -> None:
     session = make_session()
     repository = FakeChatRepository(session)
+    gateway = FakeModelGateway(
+        [
+            make_attempt(
+                invocation_id=uuid4(),
+                model_alias=ModelAlias.GPT_55,
+                attempt_number=1,
+                success=True,
+            )
+        ]
+    )
+    status_provider = FakeKnowledgeStatusProvider(make_index_status(queryable=True))
+    retriever = FakeKnowledgeRetriever(make_retrieval_bundle())
+    service, _ = build_service(
+        repository,
+        gateway,
+        knowledge_retriever=retriever,
+        knowledge_status_provider=status_provider,
+    )
+
+    result = await service.send_message(session.id, "普通顾问问题")
+
+    assert status_provider.calls == 0
+    assert retriever.queries == []
+    assert result.assistant_message.source_citations is None
+
+
+@pytest.mark.asyncio
+async def test_knowledge_prompt_retrieves_once_after_user_and_orders_messages() -> None:
+    session = make_session()
+    historical_messages = [
+        make_message(session.id, "user", "历史问题", 0),
+        make_message(session.id, "assistant", "历史回答", 1),
+    ]
+    repository = FakeChatRepository(session, historical_messages)
+    bundle = make_retrieval_bundle()
+    status_provider = FakeKnowledgeStatusProvider(
+        make_index_status(queryable=True),
+        events=repository.events,
+    )
+    retriever = FakeKnowledgeRetriever(bundle, events=repository.events)
+    gateway = FakeModelGateway(
+        [
+            make_attempt(
+                invocation_id=uuid4(),
+                model_alias=ModelAlias.GPT_55,
+                attempt_number=1,
+                success=True,
+                content=VALID_KNOWLEDGE_ANSWER,
+            )
+        ]
+    )
+    service, trace_sink = build_service(
+        repository,
+        gateway,
+        knowledge_retriever=retriever,
+        knowledge_status_provider=status_provider,
+    )
+
+    result = await service.send_message(
+        session_id=session.id,
+        content="如何配置失败重试？",
+        requested_prompt=PromptName.KNOWLEDGE_QA,
+    )
+
+    assert repository.events == [
+        "message:user",
+        "index_status",
+        "retrieve",
+        "model_call:1",
+        "message:assistant",
+    ]
+    assert retriever.queries == ["如何配置失败重试？"]
+    assert [message.role for message in gateway.received_messages] == [
+        "system",
+        "user",
+        "assistant",
+        "user",
+        "user",
+    ]
+    assert [message.content for message in gateway.received_messages[1:]] == [
+        "历史问题",
+        "历史回答",
+        bundle.context,
+        "如何配置失败重试？",
+    ]
+    assert bundle.selected_chunks[0].content not in gateway.received_messages[0].content
+    assert result.prompt_name is PromptName.KNOWLEDGE_QA
+    assert result.prompt_version == "1.1.0"
+    assert result.assistant_message.source_citations == [
+        {
+            "citation_id": "S1",
+            "rank": 1,
+            "title": "Configure Lakeflow Jobs",
+            "url": "https://docs.databricks.com/aws/en/jobs/configure-job#retries",
+            "heading": "Lakeflow Jobs > Configure retries",
+            "chunk_id": "00000000-0000-0000-0000-000000000101",
+            "chunk_hash": "1" * 64,
+        }
+    ]
+    assert len(trace_sink.traces) == 1
+    assert trace_sink.traces[0].retrieval is not None
+
+
+@pytest.mark.asyncio
+async def test_knowledge_prompt_stops_before_retrieval_when_index_is_not_ready() -> None:
+    session = make_session()
+    repository = FakeChatRepository(session)
+    status_provider = FakeKnowledgeStatusProvider(make_index_status(queryable=False))
+    retriever = FakeKnowledgeRetriever(make_retrieval_bundle())
     gateway = FakeModelGateway([])
-    service, trace_sink = build_service(repository, gateway)
+    service, trace_sink = build_service(
+        repository,
+        gateway,
+        knowledge_retriever=retriever,
+        knowledge_status_provider=status_provider,
+    )
 
     with pytest.raises(AppError) as error:
         await service.send_message(
             session_id=session.id,
-            content="查询预置知识库",
+            content="如何配置失败重试？",
             requested_prompt=PromptName.KNOWLEDGE_QA,
         )
 
-    assert error.value.code == "prompt_not_available"
-    assert error.value.status_code == 409
-    assert repository.messages == []
+    assert error.value.code == "knowledge_index_not_ready"
+    assert error.value.status_code == 503
+    assert [message.role for message in repository.messages] == ["user"]
     assert repository.model_calls == []
     assert trace_sink.traces == []
     assert gateway.called is False
+    assert status_provider.calls == 1
+    assert retriever.queries == []
+
+
+@pytest.mark.asyncio
+async def test_knowledge_prompt_maps_missing_context_without_calling_model() -> None:
+    session = make_session()
+    repository = FakeChatRepository(session)
+    retriever = FakeKnowledgeRetriever(error=KnowledgeContextNotFoundError("没有相关上下文。"))
+    gateway = FakeModelGateway([])
+    service, trace_sink = build_service(
+        repository,
+        gateway,
+        knowledge_retriever=retriever,
+        knowledge_status_provider=FakeKnowledgeStatusProvider(make_index_status(queryable=True)),
+    )
+
+    with pytest.raises(AppError) as error:
+        await service.send_message(
+            session.id,
+            "无关问题",
+            requested_prompt=PromptName.KNOWLEDGE_QA,
+        )
+
+    assert error.value.code == "knowledge_context_not_found"
+    assert error.value.status_code == 404
+    assert [message.role for message in repository.messages] == ["user"]
+    assert repository.model_calls == []
+    assert trace_sink.traces == []
+    assert gateway.called is False
+
+
+@pytest.mark.asyncio
+async def test_embedding_failure_does_not_start_chat_fallback() -> None:
+    session = make_session()
+    repository = FakeChatRepository(session)
+    retriever = FakeKnowledgeRetriever(error=EmbeddingRequestError("Embedding 失败。"))
+    gateway = FakeModelGateway(
+        [
+            make_attempt(
+                invocation_id=uuid4(),
+                model_alias=ModelAlias.GPT_55,
+                attempt_number=1,
+                success=False,
+                retryable=True,
+            ),
+            make_attempt(
+                invocation_id=uuid4(),
+                model_alias=ModelAlias.GPT_54_MINI,
+                attempt_number=2,
+                success=True,
+            ),
+        ]
+    )
+    service, trace_sink = build_service(
+        repository,
+        gateway,
+        knowledge_retriever=retriever,
+        knowledge_status_provider=FakeKnowledgeStatusProvider(make_index_status(queryable=True)),
+    )
+
+    with pytest.raises(AppError) as error:
+        await service.send_message(
+            session.id,
+            "如何配置失败重试？",
+            requested_prompt=PromptName.KNOWLEDGE_QA,
+        )
+
+    assert error.value.code == "embedding_request_failed"
+    assert error.value.status_code == 502
+    assert gateway.called is False
+    assert repository.model_calls == []
+    assert trace_sink.traces == []
+
+
+@pytest.mark.asyncio
+async def test_chat_fallback_reuses_one_retrieval_bundle() -> None:
+    session = make_session()
+    repository = FakeChatRepository(session)
+    bundle = make_retrieval_bundle()
+    retriever = FakeKnowledgeRetriever(bundle)
+    invocation_id = uuid4()
+    gateway = FakeModelGateway(
+        [
+            make_attempt(
+                invocation_id=invocation_id,
+                model_alias=ModelAlias.GPT_55,
+                attempt_number=1,
+                success=False,
+                retryable=True,
+            ),
+            make_attempt(
+                invocation_id=invocation_id,
+                model_alias=ModelAlias.GPT_54_MINI,
+                attempt_number=2,
+                success=True,
+                content=VALID_KNOWLEDGE_ANSWER,
+            ),
+        ]
+    )
+    service, trace_sink = build_service(
+        repository,
+        gateway,
+        knowledge_retriever=retriever,
+        knowledge_status_provider=FakeKnowledgeStatusProvider(make_index_status(queryable=True)),
+    )
+
+    await service.send_message(
+        session.id,
+        "如何配置失败重试？",
+        requested_prompt=PromptName.KNOWLEDGE_QA,
+    )
+
+    assert retriever.queries == ["如何配置失败重试？"]
+    assert len(trace_sink.traces) == 2
+    assert trace_sink.traces[0].retrieval is trace_sink.traces[1].retrieval
+
+
+@pytest.mark.asyncio
+async def test_rag_artifact_failure_does_not_persist_assistant_or_citations() -> None:
+    session = make_session()
+    repository = FakeChatRepository(session)
+    gateway = FakeModelGateway(
+        [
+            make_attempt(
+                invocation_id=uuid4(),
+                model_alias=ModelAlias.GPT_55,
+                attempt_number=1,
+                success=True,
+                content="# 缺少固定章节",
+            )
+        ]
+    )
+    service, trace_sink = build_service(
+        repository,
+        gateway,
+        knowledge_retriever=FakeKnowledgeRetriever(make_retrieval_bundle()),
+        knowledge_status_provider=FakeKnowledgeStatusProvider(make_index_status(queryable=True)),
+    )
+
+    with pytest.raises(AppError) as error:
+        await service.send_message(
+            session.id,
+            "如何配置失败重试？",
+            requested_prompt=PromptName.KNOWLEDGE_QA,
+        )
+
+    assert error.value.code == "artifact_invalid"
+    assert [message.role for message in repository.messages] == ["user"]
+    assert repository.model_calls[0].artifact_valid is False
+    assert trace_sink.traces[0].retrieval is not None
 
 
 @pytest.mark.asyncio

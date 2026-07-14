@@ -13,6 +13,16 @@ class SessionCreate(BaseModel):
     title: str = Field(default="新会话", min_length=1, max_length=200)
 
 
+class SourceCitationResponse(BaseModel):
+    citation_id: str = Field(pattern=r"^S[1-6]$")
+    rank: int = Field(ge=1, le=6)
+    title: str
+    url: str
+    heading: str
+    chunk_id: UUID
+    chunk_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
 class MessageResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -20,6 +30,10 @@ class MessageResponse(BaseModel):
     role: str
     content: str
     artifact_type: ArtifactType | None
+    source_citations: list[SourceCitationResponse] | None = Field(
+        default=None,
+        max_length=6,
+    )
     created_at: datetime
 
 

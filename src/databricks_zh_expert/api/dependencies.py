@@ -18,6 +18,9 @@ from databricks_zh_expert.llm.litellm_client import LiteLLMTransport
 from databricks_zh_expert.llm.model_registry import ModelRegistry
 from databricks_zh_expert.observability.model_trace import ModelTraceSink
 from databricks_zh_expert.prompts.registry import PromptRegistry
+from databricks_zh_expert.rag.embeddings import OpenAIEmbeddingClient
+from databricks_zh_expert.rag.repository import KnowledgeRepository
+from databricks_zh_expert.rag.retrieval import KnowledgeRetriever
 
 
 def get_app_settings(request: Request) -> Settings:
@@ -73,12 +76,41 @@ def get_artifact_parser(request: Request) -> MarkdownArtifactParser:
     return cast(MarkdownArtifactParser, request.app.state.artifact_parser)
 
 
+def get_knowledge_repository(request: Request) -> KnowledgeRepository:
+    database = cast(Database, request.app.state.database)
+    return KnowledgeRepository(database.session_factory)
+
+
+def get_embedding_client(
+    settings: Annotated[Settings, Depends(get_app_settings)],
+) -> OpenAIEmbeddingClient:
+    return OpenAIEmbeddingClient(
+        api_key=settings.openai_api_key,
+        timeout_seconds=settings.model_request_timeout_seconds,
+    )
+
+
+def get_knowledge_retriever(
+    repository: Annotated[KnowledgeRepository, Depends(get_knowledge_repository)],
+    embedding_client: Annotated[OpenAIEmbeddingClient, Depends(get_embedding_client)],
+) -> KnowledgeRetriever:
+    return KnowledgeRetriever(
+        repository=repository,
+        embedding_client=embedding_client,
+    )
+
+
 def get_chat_service(
     repository: Annotated[ChatRepository, Depends(get_chat_repository)],
     model_gateway: Annotated[ModelGateway, Depends(get_model_gateway)],
     trace_sink: Annotated[ModelTraceSink, Depends(get_model_trace_sink)],
     prompt_registry: Annotated[PromptRegistry, Depends(get_prompt_registry)],
     artifact_parser: Annotated[MarkdownArtifactParser, Depends(get_artifact_parser)],
+    knowledge_retriever: Annotated[KnowledgeRetriever, Depends(get_knowledge_retriever)],
+    knowledge_repository: Annotated[
+        KnowledgeRepository,
+        Depends(get_knowledge_repository),
+    ],
 ) -> ChatService:
     return ChatService(
         repository=repository,
@@ -86,4 +118,6 @@ def get_chat_service(
         trace_sink=trace_sink,
         prompt_registry=prompt_registry,
         artifact_parser=artifact_parser,
+        knowledge_retriever=knowledge_retriever,
+        knowledge_status_provider=knowledge_repository,
     )

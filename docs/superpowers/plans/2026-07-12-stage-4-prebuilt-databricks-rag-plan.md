@@ -591,7 +591,7 @@ git commit -m "feat: add hybrid knowledge retrieval"
 - 创建：`tests/integration/test_knowledge_api.py`
 - 创建：`tests/integration/test_knowledge_messages_api.py`
 
-- [ ] **步骤 1：写 Prompt 和 ChatService 失败测试**
+- [x] **步骤 1：写 Prompt 和 ChatService 失败测试**
 
 至少覆盖：
 
@@ -606,7 +606,7 @@ git commit -m "feat: add hybrid knowledge retrieval"
 9. Artifact 失败遵守阶段 3 行为，不保存 assistant message。
 10. 成功时 assistant message 和 `source_citations` 一起保存。
 
-- [ ] **步骤 2：写 API 与历史引用失败测试**
+- [x] **步骤 2：写 API 与历史引用失败测试**
 
 覆盖：
 
@@ -617,7 +617,7 @@ git commit -m "feat: add hybrid knowledge retrieval"
 5. 不存在来源列表或同步写路由。
 6. 普通 `/health/ready` 不因知识索引未构建而失败。
 
-- [ ] **步骤 3：写 Trace 1.4 失败测试**
+- [x] **步骤 3：写 Trace 1.4 失败测试**
 
 覆盖：
 
@@ -627,7 +627,7 @@ git commit -m "feat: add hybrid knowledge retrieval"
 4. 非 RAG 调用的 retrieval 为 null。
 5. 不包含 API Key、Authorization、原始 HTML 或向量数组。
 
-- [ ] **步骤 4：确认测试失败**
+- [x] **步骤 4：确认测试失败**
 
 ```powershell
 uv run --locked pytest tests/unit/test_prompt_registry.py tests/unit/test_prompt_renderer.py `
@@ -636,17 +636,17 @@ uv run --locked pytest tests/unit/test_prompt_registry.py tests/unit/test_prompt
   tests/integration/test_knowledge_messages_api.py -q
 ```
 
-- [ ] **步骤 5：启用 Prompt 并接入 ChatService**
+- [x] **步骤 5：启用 Prompt 并接入 ChatService**
 
 检索上下文作为明确标记的不可信 user 数据加入模型消息。结构化引用由 RetrievalBundle 生成，不解析模型自行
 编写的 URL。`MessageResponse` 直接从持久化 `source_citations` 恢复历史引用。
 
-- [ ] **步骤 6：实现状态 API 和 Trace 1.4**
+- [x] **步骤 6：实现状态 API 和 Trace 1.4**
 
 索引状态只读三张知识表和当前配置，不访问网络。Trace dataclass 接受不可变 retrieval snapshot，不在
 序列化器里查询数据库，也不增加 model_calls 检索外键。
 
-- [ ] **步骤 7：验证并提交**
+- [x] **步骤 7：验证并提交**
 
 ```powershell
 uv run --locked pytest tests/unit/test_prompt_registry.py tests/unit/test_prompt_renderer.py `

@@ -325,10 +325,16 @@ class KnowledgeRepository:
         chunks = int(chunk_count or 0)
         embedding_model = models[0] if len(models) == 1 else None
         last_status = last_run.status if last_run is not None else None
+        embedding_dimensions = (
+            last_run.embedding_dimensions if last_run is not None and chunks > 0 else None
+        )
         queryable = (
             active_count > 0
             and chunks > 0
             and embedding_model == EMBEDDING_MODEL
+            and last_run is not None
+            and last_run.embedding_model == EMBEDDING_MODEL
+            and embedding_dimensions == EMBEDDING_DIMENSIONS
             and last_status in {"succeeded", "partial"}
         )
         return KnowledgeIndexStatus(
@@ -336,7 +342,7 @@ class KnowledgeRepository:
             active_document_count=active_count,
             chunk_count=chunks,
             embedding_model=embedding_model,
-            embedding_dimensions=EMBEDDING_DIMENSIONS if chunks > 0 else None,
+            embedding_dimensions=embedding_dimensions,
             queryable=queryable,
         )
 

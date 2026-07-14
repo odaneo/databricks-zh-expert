@@ -21,6 +21,42 @@ class AppError(Exception):
         super().__init__(message)
 
 
+class KnowledgeIndexNotReadyAppError(AppError):
+    def __init__(self) -> None:
+        super().__init__(
+            code="knowledge_index_not_ready",
+            message="预置 Databricks 知识库尚未就绪。",
+            status_code=503,
+        )
+
+
+class KnowledgeContextNotFoundAppError(AppError):
+    def __init__(self) -> None:
+        super().__init__(
+            code="knowledge_context_not_found",
+            message="没有找到足够相关的 Databricks 官方资料。",
+            status_code=404,
+        )
+
+
+class EmbeddingNotConfiguredAppError(AppError):
+    def __init__(self) -> None:
+        super().__init__(
+            code="embedding_not_configured",
+            message="知识检索所需的 OpenAI Embedding 尚未配置。",
+            status_code=503,
+        )
+
+
+class EmbeddingRequestFailedAppError(AppError):
+    def __init__(self) -> None:
+        super().__init__(
+            code="embedding_request_failed",
+            message="知识检索向量生成失败，请稍后重试。",
+            status_code=502,
+        )
+
+
 def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(AppError)
     async def handle_app_error(request: Request, error: AppError) -> JSONResponse:

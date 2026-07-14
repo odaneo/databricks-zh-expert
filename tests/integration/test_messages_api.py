@@ -284,7 +284,7 @@ async def test_send_message_rejects_unknown_prompt_before_calling_gateway(
     assert fake_gateway.called is False
 
 
-async def test_send_message_rejects_reserved_prompt_without_persisting_message(
+async def test_knowledge_message_requires_index_and_keeps_user_message(
     client: AsyncClient,
     test_app: FastAPI,
 ) -> None:
@@ -304,11 +304,14 @@ async def test_send_message_rejects_reserved_prompt_without_persisting_message(
         },
     )
 
-    assert response.status_code == 409
-    assert response.json()["code"] == "prompt_not_available"
+    assert response.status_code == 503
+    assert response.json()["code"] == "knowledge_index_not_ready"
     assert fake_gateway.called is False
     detail_response = await client.get(f"/api/chat/sessions/{session_id}")
-    assert detail_response.json()["messages"] == []
+    assert [
+        (message["role"], message["content"], message["source_citations"])
+        for message in detail_response.json()["messages"]
+    ] == [("user", "设计一个销售工作流", None)]
 
 
 async def test_send_message_rejects_unknown_model_before_calling_gateway(

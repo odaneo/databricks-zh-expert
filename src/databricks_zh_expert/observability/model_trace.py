@@ -22,6 +22,27 @@ class ArtifactValidationTrace:
 
 
 @dataclass(frozen=True, slots=True)
+class RetrievalCandidateTrace:
+    chunk_id: UUID
+    rank: int
+    vector_rank: int | None
+    vector_score: float | None
+    lexical_rank: int | None
+    lexical_score: float | None
+    fused_score: float
+    url: str
+    selected: bool
+
+
+@dataclass(frozen=True, slots=True)
+class RetrievalTrace:
+    embedding_model: str
+    latency_ms: int
+    candidates: tuple[RetrievalCandidateTrace, ...]
+    selected_urls: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class ModelCallTrace:
     model_call_id: UUID
     invocation_id: UUID
@@ -41,6 +62,7 @@ class ModelCallTrace:
     request: JsonObject
     response: JsonObject | None
     error: JsonObject | None
+    retrieval: RetrievalTrace | None = None
 
 
 class ModelTraceSink(Protocol):
@@ -77,7 +99,7 @@ class JsonlModelTraceSink:
     @staticmethod
     def _serialize(trace: ModelCallTrace) -> str:
         payload = {
-            "schema_version": "1.3",
+            "schema_version": "1.4",
             "protocol": "openai.chat.completions",
             "trace": {
                 "model_call_id": str(trace.model_call_id),
@@ -103,6 +125,29 @@ class JsonlModelTraceSink:
                     else None
                 ),
             },
+            "retrieval": (
+                {
+                    "embedding_model": trace.retrieval.embedding_model,
+                    "latency_ms": trace.retrieval.latency_ms,
+                    "candidates": [
+                        {
+                            "chunk_id": str(candidate.chunk_id),
+                            "rank": candidate.rank,
+                            "vector_rank": candidate.vector_rank,
+                            "vector_score": candidate.vector_score,
+                            "lexical_rank": candidate.lexical_rank,
+                            "lexical_score": candidate.lexical_score,
+                            "fused_score": candidate.fused_score,
+                            "url": candidate.url,
+                            "selected": candidate.selected,
+                        }
+                        for candidate in trace.retrieval.candidates
+                    ],
+                    "selected_urls": list(trace.retrieval.selected_urls),
+                }
+                if trace.retrieval is not None
+                else None
+            ),
             "request": trace.request,
             "response": trace.response,
             "error": trace.error,
