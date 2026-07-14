@@ -6,6 +6,7 @@ from typing import Any, Protocol
 
 import pytest
 import pytest_asyncio
+from alembic.config import Config
 from dotenv import dotenv_values
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
@@ -19,8 +20,9 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
+from alembic import command
 from databricks_zh_expert.api.dependencies import get_db_session
-from databricks_zh_expert.core.config import Settings
+from databricks_zh_expert.core.config import Settings, get_settings
 from databricks_zh_expert.db.models import ChatSession
 from databricks_zh_expert.main import create_app
 
@@ -72,9 +74,25 @@ def test_database_url() -> str:
     return value
 
 
+@pytest.fixture
+def migrated_test_database_url(test_database_url: str) -> str:
+    previous_database_url = os.environ.get("DATABASE_URL")
+    os.environ["DATABASE_URL"] = test_database_url
+    get_settings.cache_clear()
+    try:
+        command.upgrade(Config("alembic.ini"), "head")
+    finally:
+        if previous_database_url is None:
+            os.environ.pop("DATABASE_URL", None)
+        else:
+            os.environ["DATABASE_URL"] = previous_database_url
+        get_settings.cache_clear()
+    return test_database_url
+
+
 @pytest_asyncio.fixture
-async def test_engine(test_database_url: str) -> AsyncIterator[AsyncEngine]:
-    engine = create_async_engine(test_database_url, pool_pre_ping=True)
+async def test_engine(migrated_test_database_url: str) -> AsyncIterator[AsyncEngine]:
+    engine = create_async_engine(migrated_test_database_url, pool_pre_ping=True)
     try:
         yield engine
     finally:

@@ -27,6 +27,7 @@ dependencies = [
 
 [project.scripts]
 databricks-zh-expert = "databricks_zh_expert.main:run"
+databricks-zh-expert-kb = "databricks_zh_expert.rag.cli:main"
 
 [dependency-groups]
 dev = [

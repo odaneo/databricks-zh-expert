@@ -9,7 +9,14 @@ from sqlalchemy import CheckConstraint, ForeignKeyConstraint, Table, UniqueConst
 from databricks_zh_expert.artifacts.types import ArtifactType
 from databricks_zh_expert.chat.schemas import MessageResponse
 from databricks_zh_expert.db.base import Base
-from databricks_zh_expert.db.models import ChatSession, Message, ModelCall
+from databricks_zh_expert.db.models import (
+    ChatSession,
+    KnowledgeChunkRecord,
+    KnowledgeDocument,
+    KnowledgeIngestionRun,
+    Message,
+    ModelCall,
+)
 
 
 def test_message_response_uses_the_fixed_artifact_catalog() -> None:
@@ -39,7 +46,14 @@ def test_message_response_uses_the_fixed_artifact_catalog() -> None:
 
 
 def test_models_register_expected_tables_and_columns() -> None:
-    assert set(Base.metadata.tables) == {"sessions", "messages", "model_calls"}
+    assert set(Base.metadata.tables) == {
+        "sessions",
+        "messages",
+        "model_calls",
+        "kb_documents",
+        "kb_chunks",
+        "kb_ingestion_runs",
+    }
     assert set(ChatSession.__table__.columns.keys()) == {
         "id",
         "title",
@@ -52,6 +66,7 @@ def test_models_register_expected_tables_and_columns() -> None:
         "role",
         "content",
         "artifact_type",
+        "source_citations",
         "created_at",
     }
     assert set(ModelCall.__table__.columns.keys()) == {
@@ -75,6 +90,57 @@ def test_models_register_expected_tables_and_columns() -> None:
         "artifact_error_code",
         "error_message",
         "created_at",
+    }
+    assert set(KnowledgeDocument.__table__.columns.keys()) == {
+        "id",
+        "source_key",
+        "source_kind",
+        "title",
+        "source_url",
+        "canonical_url",
+        "category",
+        "cloud",
+        "locale",
+        "normalized_content",
+        "content_hash",
+        "etag",
+        "last_modified",
+        "status",
+        "chunk_count",
+        "source_updated_at",
+        "fetched_at",
+        "created_at",
+        "updated_at",
+    }
+    assert set(KnowledgeChunkRecord.__table__.columns.keys()) == {
+        "id",
+        "document_id",
+        "chunk_index",
+        "heading_path",
+        "content",
+        "content_hash",
+        "token_count",
+        "source_ref",
+        "metadata",
+        "embedding",
+        "embedding_model",
+        "search_vector",
+        "created_at",
+    }
+    assert set(KnowledgeIngestionRun.__table__.columns.keys()) == {
+        "id",
+        "status",
+        "manifest_hash",
+        "embedding_model",
+        "embedding_dimensions",
+        "discovered_count",
+        "changed_count",
+        "skipped_count",
+        "failed_count",
+        "chunk_count",
+        "error_summary",
+        "started_at",
+        "completed_at",
     }
 
 

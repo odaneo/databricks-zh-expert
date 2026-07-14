@@ -10,7 +10,15 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from alembic import command
 from databricks_zh_expert.core.config import get_settings
 
-EXPECTED_TABLES = {"alembic_version", "sessions", "messages", "model_calls"}
+EXPECTED_TABLES = {
+    "alembic_version",
+    "sessions",
+    "messages",
+    "model_calls",
+    "kb_documents",
+    "kb_chunks",
+    "kb_ingestion_runs",
+}
 
 
 @pytest.mark.integration
@@ -78,6 +86,246 @@ async def test_test_database_uses_expected_pgvector_version(
         )
 
     assert result.scalar_one() == "0.8.5"
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_knowledge_rag_schema_contract(test_engine: AsyncEngine) -> None:
+    async with test_engine.connect() as connection:
+        message_columns = await connection.run_sync(
+            lambda sync_connection: {
+                column["name"]: column
+                for column in inspect(sync_connection).get_columns("messages")
+            }
+        )
+        document_columns = await connection.run_sync(
+            lambda sync_connection: {
+                column["name"]: column
+                for column in inspect(sync_connection).get_columns("kb_documents")
+            }
+        )
+        chunk_columns = await connection.run_sync(
+            lambda sync_connection: {
+                column["name"]: column
+                for column in inspect(sync_connection).get_columns("kb_chunks")
+            }
+        )
+        document_checks = await connection.run_sync(
+            lambda sync_connection: {
+                constraint["name"]
+                for constraint in inspect(sync_connection).get_check_constraints("kb_documents")
+            }
+        )
+        chunk_checks = await connection.run_sync(
+            lambda sync_connection: {
+                constraint["name"]
+                for constraint in inspect(sync_connection).get_check_constraints("kb_chunks")
+            }
+        )
+        run_checks = await connection.run_sync(
+            lambda sync_connection: {
+                constraint["name"]
+                for constraint in inspect(sync_connection).get_check_constraints(
+                    "kb_ingestion_runs"
+                )
+            }
+        )
+        chunk_unique_constraints = await connection.run_sync(
+            lambda sync_connection: {
+                constraint["name"]
+                for constraint in inspect(sync_connection).get_unique_constraints("kb_chunks")
+            }
+        )
+        chunk_foreign_keys = await connection.run_sync(
+            lambda sync_connection: inspect(sync_connection).get_foreign_keys("kb_chunks")
+        )
+        index_rows = await connection.execute(
+            text(
+                """
+                SELECT indexname, indexdef
+                FROM pg_indexes
+                WHERE schemaname = current_schema()
+                  AND tablename = 'kb_chunks'
+                ORDER BY indexname
+                """
+            )
+        )
+
+    index_definitions = {name: definition for name, definition in index_rows.all()}
+    rendered_indexes = "\n".join(index_definitions.values()).lower()
+
+    assert message_columns["source_citations"]["nullable"] is True
+    assert str(message_columns["source_citations"]["type"]).upper() == "JSONB"
+    assert document_columns["normalized_content"]["nullable"] is False
+    assert document_columns["content_hash"]["nullable"] is False
+    assert document_columns["etag"]["nullable"] is True
+    assert document_columns["last_modified"]["nullable"] is True
+    assert document_columns["source_updated_at"]["nullable"] is True
+    assert document_columns["fetched_at"]["nullable"] is False
+    assert str(chunk_columns["embedding"]["type"]).upper() == "VECTOR(1536)"
+    assert str(chunk_columns["search_vector"]["type"]).upper() == "TSVECTOR"
+    assert "ck_kb_documents_status" in document_checks
+    assert "ck_kb_documents_chunk_count" in document_checks
+    assert "ck_kb_chunks_chunk_index" in chunk_checks
+    assert "ck_kb_chunks_token_count" in chunk_checks
+    assert "ck_kb_ingestion_runs_status" in run_checks
+    assert "ck_kb_ingestion_runs_counts" in run_checks
+    assert "uq_kb_chunks_document_chunk_index" in chunk_unique_constraints
+    assert chunk_foreign_keys == [
+        {
+            "name": "fk_kb_chunks_document_id",
+            "constrained_columns": ["document_id"],
+            "referred_schema": None,
+            "referred_table": "kb_documents",
+            "referred_columns": ["id"],
+            "options": {"ondelete": "CASCADE"},
+            "comment": None,
+        }
+    ]
+    assert "ix_kb_chunks_search_vector" in index_definitions
+    assert "using gin" in index_definitions["ix_kb_chunks_search_vector"].lower()
+    assert "hnsw" not in rendered_indexes
+    assert "ivfflat" not in rendered_indexes
+
+
+@pytest.mark.integration
+def test_knowledge_rag_migration_preserves_business_rows_and_downgrades_in_test_db(
+    test_database_url: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DATABASE_URL", test_database_url)
+    get_settings.cache_clear()
+    config = Config("alembic.ini")
+    sync_database_url = (
+        make_url(test_database_url)
+        .set(drivername="postgresql")
+        .render_as_string(hide_password=False)
+    )
+    session_id = uuid4()
+    message_id = uuid4()
+    model_call_id = uuid4()
+
+    try:
+        command.downgrade(config, "0003_prompt_artifacts")
+        with psycopg.connect(sync_database_url) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT table_name
+                    FROM information_schema.tables
+                    WHERE table_schema = current_schema()
+                      AND table_type = 'BASE TABLE'
+                    """
+                )
+                tables_before = {row[0] for row in cursor.fetchall()}
+                cursor.execute(
+                    "INSERT INTO sessions (id, title) VALUES (%s, %s)",
+                    (session_id, "知识迁移保护测试"),
+                )
+                cursor.execute(
+                    """
+                    INSERT INTO messages (id, session_id, role, content, artifact_type)
+                    VALUES (%s, %s, 'assistant', '# 保留正文', 'answer')
+                    """,
+                    (message_id, session_id),
+                )
+                cursor.execute(
+                    """
+                    INSERT INTO model_calls (
+                        id,
+                        session_id,
+                        invocation_id,
+                        provider,
+                        model,
+                        model_alias,
+                        attempt_number,
+                        latency_ms,
+                        success,
+                        retryable,
+                        prompt_name,
+                        prompt_version,
+                        artifact_type,
+                        artifact_valid
+                    )
+                    VALUES (%s, %s, %s, 'deepseek', %s, %s, 1, 88, true, false,
+                            'workflow_design', '1.0.0', 'workflow_design', true)
+                    """,
+                    (
+                        model_call_id,
+                        session_id,
+                        model_call_id,
+                        "deepseek/deepseek-v4-flash",
+                        "deepseek-v4-flash",
+                    ),
+                )
+
+        command.upgrade(config, "head")
+        with psycopg.connect(sync_database_url) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT table_name
+                    FROM information_schema.tables
+                    WHERE table_schema = current_schema()
+                      AND table_type = 'BASE TABLE'
+                    """
+                )
+                tables_after = {row[0] for row in cursor.fetchall()}
+                cursor.execute(
+                    "SELECT title FROM sessions WHERE id = %s",
+                    (session_id,),
+                )
+                migrated_session = cursor.fetchone()
+                cursor.execute(
+                    "SELECT role, content, artifact_type, source_citations "
+                    "FROM messages WHERE id = %s",
+                    (message_id,),
+                )
+                migrated_message = cursor.fetchone()
+                cursor.execute(
+                    "SELECT provider, model_alias, success FROM model_calls WHERE id = %s",
+                    (model_call_id,),
+                )
+                migrated_call = cursor.fetchone()
+
+        assert tables_after - tables_before == {
+            "kb_documents",
+            "kb_chunks",
+            "kb_ingestion_runs",
+        }
+        assert migrated_session == ("知识迁移保护测试",)
+        assert migrated_message == ("assistant", "# 保留正文", "answer", None)
+        assert migrated_call == ("deepseek", "deepseek-v4-flash", True)
+
+        command.downgrade(config, "0003_prompt_artifacts")
+        with psycopg.connect(sync_database_url) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT table_name
+                    FROM information_schema.tables
+                    WHERE table_schema = current_schema()
+                      AND table_name LIKE 'kb_%'
+                    """
+                )
+                assert cursor.fetchall() == []
+                cursor.execute(
+                    """
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_schema = current_schema()
+                      AND table_name = 'messages'
+                      AND column_name = 'source_citations'
+                    """
+                )
+                assert cursor.fetchone() is None
+    finally:
+        get_settings.cache_clear()
+        command.upgrade(config, "head")
+        with psycopg.connect(sync_database_url) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("DELETE FROM sessions WHERE id = %s", (session_id,))
+        get_settings.cache_clear()
 
 
 @pytest.mark.integration
