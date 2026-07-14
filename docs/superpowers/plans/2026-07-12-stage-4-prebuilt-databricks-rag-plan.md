@@ -518,7 +518,7 @@ class KnowledgeRetriever:
 
 `RetrievalBundle` 是不可变内存对象，包含引用、选中 Chunk、分数和上下文，不写检索审计表。
 
-- [ ] **步骤 1：写数据库候选失败测试**
+- [x] **步骤 1：写数据库候选失败测试**
 
 在测试库插入小规模固定向量，验证：
 
@@ -528,7 +528,7 @@ class KnowledgeRetriever:
 4. `simple` 全文索引能命中英文 API 名、SQL 和代码标识符。
 5. 数据库不存在 ANN 索引也能正常检索。
 
-- [ ] **步骤 2：写 RRF 和上下文失败测试**
+- [x] **步骤 2：写 RRF 和上下文失败测试**
 
 至少覆盖：
 
@@ -540,19 +540,19 @@ class KnowledgeRetriever:
 6. 上下文包含标题、URL、heading 和“不可信资料”边界。
 7. 阈值以下且无全文匹配时抛出 `KnowledgeContextNotFoundError`。
 
-- [ ] **步骤 3：确认测试失败**
+- [x] **步骤 3：确认测试失败**
 
 ```powershell
 uv run --locked pytest tests/unit/test_knowledge_retrieval.py tests/unit/test_rag_context.py `
   tests/integration/test_knowledge_repository.py -q
 ```
 
-- [ ] **步骤 4：实现精确检索和 RRF**
+- [x] **步骤 4：实现精确检索和 RRF**
 
 查询 Embedding 只生成一次。向量和全文各取前 30，RRF 初始 `k=60`，最终前 6；数据库距离换算为
 `similarity = 1 - cosine_distance`。不实现 query rewrite、reranker 或检索持久化。
 
-- [ ] **步骤 5：验证并提交**
+- [x] **步骤 5：验证并提交**
 
 ```powershell
 uv run --locked pytest tests/unit/test_knowledge_retrieval.py tests/unit/test_rag_context.py `

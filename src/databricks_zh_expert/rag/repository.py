@@ -1,6 +1,8 @@
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
+from math import isfinite
 from uuid import UUID, uuid4
 
 from sqlalchemy import delete, func, select, update
@@ -47,6 +49,23 @@ class KnowledgeIndexStatus:
     embedding_model: str | None
     embedding_dimensions: int | None
     queryable: bool
+
+
+@dataclass(frozen=True, slots=True)
+class KnowledgeCandidate:
+    chunk_id: UUID
+    chunk_hash: str
+    document_id: UUID
+    source_key: str
+    title: str
+    canonical_url: str
+    chunk_index: int
+    heading_path: tuple[str, ...]
+    content: str
+    token_count: int
+    source_ref: str
+    vector_similarity: float | None
+    lexical_score: float | None
 
 
 class KnowledgeRepository:
@@ -321,6 +340,98 @@ class KnowledgeRepository:
             queryable=queryable,
         )
 
+    async def find_vector_candidates(
+        self,
+        query_embedding: Sequence[float],
+        *,
+        limit: int,
+    ) -> tuple[KnowledgeCandidate, ...]:
+        vector = _validate_query_embedding(query_embedding)
+        _validate_candidate_limit(limit)
+        cosine_distance = KnowledgeChunkRecord.embedding.cosine_distance(vector).label(
+            "cosine_distance"
+        )
+        statement = (
+            select(KnowledgeChunkRecord, KnowledgeDocument, cosine_distance)
+            .join(
+                KnowledgeDocument,
+                KnowledgeDocument.id == KnowledgeChunkRecord.document_id,
+            )
+            .where(
+                KnowledgeDocument.status == "active",
+                KnowledgeChunkRecord.embedding_model == EMBEDDING_MODEL,
+            )
+            .order_by(
+                cosine_distance.asc(),
+                KnowledgeDocument.source_key.asc(),
+                KnowledgeChunkRecord.chunk_index.asc(),
+                KnowledgeChunkRecord.id.asc(),
+            )
+            .limit(limit)
+        )
+        async with self._session_factory() as session:
+            rows = (await session.execute(statement)).all()
+
+        candidates: list[KnowledgeCandidate] = []
+        for chunk, document, distance in rows:
+            if distance is None:
+                continue
+            candidates.append(
+                _knowledge_candidate(
+                    chunk,
+                    document,
+                    vector_similarity=1.0 - float(distance),
+                    lexical_score=None,
+                )
+            )
+        return tuple(candidates)
+
+    async def find_lexical_candidates(
+        self,
+        query: str,
+        *,
+        limit: int,
+    ) -> tuple[KnowledgeCandidate, ...]:
+        normalized_query = query.strip()
+        if not normalized_query:
+            return ()
+        _validate_candidate_limit(limit)
+        ts_query = func.websearch_to_tsquery("simple", normalized_query)
+        lexical_score = func.ts_rank_cd(
+            KnowledgeChunkRecord.search_vector,
+            ts_query,
+        ).label("lexical_score")
+        statement = (
+            select(KnowledgeChunkRecord, KnowledgeDocument, lexical_score)
+            .join(
+                KnowledgeDocument,
+                KnowledgeDocument.id == KnowledgeChunkRecord.document_id,
+            )
+            .where(
+                KnowledgeDocument.status == "active",
+                KnowledgeChunkRecord.search_vector.bool_op("@@")(ts_query),
+            )
+            .order_by(
+                lexical_score.desc(),
+                KnowledgeDocument.source_key.asc(),
+                KnowledgeChunkRecord.chunk_index.asc(),
+                KnowledgeChunkRecord.id.asc(),
+            )
+            .limit(limit)
+        )
+        async with self._session_factory() as session:
+            rows = (await session.execute(statement)).all()
+
+        return tuple(
+            _knowledge_candidate(
+                chunk,
+                document,
+                vector_similarity=None,
+                lexical_score=float(score),
+            )
+            for chunk, document, score in rows
+        )
+
 
 def _parse_source_timestamp(value: str | None) -> datetime | None:
     if value is None or not value.strip():
@@ -335,3 +446,47 @@ def _parse_source_timestamp(value: str | None) -> datetime | None:
     if parsed.tzinfo is None:
         return parsed.replace(tzinfo=UTC)
     return parsed.astimezone(UTC)
+
+
+def _validate_query_embedding(query_embedding: Sequence[float]) -> list[float]:
+    vector = list(query_embedding)
+    if len(vector) != EMBEDDING_DIMENSIONS:
+        raise ValueError(f"查询 Embedding 必须是 {EMBEDDING_DIMENSIONS} 维。")
+    if any(
+        isinstance(value, bool) or not isinstance(value, (int, float)) or not isfinite(float(value))
+        for value in vector
+    ):
+        raise ValueError("查询 Embedding 包含无效数值。")
+    normalized = [float(value) for value in vector]
+    if not any(value != 0.0 for value in normalized):
+        raise ValueError("查询 Embedding 不能是零向量。")
+    return normalized
+
+
+def _validate_candidate_limit(limit: int) -> None:
+    if isinstance(limit, bool) or not isinstance(limit, int) or limit <= 0:
+        raise ValueError("候选数量上限必须是正整数。")
+
+
+def _knowledge_candidate(
+    chunk: KnowledgeChunkRecord,
+    document: KnowledgeDocument,
+    *,
+    vector_similarity: float | None,
+    lexical_score: float | None,
+) -> KnowledgeCandidate:
+    return KnowledgeCandidate(
+        chunk_id=chunk.id,
+        chunk_hash=chunk.content_hash,
+        document_id=document.id,
+        source_key=document.source_key,
+        title=document.title,
+        canonical_url=document.canonical_url,
+        chunk_index=chunk.chunk_index,
+        heading_path=tuple(chunk.heading_path),
+        content=chunk.content,
+        token_count=chunk.token_count,
+        source_ref=chunk.source_ref,
+        vector_similarity=vector_similarity,
+        lexical_score=lexical_score,
+    )

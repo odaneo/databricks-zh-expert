@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
@@ -90,6 +90,41 @@ def _chunk(index: int, content: str) -> KnowledgeChunk:
 
 def _embedding(index: int, value: float) -> EmbeddingResult:
     return EmbeddingResult(index=index, embedding=(value,) * 1536)
+
+
+def _directional_embedding(
+    index: int,
+    *,
+    first: float,
+    second: float,
+) -> EmbeddingResult:
+    vector = [0.0] * 1536
+    vector[0] = first
+    vector[1] = second
+    return EmbeddingResult(index=index, embedding=tuple(vector))
+
+
+async def _publish_search_document(
+    repository: KnowledgeRepository,
+    *,
+    source_key: str,
+    content: str,
+    first: float,
+    second: float,
+) -> None:
+    await repository.publish_document(
+        _document(source_key, content=content),
+        content_hash=source_key.encode().hex().ljust(64, "0")[:64],
+        chunks=(_chunk(0, content),),
+        embeddings=(
+            _directional_embedding(
+                0,
+                first=first,
+                second=second,
+            ),
+        ),
+        fetched_at=datetime(2026, 7, 14, 1, 0, tzinfo=UTC),
+    )
 
 
 @pytest.mark.integration
@@ -241,3 +276,147 @@ async def test_knowledge_repository_never_changes_business_table_counts(
 
     assert after == before
     assert knowledge_count == 1
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_vector_candidates_use_exact_cosine_order_and_limit(
+    knowledge_repository: KnowledgeRepository,
+) -> None:
+    await _publish_search_document(
+        knowledge_repository,
+        source_key="docs-vector-best",
+        content="# Best\n\nDelta Lake guidance.\n",
+        first=1.0,
+        second=0.0,
+    )
+    await _publish_search_document(
+        knowledge_repository,
+        source_key="docs-vector-second",
+        content="# Second\n\nLakeflow guidance.\n",
+        first=0.8,
+        second=0.6,
+    )
+    await _publish_search_document(
+        knowledge_repository,
+        source_key="docs-vector-third",
+        content="# Third\n\nUnity Catalog guidance.\n",
+        first=0.0,
+        second=1.0,
+    )
+    query = _directional_embedding(0, first=1.0, second=0.0).embedding
+
+    candidates = await knowledge_repository.find_vector_candidates(query, limit=2)
+
+    assert tuple(candidate.source_key for candidate in candidates) == (
+        "docs-vector-best",
+        "docs-vector-second",
+    )
+    assert candidates[0].vector_similarity == pytest.approx(1.0)
+    assert candidates[1].vector_similarity == pytest.approx(0.8)
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_vector_candidates_only_include_active_documents(
+    knowledge_repository: KnowledgeRepository,
+) -> None:
+    await _publish_search_document(
+        knowledge_repository,
+        source_key="docs-active",
+        content="# Active\n\nActive content.\n",
+        first=0.8,
+        second=0.6,
+    )
+    await _publish_search_document(
+        knowledge_repository,
+        source_key="docs-disabled",
+        content="# Disabled\n\nDisabled content.\n",
+        first=1.0,
+        second=0.0,
+    )
+    await knowledge_repository.disable_missing_sources({"docs-active"})
+    query = _directional_embedding(0, first=1.0, second=0.0).embedding
+
+    candidates = await knowledge_repository.find_vector_candidates(query, limit=30)
+
+    assert tuple(candidate.source_key for candidate in candidates) == ("docs-active",)
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("query", "expected_source_key"),
+    [
+        ("OPTIMIZE", "docs-optimize"),
+        ("run_if", "docs-run-if"),
+        ("/api/2.1/jobs/runs/submit", "docs-api-path"),
+    ],
+)
+async def test_lexical_candidates_match_english_terms_sql_and_identifiers(
+    knowledge_repository: KnowledgeRepository,
+    query: str,
+    expected_source_key: str,
+) -> None:
+    documents = (
+        (
+            "docs-optimize",
+            "# SQL\n\nUse OPTIMIZE after large Delta Lake writes.\n",
+        ),
+        (
+            "docs-run-if",
+            "# Jobs\n\nSet run_if to ALL_SUCCESS for this task.\n",
+        ),
+        (
+            "docs-api-path",
+            "# API\n\nCall POST /api/2.1/jobs/runs/submit for a one-time run.\n",
+        ),
+    )
+    for index, (source_key, content) in enumerate(documents):
+        await _publish_search_document(
+            knowledge_repository,
+            source_key=source_key,
+            content=content,
+            first=1.0,
+            second=float(index),
+        )
+
+    candidates = await knowledge_repository.find_lexical_candidates(query, limit=1)
+
+    assert tuple(candidate.source_key for candidate in candidates) == (expected_source_key,)
+    assert candidates[0].lexical_score is not None
+    assert candidates[0].lexical_score > 0
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_exact_vector_search_works_without_ann_index(
+    knowledge_repository: KnowledgeRepository,
+    test_engine: AsyncEngine,
+) -> None:
+    await _publish_search_document(
+        knowledge_repository,
+        source_key="docs-exact-search",
+        content="# Exact\n\nExact pgvector search.\n",
+        first=1.0,
+        second=0.0,
+    )
+    async with test_engine.connect() as connection:
+        index_definitions = tuple(
+            (
+                await connection.scalars(
+                    text(
+                        "SELECT indexdef FROM pg_indexes "
+                        "WHERE schemaname = current_schema() AND tablename = 'kb_chunks'"
+                    )
+                )
+            ).all()
+        )
+    query = _directional_embedding(0, first=1.0, second=0.0).embedding
+
+    candidates = await knowledge_repository.find_vector_candidates(query, limit=1)
+
+    normalized_indexes = " ".join(index_definitions).lower()
+    assert "hnsw" not in normalized_indexes
+    assert "ivfflat" not in normalized_indexes
+    assert tuple(candidate.source_key for candidate in candidates) == ("docs-exact-search",)
