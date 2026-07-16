@@ -208,6 +208,30 @@ async def test_retriever_embeds_query_once_and_uses_fixed_candidate_limits() -> 
 
 
 @pytest.mark.asyncio
+async def test_retriever_reuses_supplied_query_embedding_without_embedding_call() -> None:
+    vector_candidate = _candidate(1, vector_similarity=0.9)
+    embedding_client = _FakeEmbeddingClient()
+    repository = _FakeKnowledgeRepository(
+        vector_candidates=(vector_candidate,),
+        lexical_candidates=(),
+    )
+    retriever = KnowledgeRetriever(
+        repository=repository,
+        embedding_client=embedding_client,
+    )
+    supplied_embedding = (0.25,) * 1536
+
+    bundle = await retriever.retrieve_with_embedding(
+        "如何设计 Lakeflow Jobs？",
+        supplied_embedding,
+    )
+
+    assert embedding_client.query_calls == []
+    assert repository.vector_calls == [(supplied_embedding, RAG_VECTOR_CANDIDATE_K)]
+    assert bundle.selected_chunks[0].chunk_id == vector_candidate.chunk_id
+
+
+@pytest.mark.asyncio
 async def test_retriever_rejects_low_vector_score_without_lexical_match() -> None:
     embedding_client = _FakeEmbeddingClient()
     repository = _FakeKnowledgeRepository(

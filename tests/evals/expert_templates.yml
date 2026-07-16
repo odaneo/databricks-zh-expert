@@ -1,0 +1,182 @@
+version: 1
+cases:
+  - id: g_s3
+    profile: generic
+    prompt: workflow_design
+    query: 为 S3 Parquet 日批文件设计 Auto Loader 增量摄取，并说明何时选择文件摄取模式。
+    expected_template_ids: [ingestion.s3_auto_loader, decision.ingestion_mode]
+    forbidden_layers: [retail_sales_demo]
+  - id: g_dms
+    profile: generic
+    prompt: workflow_design
+    query: 设计 RDS PostgreSQL 通过 AWS DMS 写入 S3 Parquet 的 CDC 摄取流程。
+    expected_template_ids: [ingestion.dms_s3_cdc]
+    forbidden_layers: [retail_sales_demo]
+  - id: g_kinesis
+    profile: generic
+    prompt: workflow_design
+    query: 设计 Amazon Kinesis 实时事件进入 Databricks 的流式摄取方案。
+    expected_template_ids: [ingestion.kinesis_streaming]
+    forbidden_layers: [retail_sales_demo]
+  - id: g_medallion
+    profile: generic
+    prompt: workflow_design
+    query: 设计 Bronze、Silver、Gold 三层的数据职责和质量边界。
+    expected_template_ids: [medallion.standard]
+    forbidden_layers: [retail_sales_demo]
+  - id: g_dataset_type
+    profile: generic
+    prompt: pyspark_generation
+    query: Lakeflow 声明式管道中应该选择流表还是物化视图？
+    expected_template_ids: [decision.pipeline_dataset_type]
+    forbidden_layers: [retail_sales_demo]
+  - id: g_scd
+    profile: generic
+    prompt: sql_generation
+    query: 维度表需要保留历史变化时如何选择 SCD Type 1 或 Type 2？
+    expected_template_ids: [decision.scd_type]
+    forbidden_layers: [retail_sales_demo]
+  - id: g_backfill
+    profile: generic
+    prompt: workflow_design
+    query: 为增量任务设计失败重放、历史回填和幂等处理策略。
+    expected_template_ids: [decision.incremental_replay_backfill]
+    forbidden_layers: [retail_sales_demo]
+  - id: g_uc
+    profile: generic
+    prompt: databricks_qa
+    query: 如何使用 Unity Catalog 设计 Catalog、Schema、表和最小权限？
+    expected_template_ids: [governance.unity_catalog]
+    forbidden_layers: [retail_sales_demo]
+  - id: g_pii
+    profile: generic
+    prompt: databricks_qa
+    query: 如何分类和保护手机号、邮箱等 PII，并设置脱敏和访问边界？
+    expected_template_ids: [governance.pii_protection, checklist.unity_catalog_pii]
+    forbidden_layers: [retail_sales_demo]
+  - id: g_quality
+    profile: generic
+    prompt: self_check
+    query: 检查数据质量规则，并给出 Lakeflow Expectations Python 模式的核对建议。
+    expected_template_ids: [checklist.data_quality, code.quality_expectations_python]
+    forbidden_layers: [retail_sales_demo]
+  - id: g_monitoring
+    profile: generic
+    prompt: self_check
+    query: 检查工作流的延迟、失败、重试、告警和可观测性设计。
+    expected_template_ids: [checklist.workflow_monitoring]
+    forbidden_layers: [retail_sales_demo]
+  - id: g_autoloader_code
+    profile: generic
+    prompt: pyspark_generation
+    query: 生成使用 cloudFiles 和 checkpoint 的 Auto Loader PySpark 摄取代码。
+    expected_template_ids: [code.autoloader_pyspark]
+    forbidden_layers: [retail_sales_demo]
+  - id: g_dms_code
+    profile: generic
+    prompt: pyspark_generation
+    query: 生成应用 AWS DMS CDC insert update delete 事件的 PySpark 代码。
+    expected_template_ids: [code.dms_cdc_apply_pyspark]
+    forbidden_layers: [retail_sales_demo]
+  - id: g_kinesis_code
+    profile: generic
+    prompt: pyspark_generation
+    query: 生成读取 Kinesis 并使用 Structured Streaming 的 PySpark 代码。
+    expected_template_ids: [code.kinesis_pyspark]
+    forbidden_layers: [retail_sales_demo]
+  - id: g_merge_sql
+    profile: generic
+    prompt: sql_generation
+    query: 生成 Delta Lake MERGE INTO 的增量 upsert SQL。
+    expected_template_ids: [code.delta_merge_sql]
+    forbidden_layers: [retail_sales_demo]
+  - id: g_gold_sql
+    profile: generic
+    prompt: sql_generation
+    query: 生成每日销售指标和商品维度聚合的 Gold SQL。
+    expected_template_ids: [code.gold_aggregation_sql]
+    forbidden_layers: [retail_sales_demo]
+  - id: g_performance
+    profile: generic
+    prompt: self_check
+    query: 检查 Delta 表、小文件、分区裁剪和查询性能风险。
+    expected_template_ids: [checklist.performance]
+    forbidden_layers: [retail_sales_demo]
+  - id: g_cost
+    profile: generic
+    prompt: databricks_qa
+    query: 提供 Databricks 计算、存储、调度和闲置资源的成本检查清单。
+    expected_template_ids: [checklist.cost]
+    forbidden_layers: [retail_sales_demo]
+  - id: g_arch_doc
+    profile: generic
+    prompt: proposal_generation
+    query: 生成 Databricks 架构设计书的大纲和必要章节。
+    expected_template_ids: [deliverable.architecture_design]
+    forbidden_layers: [retail_sales_demo]
+  - id: g_table_doc
+    profile: generic
+    prompt: proposal_generation
+    query: 生成 Delta 表定义书结构，包括字段、主键、分区和质量规则。
+    expected_template_ids: [deliverable.table_design]
+    forbidden_layers: [retail_sales_demo]
+  - id: g_job_doc
+    profile: generic
+    prompt: workflow_design
+    query: 生成 Lakeflow Job 作业设计书结构，包括任务依赖、重试和调度。
+    expected_template_ids: [deliverable.job_design]
+    forbidden_layers: [retail_sales_demo]
+  - id: g_proposal
+    profile: generic
+    prompt: proposal_generation
+    query: 生成 Databricks 技术提案，覆盖目标架构、范围、风险和实施路线。
+    expected_template_ids: [deliverable.technical_proposal]
+    forbidden_layers: [retail_sales_demo]
+  - id: r_context
+    profile: retail_sales_demo
+    prompt: proposal_generation
+    query: 汇总 AWS 零售销售模拟项目的业务目标、范围、SLA 和关键假设。
+    expected_template_ids: [retail.project_context]
+    forbidden_layers: []
+  - id: r_sources
+    profile: retail_sales_demo
+    prompt: proposal_generation
+    query: 说明零售项目 S3 日批、RDS PostgreSQL CDC 和 Kinesis 事件源的数据契约。
+    expected_template_ids: [retail.source_contracts]
+    forbidden_layers: []
+  - id: r_architecture
+    profile: retail_sales_demo
+    prompt: workflow_design
+    query: 设计 AWS 零售销售平台从三类数据源到 Lakeflow 管道的端到端架构。
+    expected_template_ids: [pipeline.lakeflow_sdp, retail.end_to_end_architecture]
+    forbidden_layers: []
+  - id: r_medallion
+    profile: retail_sales_demo
+    prompt: workflow_design
+    query: 把零售订单、库存、客户和渠道数据映射到 Bronze、Silver、Gold。
+    expected_template_ids: [medallion.standard, retail.medallion_mapping]
+    forbidden_layers: []
+  - id: r_workflow
+    profile: retail_sales_demo
+    prompt: workflow_design
+    query: 设计零售销售平台批处理、CDC、Kinesis 和 Gold 刷新的 Job DAG。
+    expected_template_ids: [workflow.lakeflow_jobs, retail.workflow_dag]
+    forbidden_layers: []
+  - id: r_access
+    profile: retail_sales_demo
+    prompt: workflow_design
+    query: 为零售项目设计 Unity Catalog 权限矩阵和 PII 访问角色。
+    expected_template_ids: [governance.unity_catalog, retail.unity_catalog_access]
+    forbidden_layers: []
+  - id: r_gold
+    profile: retail_sales_demo
+    prompt: sql_generation
+    query: 定义零售每日销售、商品表现、库存健康、客户与渠道 Gold 数据产品。
+    expected_template_ids: [medallion.standard, retail.gold_data_products]
+    forbidden_layers: []
+  - id: r_acceptance
+    profile: retail_sales_demo
+    prompt: self_check
+    query: 对 AWS 零售销售模拟平台执行生产就绪和交付验收检查。
+    expected_template_ids: [checklist.production_readiness, retail.production_acceptance]
+    forbidden_layers: []

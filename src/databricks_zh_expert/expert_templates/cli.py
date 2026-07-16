@@ -4,16 +4,24 @@ import json
 import sys
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import asdict, dataclass
+from pathlib import Path
 from typing import Protocol
 
 from databricks_zh_expert.core.config import get_settings
 from databricks_zh_expert.core.runtime import selector_event_loop_factory
 from databricks_zh_expert.db.session import Database
+from databricks_zh_expert.expert_templates.evaluation import (
+    EXPERT_TEMPLATE_EVALUATION_PATH,
+    ExpertTemplateEvaluationError,
+    ExpertTemplateEvaluationResult,
+    ExpertTemplateEvaluator,
+)
 from databricks_zh_expert.expert_templates.registry import (
     ExpertTemplateRegistry,
     ExpertTemplateRegistryError,
 )
 from databricks_zh_expert.expert_templates.repository import ExpertTemplateRepository
+from databricks_zh_expert.expert_templates.retrieval import ExpertTemplateRetriever
 from databricks_zh_expert.expert_templates.sync import (
     ExpertTemplateSyncError,
     ExpertTemplateSyncService,
@@ -41,6 +49,10 @@ class ExpertTemplateStatusRepository(Protocol):
     ) -> ExpertTemplateIndexStatus: ...
 
 
+class ExpertTemplateEvaluationRunner(Protocol):
+    async def evaluate_file(self, path: Path) -> ExpertTemplateEvaluationResult: ...
+
+
 CloseCallback = Callable[[], Awaitable[None]]
 
 
@@ -49,7 +61,9 @@ class ExpertTemplateCliRuntime:
     service: ExpertTemplateSyncRunner
     repository: ExpertTemplateStatusRepository
     registry: ExpertTemplateRegistry
+    evaluator: ExpertTemplateEvaluationRunner | None = None
     close_callback: CloseCallback | None = None
+    evaluation_path: Path = EXPERT_TEMPLATE_EVALUATION_PATH
 
     async def close(self) -> None:
         if self.close_callback is not None:
@@ -62,6 +76,7 @@ def create_parser() -> argparse.ArgumentParser:
     sync_parser = commands.add_parser("sync", help="同步预置专家模板")
     sync_parser.add_argument("--dry-run", action="store_true")
     commands.add_parser("status", help="查看专家模板索引状态")
+    commands.add_parser("evaluate", help="评估专家模板检索质量")
     return parser
 
 
@@ -82,9 +97,20 @@ async def run_async(
         print(json.dumps(asdict(result), ensure_ascii=False, default=str))
         return 0 if result.failed_count == 0 else 1
 
-    status = await runtime.repository.get_index_status(runtime.registry.source_hash)
-    print(json.dumps(asdict(status), ensure_ascii=False, default=str))
-    return 0
+    if arguments.command == "status":
+        status = await runtime.repository.get_index_status(runtime.registry.source_hash)
+        print(json.dumps(asdict(status), ensure_ascii=False, default=str))
+        return 0
+
+    if runtime.evaluator is None:
+        raise RuntimeError("专家模板评估器尚未配置。")
+    try:
+        result = await runtime.evaluator.evaluate_file(runtime.evaluation_path)
+    except ExpertTemplateEvaluationError:
+        print("专家模板评估集无效。", file=sys.stderr)
+        return 2
+    print(json.dumps(asdict(result), ensure_ascii=False, default=str))
+    return 0 if result.passed else 1
 
 
 def _build_runtime() -> ExpertTemplateCliRuntime:
@@ -103,6 +129,11 @@ def _build_runtime() -> ExpertTemplateCliRuntime:
         repository=repository,
         embedding_client=embedding_client,
     )
+    retriever = ExpertTemplateRetriever(repository=repository, registry=registry)
+    evaluator = ExpertTemplateEvaluator(
+        retriever=retriever,
+        embedding_client=embedding_client,
+    )
 
     async def close() -> None:
         await database.dispose()
@@ -111,6 +142,7 @@ def _build_runtime() -> ExpertTemplateCliRuntime:
         service=service,
         repository=repository,
         registry=registry,
+        evaluator=evaluator,
         close_callback=close,
     )
 

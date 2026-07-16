@@ -57,8 +57,18 @@ class KnowledgeRetriever:
             raise ValueError("知识检索问题不能为空。")
 
         query_embedding = await self._embedding_client.embed_query(query)
+        return await self.retrieve_with_embedding(query, query_embedding.embedding)
+
+    async def retrieve_with_embedding(
+        self,
+        query: str,
+        query_embedding: Sequence[float],
+    ) -> RetrievalBundle:
+        if not isinstance(query, str) or not query.strip():
+            raise ValueError("知识检索问题不能为空。")
+
         vector_candidates = await self._repository.find_vector_candidates(
-            query_embedding.embedding,
+            query_embedding,
             limit=RAG_VECTOR_CANDIDATE_K,
         )
         lexical_query = extract_lexical_query(query)
