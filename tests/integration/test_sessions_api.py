@@ -3,7 +3,7 @@ from uuid import UUID
 
 import pytest
 from httpx import AsyncClient
-from sqlalchemy import update
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from databricks_zh_expert.artifacts.types import ArtifactType
@@ -12,7 +12,10 @@ from databricks_zh_expert.db.models import ChatSession, Message
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
 
-async def test_create_and_get_session(client: AsyncClient) -> None:
+async def test_create_and_get_session(
+    client: AsyncClient,
+    test_db_session: AsyncSession,
+) -> None:
     create_response = await client.post(
         "/api/chat/sessions",
         json={"title": "每日销售分析"},
@@ -26,6 +29,10 @@ async def test_create_and_get_session(client: AsyncClient) -> None:
     assert get_response.status_code == 200
     assert get_response.json()["title"] == "每日销售分析"
     assert get_response.json()["messages"] == []
+    stored_profile = await test_db_session.scalar(
+        select(ChatSession.expert_profile).where(ChatSession.id == UUID(session_id))
+    )
+    assert stored_profile == "generic"
 
 
 async def test_create_session_uses_default_title_and_rejects_empty_title(

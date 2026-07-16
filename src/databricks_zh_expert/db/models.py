@@ -29,6 +29,12 @@ class ChatSession(Base):
 
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
     title: Mapped[str] = mapped_column(String(200), nullable=False)
+    expert_profile: Mapped[str] = mapped_column(
+        String(100),
+        default="generic",
+        server_default=text("'generic'"),
+        nullable=False,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
@@ -111,6 +117,11 @@ class ModelCall(Base):
     artifact_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
     artifact_valid: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     artifact_error_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    expert_profile: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    expert_template_selections: Mapped[list[dict[str, Any]] | None] = mapped_column(
+        JSONB,
+        nullable=True,
+    )
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -287,6 +298,254 @@ class KnowledgeIngestionRun(Base):
     )
     chunk_count: Mapped[int] = mapped_column(
         Integer,
+        server_default=text("0"),
+        nullable=False,
+    )
+    error_summary: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB,
+        default=list,
+        server_default=text("'[]'::jsonb"),
+        nullable=False,
+    )
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+
+class ExpertTemplateRecord(Base):
+    __tablename__ = "expert_templates"
+    __table_args__ = (
+        CheckConstraint(
+            "kind IN ('blueprint', 'decision_guide', 'code_pattern', 'checklist', 'deliverable')",
+            name="ck_expert_templates_kind",
+        ),
+        CheckConstraint(
+            "category IN ('ingestion', 'medallion', 'pipeline', 'workflow', "
+            "'governance', 'data_quality', 'sql', 'pyspark', 'performance', "
+            "'cost', 'delivery')",
+            name="ck_expert_templates_category",
+        ),
+        CheckConstraint(
+            "cloud IN ('neutral', 'aws')",
+            name="ck_expert_templates_cloud",
+        ),
+        CheckConstraint(
+            "status IN ('active', 'inactive')",
+            name="ck_expert_templates_status",
+        ),
+        CheckConstraint("chunk_count >= 0", name="ck_expert_templates_chunk_count"),
+        UniqueConstraint(
+            "template_id",
+            "version",
+            name="uq_expert_templates_template_version",
+        ),
+        Index(
+            "ix_expert_templates_active_template_id",
+            "template_id",
+            unique=True,
+            postgresql_where=text("status = 'active'"),
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    template_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    version: Mapped[str] = mapped_column(String(20), nullable=False)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    summary: Mapped[str] = mapped_column(String(500), nullable=False)
+    kind: Mapped[str] = mapped_column(String(30), nullable=False)
+    category: Mapped[str] = mapped_column(String(50), nullable=False)
+    layer: Mapped[str] = mapped_column(String(100), nullable=False)
+    profile_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    cloud: Mapped[str] = mapped_column(String(20), nullable=False)
+    prompt_names: Mapped[list[str]] = mapped_column(
+        JSONB,
+        default=list,
+        server_default=text("'[]'::jsonb"),
+        nullable=False,
+    )
+    tags: Mapped[list[str]] = mapped_column(
+        JSONB,
+        default=list,
+        server_default=text("'[]'::jsonb"),
+        nullable=False,
+    )
+    extends_id: Mapped[UUID | None] = mapped_column(
+        Uuid,
+        ForeignKey(
+            "expert_templates.id",
+            name="fk_expert_templates_extends_id",
+            ondelete="RESTRICT",
+        ),
+        nullable=True,
+    )
+    is_mock: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    official_refs: Mapped[list[str]] = mapped_column(
+        JSONB,
+        default=list,
+        server_default=text("'[]'::jsonb"),
+        nullable=False,
+    )
+    source_path: Mapped[str] = mapped_column(Text, nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(20),
+        server_default=text("'inactive'"),
+        nullable=False,
+    )
+    chunk_count: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        server_default=text("0"),
+        nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+    inactivated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+
+class ExpertTemplateChunkRecord(Base):
+    __tablename__ = "expert_template_chunks"
+    __table_args__ = (
+        CheckConstraint(
+            "chunk_index >= 0",
+            name="ck_expert_template_chunks_chunk_index",
+        ),
+        CheckConstraint(
+            "token_count > 0",
+            name="ck_expert_template_chunks_token_count",
+        ),
+        UniqueConstraint(
+            "template_record_id",
+            "chunk_index",
+            name="uq_expert_template_chunks_template_chunk_index",
+        ),
+        Index(
+            "ix_expert_template_chunks_template_record_id",
+            "template_record_id",
+        ),
+        Index(
+            "ix_expert_template_chunks_search_vector",
+            "search_vector",
+            postgresql_using="gin",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    template_record_id: Mapped[UUID] = mapped_column(
+        Uuid,
+        ForeignKey(
+            "expert_templates.id",
+            name="fk_expert_template_chunks_template_record_id",
+            ondelete="CASCADE",
+        ),
+        nullable=False,
+    )
+    chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    heading_path: Mapped[list[str]] = mapped_column(
+        JSONB,
+        default=list,
+        server_default=text("'[]'::jsonb"),
+        nullable=False,
+    )
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    token_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    embedding: Mapped[list[float]] = mapped_column(Vector(1536), nullable=False)
+    embedding_model: Mapped[str] = mapped_column(String(100), nullable=False)
+    search_vector: Mapped[str] = mapped_column(
+        TSVECTOR,
+        Computed("to_tsvector('simple'::regconfig, content)", persisted=True),
+        nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+
+class ExpertTemplateSyncRun(Base):
+    __tablename__ = "expert_template_sync_runs"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('running', 'succeeded', 'failed')",
+            name="ck_expert_template_sync_runs_status",
+        ),
+        CheckConstraint(
+            "discovered_count >= 0 AND inserted_count >= 0 "
+            "AND activated_count >= 0 AND inactivated_count >= 0 "
+            "AND skipped_count >= 0 AND failed_count >= 0 AND chunk_count >= 0",
+            name="ck_expert_template_sync_runs_counts",
+        ),
+        CheckConstraint(
+            "embedding_dimensions > 0",
+            name="ck_expert_template_sync_runs_embedding_dimensions",
+        ),
+        Index("ix_expert_template_sync_runs_started_at", "started_at"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    source_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    embedding_model: Mapped[str] = mapped_column(String(100), nullable=False)
+    embedding_dimensions: Mapped[int] = mapped_column(Integer, nullable=False)
+    discovered_count: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        server_default=text("0"),
+        nullable=False,
+    )
+    inserted_count: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        server_default=text("0"),
+        nullable=False,
+    )
+    activated_count: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        server_default=text("0"),
+        nullable=False,
+    )
+    inactivated_count: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        server_default=text("0"),
+        nullable=False,
+    )
+    skipped_count: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        server_default=text("0"),
+        nullable=False,
+    )
+    failed_count: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        server_default=text("0"),
+        nullable=False,
+    )
+    chunk_count: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
         server_default=text("0"),
         nullable=False,
     )

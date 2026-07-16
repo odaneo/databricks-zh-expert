@@ -18,6 +18,9 @@ EXPECTED_TABLES = {
     "kb_documents",
     "kb_chunks",
     "kb_ingestion_runs",
+    "expert_templates",
+    "expert_template_chunks",
+    "expert_template_sync_runs",
 }
 
 
@@ -37,6 +40,12 @@ async def test_initial_migration_creates_expected_tables(
             lambda sync_connection: {
                 column["name"]: column
                 for column in inspect(sync_connection).get_columns("model_calls")
+            }
+        )
+        session_columns = await connection.run_sync(
+            lambda sync_connection: {
+                column["name"]: column
+                for column in inspect(sync_connection).get_columns("sessions")
             }
         )
         unique_constraints = await connection.run_sync(
@@ -60,6 +69,7 @@ async def test_initial_migration_creates_expected_tables(
 
     assert EXPECTED_TABLES <= table_names
     assert public_table_names == set()
+    assert session_columns["expert_profile"]["nullable"] is False
     assert model_call_columns["invocation_id"]["nullable"] is False
     assert model_call_columns["model_alias"]["nullable"] is False
     assert model_call_columns["attempt_number"]["nullable"] is False
@@ -70,9 +80,268 @@ async def test_initial_migration_creates_expected_tables(
     assert model_call_columns["artifact_type"]["nullable"] is True
     assert model_call_columns["artifact_valid"]["nullable"] is True
     assert model_call_columns["artifact_error_code"]["nullable"] is True
+    assert model_call_columns["expert_profile"]["nullable"] is True
+    assert model_call_columns["expert_template_selections"]["nullable"] is True
     assert "uq_model_calls_invocation_attempt" in unique_constraints
     assert "ck_model_calls_attempt_number" in check_constraints
     assert "ck_messages_artifact_type" in message_check_constraints
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_expert_template_schema_contract(test_engine: AsyncEngine) -> None:
+    async with test_engine.connect() as connection:
+        template_columns = await connection.run_sync(
+            lambda sync_connection: {
+                column["name"]: column
+                for column in inspect(sync_connection).get_columns("expert_templates")
+            }
+        )
+        chunk_columns = await connection.run_sync(
+            lambda sync_connection: {
+                column["name"]: column
+                for column in inspect(sync_connection).get_columns("expert_template_chunks")
+            }
+        )
+        template_checks = await connection.run_sync(
+            lambda sync_connection: {
+                constraint["name"]
+                for constraint in inspect(sync_connection).get_check_constraints("expert_templates")
+            }
+        )
+        chunk_checks = await connection.run_sync(
+            lambda sync_connection: {
+                constraint["name"]
+                for constraint in inspect(sync_connection).get_check_constraints(
+                    "expert_template_chunks"
+                )
+            }
+        )
+        run_checks = await connection.run_sync(
+            lambda sync_connection: {
+                constraint["name"]
+                for constraint in inspect(sync_connection).get_check_constraints(
+                    "expert_template_sync_runs"
+                )
+            }
+        )
+        template_unique_constraints = await connection.run_sync(
+            lambda sync_connection: {
+                constraint["name"]
+                for constraint in inspect(sync_connection).get_unique_constraints(
+                    "expert_templates"
+                )
+            }
+        )
+        template_foreign_keys = await connection.run_sync(
+            lambda sync_connection: inspect(sync_connection).get_foreign_keys("expert_templates")
+        )
+        chunk_foreign_keys = await connection.run_sync(
+            lambda sync_connection: inspect(sync_connection).get_foreign_keys(
+                "expert_template_chunks"
+            )
+        )
+        index_rows = await connection.execute(
+            text(
+                """
+                SELECT tablename, indexname, indexdef
+                FROM pg_indexes
+                WHERE schemaname = current_schema()
+                  AND tablename IN ('expert_templates', 'expert_template_chunks')
+                ORDER BY tablename, indexname
+                """
+            )
+        )
+
+    index_definitions = {
+        (table_name, index_name): definition
+        for table_name, index_name, definition in index_rows.all()
+    }
+    rendered_indexes = "\n".join(index_definitions.values()).lower()
+
+    assert template_columns["profile_id"]["nullable"] is True
+    assert template_columns["extends_id"]["nullable"] is True
+    assert template_columns["inactivated_at"]["nullable"] is True
+    assert str(template_columns["prompt_names"]["type"]).upper() == "JSONB"
+    assert str(chunk_columns["embedding"]["type"]).upper() == "VECTOR(1536)"
+    assert str(chunk_columns["search_vector"]["type"]).upper() == "TSVECTOR"
+    assert {
+        "ck_expert_templates_kind",
+        "ck_expert_templates_category",
+        "ck_expert_templates_cloud",
+        "ck_expert_templates_status",
+        "ck_expert_templates_chunk_count",
+    } <= template_checks
+    assert {
+        "ck_expert_template_chunks_chunk_index",
+        "ck_expert_template_chunks_token_count",
+    } <= chunk_checks
+    assert {
+        "ck_expert_template_sync_runs_status",
+        "ck_expert_template_sync_runs_counts",
+        "ck_expert_template_sync_runs_embedding_dimensions",
+    } <= run_checks
+    assert "uq_expert_templates_template_version" in template_unique_constraints
+    assert template_foreign_keys == [
+        {
+            "name": "fk_expert_templates_extends_id",
+            "constrained_columns": ["extends_id"],
+            "referred_schema": None,
+            "referred_table": "expert_templates",
+            "referred_columns": ["id"],
+            "options": {"ondelete": "RESTRICT"},
+            "comment": None,
+        }
+    ]
+    assert chunk_foreign_keys == [
+        {
+            "name": "fk_expert_template_chunks_template_record_id",
+            "constrained_columns": ["template_record_id"],
+            "referred_schema": None,
+            "referred_table": "expert_templates",
+            "referred_columns": ["id"],
+            "options": {"ondelete": "CASCADE"},
+            "comment": None,
+        }
+    ]
+    active_index = index_definitions[
+        ("expert_templates", "ix_expert_templates_active_template_id")
+    ].lower()
+    assert "unique index" in active_index
+    assert "where" in active_index and "active" in active_index
+    assert (
+        "expert_template_chunks",
+        "ix_expert_template_chunks_search_vector",
+    ) in index_definitions
+    assert (
+        "using gin"
+        in index_definitions[
+            ("expert_template_chunks", "ix_expert_template_chunks_search_vector")
+        ].lower()
+    )
+    assert "hnsw" not in rendered_indexes
+    assert "ivfflat" not in rendered_indexes
+
+
+@pytest.mark.integration
+def test_expert_template_migration_preserves_history_and_round_trips(
+    test_database_url: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DATABASE_URL", test_database_url)
+    get_settings.cache_clear()
+    config = Config("alembic.ini")
+    sync_database_url = (
+        make_url(test_database_url)
+        .set(drivername="postgresql")
+        .render_as_string(hide_password=False)
+    )
+    session_id = uuid4()
+    model_call_id = uuid4()
+
+    try:
+        command.downgrade(config, "0006_catalog_link_sources")
+        with psycopg.connect(sync_database_url) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "INSERT INTO sessions (id, title) VALUES (%s, %s)",
+                    (session_id, "专家模板迁移保护测试"),
+                )
+                cursor.execute(
+                    """
+                    INSERT INTO model_calls (
+                        id,
+                        session_id,
+                        invocation_id,
+                        provider,
+                        model,
+                        model_alias,
+                        attempt_number,
+                        latency_ms,
+                        success,
+                        retryable
+                    )
+                    VALUES (%s, %s, %s, 'deepseek', %s, %s, 1, 42, true, false)
+                    """,
+                    (
+                        model_call_id,
+                        session_id,
+                        model_call_id,
+                        "deepseek/deepseek-v4-flash",
+                        "deepseek-v4-flash",
+                    ),
+                )
+
+        for _ in range(2):
+            command.upgrade(config, "head")
+            with psycopg.connect(sync_database_url) as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        "SELECT expert_profile FROM sessions WHERE id = %s",
+                        (session_id,),
+                    )
+                    assert cursor.fetchone() == ("generic",)
+                    cursor.execute(
+                        """
+                        SELECT expert_profile, expert_template_selections
+                        FROM model_calls
+                        WHERE id = %s
+                        """,
+                        (model_call_id,),
+                    )
+                    assert cursor.fetchone() == (None, None)
+                    cursor.execute(
+                        """
+                        SELECT table_name
+                        FROM information_schema.tables
+                        WHERE table_schema = current_schema()
+                          AND table_name LIKE 'expert_template%'
+                        ORDER BY table_name
+                        """
+                    )
+                    assert {row[0] for row in cursor.fetchall()} == {
+                        "expert_template_chunks",
+                        "expert_template_sync_runs",
+                        "expert_templates",
+                    }
+
+            command.downgrade(config, "0006_catalog_link_sources")
+            with psycopg.connect(sync_database_url) as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        """
+                        SELECT table_name
+                        FROM information_schema.tables
+                        WHERE table_schema = current_schema()
+                          AND table_name LIKE 'expert_template%'
+                        """
+                    )
+                    assert cursor.fetchall() == []
+                    cursor.execute(
+                        """
+                        SELECT column_name
+                        FROM information_schema.columns
+                        WHERE table_schema = current_schema()
+                          AND (
+                            (table_name = 'sessions' AND column_name = 'expert_profile')
+                            OR (
+                              table_name = 'model_calls'
+                              AND column_name IN (
+                                'expert_profile',
+                                'expert_template_selections'
+                              )
+                            )
+                          )
+                        """
+                    )
+                    assert cursor.fetchall() == []
+    finally:
+        get_settings.cache_clear()
+        command.upgrade(config, "head")
+        with psycopg.connect(sync_database_url) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("DELETE FROM sessions WHERE id = %s", (session_id,))
+        get_settings.cache_clear()
 
 
 @pytest.mark.integration
@@ -467,7 +736,7 @@ def test_knowledge_rag_migration_preserves_business_rows_and_downgrades_in_test_
                     ),
                 )
 
-        command.upgrade(config, "head")
+        command.upgrade(config, "0006_catalog_link_sources")
         with psycopg.connect(sync_database_url) as connection:
             with connection.cursor() as cursor:
                 cursor.execute(

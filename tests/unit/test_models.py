@@ -3,14 +3,19 @@ from typing import cast
 from uuid import uuid4
 
 import pytest
+from pgvector.sqlalchemy import Vector
 from pydantic import ValidationError
 from sqlalchemy import CheckConstraint, ForeignKeyConstraint, Table, UniqueConstraint
+from sqlalchemy.schema import DefaultClause
 
 from databricks_zh_expert.artifacts.types import ArtifactType
 from databricks_zh_expert.chat.schemas import MessageResponse
 from databricks_zh_expert.db.base import Base
 from databricks_zh_expert.db.models import (
     ChatSession,
+    ExpertTemplateChunkRecord,
+    ExpertTemplateRecord,
+    ExpertTemplateSyncRun,
     KnowledgeChunkRecord,
     KnowledgeDocument,
     KnowledgeIngestionRun,
@@ -53,10 +58,14 @@ def test_models_register_expected_tables_and_columns() -> None:
         "kb_documents",
         "kb_chunks",
         "kb_ingestion_runs",
+        "expert_templates",
+        "expert_template_chunks",
+        "expert_template_sync_runs",
     }
     assert set(ChatSession.__table__.columns.keys()) == {
         "id",
         "title",
+        "expert_profile",
         "created_at",
         "updated_at",
     }
@@ -88,6 +97,8 @@ def test_models_register_expected_tables_and_columns() -> None:
         "artifact_type",
         "artifact_valid",
         "artifact_error_code",
+        "expert_profile",
+        "expert_template_selections",
         "error_message",
         "created_at",
     }
@@ -144,6 +155,120 @@ def test_models_register_expected_tables_and_columns() -> None:
         "error_summary",
         "started_at",
         "completed_at",
+    }
+    assert set(ExpertTemplateRecord.__table__.columns.keys()) == {
+        "id",
+        "template_id",
+        "version",
+        "name",
+        "summary",
+        "kind",
+        "category",
+        "layer",
+        "profile_id",
+        "cloud",
+        "prompt_names",
+        "tags",
+        "extends_id",
+        "is_mock",
+        "official_refs",
+        "source_path",
+        "content",
+        "content_hash",
+        "status",
+        "chunk_count",
+        "created_at",
+        "updated_at",
+        "inactivated_at",
+    }
+    assert set(ExpertTemplateChunkRecord.__table__.columns.keys()) == {
+        "id",
+        "template_record_id",
+        "chunk_index",
+        "heading_path",
+        "content",
+        "content_hash",
+        "token_count",
+        "embedding",
+        "embedding_model",
+        "search_vector",
+        "created_at",
+    }
+    assert set(ExpertTemplateSyncRun.__table__.columns.keys()) == {
+        "id",
+        "status",
+        "source_hash",
+        "embedding_model",
+        "embedding_dimensions",
+        "discovered_count",
+        "inserted_count",
+        "activated_count",
+        "inactivated_count",
+        "skipped_count",
+        "failed_count",
+        "chunk_count",
+        "error_summary",
+        "started_at",
+        "completed_at",
+    }
+
+
+def test_expert_template_models_enforce_storage_contract() -> None:
+    template_table = cast(Table, ExpertTemplateRecord.__table__)
+    chunk_table = cast(Table, ExpertTemplateChunkRecord.__table__)
+    run_table = cast(Table, ExpertTemplateSyncRun.__table__)
+
+    assert ChatSession.__table__.c.expert_profile.nullable is False
+    session_profile_default = ChatSession.__table__.c.expert_profile.server_default
+    assert isinstance(session_profile_default, DefaultClause)
+    assert str(session_profile_default.arg) == "'generic'"
+    assert ModelCall.__table__.c.expert_profile.nullable is True
+    assert ModelCall.__table__.c.expert_template_selections.nullable is True
+    embedding_type = cast(Vector, ExpertTemplateChunkRecord.__table__.c.embedding.type)
+    assert embedding_type.dim == 1536
+    assert ExpertTemplateChunkRecord.__table__.c.search_vector.computed is not None
+
+    json_array_columns = (
+        template_table.c.prompt_names,
+        template_table.c.tags,
+        template_table.c.official_refs,
+        chunk_table.c.heading_path,
+        run_table.c.error_summary,
+    )
+    for column in json_array_columns:
+        assert column.nullable is False
+        assert column.default is not None and column.default.is_callable
+        assert isinstance(column.server_default, DefaultClause)
+        assert str(column.server_default.arg) == "'[]'::jsonb"
+
+    template_constraints = {constraint.name for constraint in template_table.constraints}
+    assert {
+        "ck_expert_templates_kind",
+        "ck_expert_templates_category",
+        "ck_expert_templates_cloud",
+        "ck_expert_templates_status",
+        "ck_expert_templates_chunk_count",
+        "uq_expert_templates_template_version",
+        "fk_expert_templates_extends_id",
+    } <= template_constraints
+    extends_foreign_key = next(
+        constraint
+        for constraint in template_table.constraints
+        if isinstance(constraint, ForeignKeyConstraint)
+        and constraint.name == "fk_expert_templates_extends_id"
+    )
+    assert extends_foreign_key.ondelete == "RESTRICT"
+
+    active_index = next(
+        index
+        for index in template_table.indexes
+        if index.name == "ix_expert_templates_active_template_id"
+    )
+    assert active_index.unique is True
+    assert str(active_index.dialect_options["postgresql"]["where"]) == ("status = 'active'")
+    assert {index.name for index in chunk_table.indexes} == {
+        "ix_expert_template_chunks_template_record_id",
+        "ix_expert_template_chunks_search_vector",
     }
 
 
