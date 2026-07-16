@@ -1,7 +1,4 @@
-import re
-import unicodedata
 from collections.abc import Sequence
-from dataclasses import dataclass
 from typing import Protocol
 from uuid import UUID
 
@@ -18,29 +15,10 @@ from databricks_zh_expert.rag.context import (
 )
 from databricks_zh_expert.rag.embeddings import EmbeddingClient
 from databricks_zh_expert.rag.repository import KnowledgeCandidate
-
-_LEXICAL_TOKEN_PATTERN = re.compile(r"/[A-Za-z0-9._~!$&'()*+,;=:@%/-]+|[A-Za-z][A-Za-z0-9_.-]*")
-_LEXICAL_STOP_WORDS = frozenset(
-    {
-        "a",
-        "an",
-        "and",
-        "are",
-        "databricks",
-        "for",
-        "how",
-        "in",
-        "is",
-        "of",
-        "on",
-        "or",
-        "please",
-        "the",
-        "to",
-        "use",
-        "what",
-        "with",
-    }
+from databricks_zh_expert.search.hybrid import (
+    FusionRank,
+    extract_lexical_query,
+    reciprocal_rank_fusion_ids,
 )
 
 
@@ -58,15 +36,6 @@ class KnowledgeCandidateRepository(Protocol):
         *,
         limit: int,
     ) -> tuple[KnowledgeCandidate, ...]: ...
-
-
-@dataclass(slots=True)
-class _FusionState:
-    candidate: KnowledgeCandidate
-    vector_similarity: float | None = None
-    lexical_score: float | None = None
-    vector_rank: int | None = None
-    lexical_rank: int | None = None
 
 
 class KnowledgeRetriever:
@@ -117,53 +86,46 @@ class KnowledgeRetriever:
         return self._context_builder.build(query, ranked_candidates)
 
 
-def extract_lexical_query(query: str) -> str:
-    normalized = unicodedata.normalize("NFKC", query)
-    terms: list[str] = []
-    seen: set[str] = set()
-    for match in _LEXICAL_TOKEN_PATTERN.finditer(normalized):
-        term = match.group(0).rstrip(".-")
-        normalized_term = term.casefold()
-        if not term or normalized_term in _LEXICAL_STOP_WORDS or normalized_term in seen:
-            continue
-        if not term.startswith("/") and len(term) < 2:
-            continue
-        seen.add(normalized_term)
-        terms.append(term)
-    return " OR ".join(terms)
-
-
 def reciprocal_rank_fusion(
     vector_candidates: Sequence[KnowledgeCandidate],
     lexical_candidates: Sequence[KnowledgeCandidate],
     *,
     rrf_k: int = 60,
 ) -> tuple[RankedKnowledgeChunk, ...]:
-    if isinstance(rrf_k, bool) or not isinstance(rrf_k, int) or rrf_k <= 0:
-        raise ValueError("RRF k 必须是正整数。")
+    candidates_by_id: dict[UUID, KnowledgeCandidate] = {}
+    vector_similarity_by_id: dict[UUID, float | None] = {}
+    lexical_score_by_id: dict[UUID, float | None] = {}
 
-    states: dict[UUID, _FusionState] = {}
     seen_vector: set[UUID] = set()
     for candidate in vector_candidates:
         if candidate.chunk_id in seen_vector:
             continue
         seen_vector.add(candidate.chunk_id)
-        rank = len(seen_vector)
-        state = states.setdefault(candidate.chunk_id, _FusionState(candidate=candidate))
-        state.vector_rank = rank
-        state.vector_similarity = candidate.vector_similarity
+        candidates_by_id.setdefault(candidate.chunk_id, candidate)
+        vector_similarity_by_id[candidate.chunk_id] = candidate.vector_similarity
 
     seen_lexical: set[UUID] = set()
     for candidate in lexical_candidates:
         if candidate.chunk_id in seen_lexical:
             continue
         seen_lexical.add(candidate.chunk_id)
-        rank = len(seen_lexical)
-        state = states.setdefault(candidate.chunk_id, _FusionState(candidate=candidate))
-        state.lexical_rank = rank
-        state.lexical_score = candidate.lexical_score
+        candidates_by_id.setdefault(candidate.chunk_id, candidate)
+        lexical_score_by_id[candidate.chunk_id] = candidate.lexical_score
 
-    ranked = tuple(_ranked_chunk(state, rrf_k=rrf_k) for state in states.values())
+    fusion_ranks = reciprocal_rank_fusion_ids(
+        tuple(candidate.chunk_id for candidate in vector_candidates),
+        tuple(candidate.chunk_id for candidate in lexical_candidates),
+        rrf_k=rrf_k,
+    )
+    ranked = tuple(
+        _ranked_chunk(
+            candidates_by_id[rank.item_id],
+            rank=rank,
+            vector_similarity=vector_similarity_by_id.get(rank.item_id),
+            lexical_score=lexical_score_by_id.get(rank.item_id),
+        )
+        for rank in fusion_ranks
+    )
     return tuple(
         sorted(
             ranked,
@@ -177,13 +139,13 @@ def reciprocal_rank_fusion(
     )
 
 
-def _ranked_chunk(state: _FusionState, *, rrf_k: int) -> RankedKnowledgeChunk:
-    candidate = state.candidate
-    fused_score = 0.0
-    if state.vector_rank is not None:
-        fused_score += 1 / (rrf_k + state.vector_rank)
-    if state.lexical_rank is not None:
-        fused_score += 1 / (rrf_k + state.lexical_rank)
+def _ranked_chunk(
+    candidate: KnowledgeCandidate,
+    *,
+    rank: FusionRank,
+    vector_similarity: float | None,
+    lexical_score: float | None,
+) -> RankedKnowledgeChunk:
     return RankedKnowledgeChunk(
         chunk_id=candidate.chunk_id,
         chunk_hash=candidate.chunk_hash,
@@ -196,11 +158,11 @@ def _ranked_chunk(state: _FusionState, *, rrf_k: int) -> RankedKnowledgeChunk:
         content=candidate.content,
         token_count=candidate.token_count,
         source_ref=candidate.source_ref,
-        vector_similarity=state.vector_similarity,
-        lexical_score=state.lexical_score,
-        vector_rank=state.vector_rank,
-        lexical_rank=state.lexical_rank,
-        fused_score=fused_score,
+        vector_similarity=vector_similarity,
+        lexical_score=lexical_score,
+        vector_rank=rank.vector_rank,
+        lexical_rank=rank.lexical_rank,
+        fused_score=rank.fused_score,
         link_only=candidate.link_only,
     )
 

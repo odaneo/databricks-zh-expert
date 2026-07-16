@@ -16,6 +16,9 @@ from databricks_zh_expert.rag.retrieval import (
     extract_lexical_query,
     reciprocal_rank_fusion,
 )
+from databricks_zh_expert.search.hybrid import (
+    extract_lexical_query as shared_extract_lexical_query,
+)
 
 
 def _uuid(value: int) -> UUID:
@@ -124,6 +127,9 @@ def test_extract_lexical_query_keeps_precise_english_terms_and_paths() -> None:
     )
 
     assert lexical_query == "OPTIMIZE OR run_if OR /api/2.1/jobs/runs/submit"
+    assert lexical_query == shared_extract_lexical_query(
+        "如何用 OPTIMIZE 配合 run_if，并调用 /api/2.1/jobs/runs/submit？"
+    )
 
 
 class _FakeEmbeddingClient:

@@ -10,6 +10,10 @@ from databricks_zh_expert.rag.types import (
     NormalizedDocument,
     SourceKind,
 )
+from databricks_zh_expert.search.markdown import (
+    MarkdownChunker as SharedMarkdownChunker,
+)
+from databricks_zh_expert.search.markdown import MarkdownSource
 
 
 def _document(
@@ -245,3 +249,24 @@ def test_reported_token_count_matches_cl100k_base() -> None:
     encoding = tiktoken.get_encoding("cl100k_base")
 
     assert chunks[0].token_count == len(encoding.encode(chunks[0].content))
+
+
+def test_rag_chunker_is_a_compatible_adapter_for_shared_markdown() -> None:
+    document = _document(
+        "# Lakeflow Jobs\n\n## Configure tasks\n\nUse bounded retries.\n",
+        heading_anchors=("jobs", "configure-tasks"),
+    )
+    shared_source = MarkdownSource(
+        title=document.title,
+        source_ref=document.canonical_url,
+        content=document.normalized_content,
+        heading_anchors=document.heading_anchors,
+    )
+
+    rag_chunks = MarkdownChunker(chunk_size_tokens=120, chunk_overlap_tokens=20).split(document)
+    shared_chunks = SharedMarkdownChunker(
+        chunk_size_tokens=120,
+        chunk_overlap_tokens=20,
+    ).split(shared_source)
+
+    assert rag_chunks == shared_chunks
