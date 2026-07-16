@@ -7,6 +7,7 @@ from markdownify import markdownify
 
 from databricks_zh_expert.rag.constants import KNOWLEDGE_MIN_NORMALIZED_CHARS
 from databricks_zh_expert.rag.types import (
+    DiscoveredSource,
     FetchResult,
     FetchStatus,
     NormalizedDocument,
@@ -28,9 +29,12 @@ class KnowledgeNormalizer:
             raise KnowledgeNormalizationError("只有成功抓取的正文可以规范化。")
 
         if fetched.source.kind is SourceKind.GENERAL_HTML:
-            title, canonical_url, source_updated_at, content = self._normalize_html(fetched)
+            title, canonical_url, source_updated_at, content, heading_anchors = (
+                self._normalize_html(fetched)
+            )
         else:
             title, canonical_url, source_updated_at, content = self._normalize_markdown(fetched)
+            heading_anchors = ()
 
         normalized_content = self._clean_markdown(content)
         if len(normalized_content.strip()) < KNOWLEDGE_MIN_NORMALIZED_CHARS:
@@ -44,16 +48,41 @@ class KnowledgeNormalizer:
             source_updated_at=source_updated_at,
             etag=fetched.etag,
             last_modified=fetched.last_modified,
+            heading_anchors=heading_anchors,
+        )
+
+    def normalize_catalog_link(self, source: DiscoveredSource) -> NormalizedDocument:
+        if source.kind is not SourceKind.CATALOG_LINK:
+            raise KnowledgeNormalizationError("只有目录链接来源可以使用链接规范化。")
+        summary = source.summary.strip() if source.summary else "官方目录未提供摘要。"
+        content = self._clean_markdown(
+            "\n\n".join(
+                (
+                    "资料类型：官方目录链接（未抓取目标正文）",
+                    f"标题：{source.title.strip()}",
+                    f"目录摘要：{summary}",
+                    f"官方链接：{source.url}",
+                )
+            )
+        )
+        return NormalizedDocument(
+            source=source,
+            title=source.title.strip(),
+            canonical_url=source.url,
+            normalized_content=content,
+            source_updated_at=None,
+            etag=None,
+            last_modified=None,
         )
 
     def _normalize_html(
         self,
         fetched: FetchResult,
-    ) -> tuple[str, str, str | None, str]:
+    ) -> tuple[str, str, str | None, str, tuple[str | None, ...]]:
         body = fetched.body
         if body is None:
             raise KnowledgeNormalizationError("Databricks HTML 页面缺少正文。")
-        soup = BeautifulSoup(body, "html.parser")
+        soup = BeautifulSoup(body, "html5lib")
         article = soup.select_one("article.theme-doc-markdown") or soup.find("article")
         if not isinstance(article, Tag):
             raise KnowledgeNormalizationError("Databricks HTML 页面缺少 article 正文。")
@@ -64,6 +93,7 @@ class KnowledgeNormalizer:
         ):
             element.decompose()
 
+        heading_anchors = self._remove_heading_permalinks(article)
         heading = article.find("h1")
         title = (
             heading.get_text(" ", strip=True) if isinstance(heading, Tag) else fetched.source.title
@@ -76,7 +106,7 @@ class KnowledgeNormalizer:
             bullets="-",
             code_language_callback=self._code_language,
         )
-        return title, canonical_url, source_updated_at, content
+        return title, canonical_url, source_updated_at, content, heading_anchors
 
     def _normalize_markdown(
         self,
@@ -116,6 +146,43 @@ class KnowledgeNormalizer:
         if isinstance(datetime_value, str) and datetime_value.strip():
             return datetime_value.strip()
         return None
+
+    @staticmethod
+    def _remove_heading_permalinks(article: Tag) -> tuple[str | None, ...]:
+        anchors: list[str | None] = []
+        for heading in article.select("h1, h2, h3, h4, h5, h6"):
+            raw_id = heading.get("id")
+            anchor = raw_id.strip().lstrip("#") if isinstance(raw_id, str) else None
+            anchor = anchor or None
+
+            for link in heading.find_all("a"):
+                href = link.get("href")
+                if not isinstance(href, str) or not href.startswith("#"):
+                    continue
+                classes = link.get("class")
+                class_names = classes if isinstance(classes, list) else [classes]
+                aria_label = link.get("aria-label")
+                link_title = link.get("title")
+                is_permalink = (
+                    "hash-link" in class_names
+                    or (
+                        isinstance(aria_label, str)
+                        and aria_label.casefold().startswith("direct link to ")
+                    )
+                    or (
+                        isinstance(link_title, str)
+                        and link_title.casefold().startswith("direct link to ")
+                    )
+                )
+                if not is_permalink:
+                    continue
+                if anchor is None:
+                    anchor = href.removeprefix("#").strip() or None
+                link.decompose()
+
+            if heading.name in {"h1", "h2", "h3"} and heading.get_text(" ", strip=True):
+                anchors.append(anchor)
+        return tuple(anchors)
 
     @staticmethod
     def _code_language(element: Tag) -> str | None:

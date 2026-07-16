@@ -201,6 +201,7 @@ def _ranked_chunk(state: _FusionState, *, rrf_k: int) -> RankedKnowledgeChunk:
         vector_rank=state.vector_rank,
         lexical_rank=state.lexical_rank,
         fused_score=fused_score,
+        link_only=candidate.link_only,
     )
 
 

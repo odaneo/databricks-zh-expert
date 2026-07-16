@@ -80,7 +80,7 @@ class KnowledgeFetcher:
                 response,
                 allowed_types=allowed_types,
                 max_bytes=KNOWLEDGE_DOCUMENT_MAX_BYTES,
-                limit_label="2 MiB",
+                limit_label="5 MiB",
             )
             return FetchResult(
                 source=source,

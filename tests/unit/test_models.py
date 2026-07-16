@@ -94,6 +94,7 @@ def test_models_register_expected_tables_and_columns() -> None:
     assert set(KnowledgeDocument.__table__.columns.keys()) == {
         "id",
         "source_key",
+        "catalog_id",
         "source_kind",
         "title",
         "source_url",
@@ -107,6 +108,8 @@ def test_models_register_expected_tables_and_columns() -> None:
         "last_modified",
         "status",
         "chunk_count",
+        "missing_sync_count",
+        "missing_since_at",
         "source_updated_at",
         "fetched_at",
         "created_at",
@@ -142,6 +145,22 @@ def test_models_register_expected_tables_and_columns() -> None:
         "started_at",
         "completed_at",
     }
+
+
+def test_knowledge_document_supports_catalog_link_sources() -> None:
+    document_table = cast(Table, KnowledgeDocument.__table__)
+    source_kind_constraint = next(
+        constraint
+        for constraint in document_table.constraints
+        if isinstance(constraint, CheckConstraint)
+        and constraint.name == "ck_kb_documents_source_kind"
+    )
+
+    assert KnowledgeDocument.__table__.c.catalog_id.nullable is False
+    assert str(source_kind_constraint.sqltext) == (
+        "source_kind IN ('general_html', 'api_markdown', 'catalog_link')"
+    )
+    assert "ix_kb_documents_catalog_id" in {index.name for index in document_table.indexes}
 
 
 def test_message_model_enforces_roles_and_session_ordering() -> None:

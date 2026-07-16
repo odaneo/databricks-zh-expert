@@ -10,6 +10,7 @@ class CatalogKind(StrEnum):
 class SourceKind(StrEnum):
     GENERAL_HTML = "general_html"
     API_MARKDOWN = "api_markdown"
+    CATALOG_LINK = "catalog_link"
 
 
 class FetchStatus(StrEnum):
@@ -18,6 +19,7 @@ class FetchStatus(StrEnum):
 
 
 class KnowledgeCategory(StrEnum):
+    GENERAL = "general"
     ARCHITECTURE = "architecture"
     DELTA_LAKE = "delta_lake"
     DATA_ENGINEERING = "data_engineering"
@@ -31,34 +33,12 @@ class KnowledgeCategory(StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
-class GeneralDocumentSpec:
-    source_key: str
-    url: str
-    category: KnowledgeCategory
-
-
-@dataclass(frozen=True, slots=True)
-class ApiOperationSpec:
-    source_key: str
-    title: str
-    category: KnowledgeCategory
-
-
-@dataclass(frozen=True, slots=True)
-class ApiModuleSpec:
-    name: str
-    operations: tuple[ApiOperationSpec, ...]
-
-
-@dataclass(frozen=True, slots=True)
 class SourceCatalog:
     id: str
     kind: CatalogKind
     index_url: str
     cloud: str
     locale: str
-    documents: tuple[GeneralDocumentSpec, ...]
-    modules: tuple[ApiModuleSpec, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -81,6 +61,17 @@ class DiscoveredSource:
     locale: str
     topic: str
     summary: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class CatalogDiscoveryResult:
+    sources: tuple[DiscoveredSource, ...]
+    external_links: tuple[DiscoveredSource, ...]
+    duplicate_count: int
+
+    @property
+    def all_sources(self) -> tuple[DiscoveredSource, ...]:
+        return (*self.sources, *self.external_links)
 
 
 @dataclass(frozen=True, slots=True)
@@ -120,3 +111,4 @@ class NormalizedDocument:
     source_updated_at: str | None
     etag: str | None
     last_modified: str | None
+    heading_anchors: tuple[str | None, ...] = ()

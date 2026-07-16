@@ -211,6 +211,7 @@ dependencies = [
     { name = "alembic" },
     { name = "beautifulsoup4" },
     { name = "fastapi" },
+    { name = "html5lib" },
     { name = "httpx" },
     { name = "jinja2" },
     { name = "litellm" },
@@ -242,6 +243,7 @@ requires-dist = [
     { name = "alembic", specifier = "==1.18.5" },
     { name = "beautifulsoup4", specifier = "==4.15.0" },
     { name = "fastapi", specifier = "==0.139.0" },
+    { name = "html5lib", specifier = "==1.1" },
     { name = "httpx", specifier = "==0.28.1" },
     { name = "jinja2", specifier = "==3.1.6" },
     { name = "litellm", specifier = "==1.91.1" },
@@ -396,6 +398,19 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/fb/d1/90a498d05447980b977b1669246eeeeae4cfb0ea3e7a286eaba627f91bf9/hf_xet-1.5.1-cp37-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:6208adb15d192b90e4c2ad2a27ed864359b2cb0f2494eb6d7c7f3699ac02e2bf", size = 4719498, upload-time = "2026-06-08T23:02:49.268Z" },
     { url = "https://files.pythonhosted.org/packages/6d/b6/20f99cfe97cc663a711f7b33cc21d4793e51968e9a26125b4afcd77315ba/hf_xet-1.5.1-cp37-abi3-win_amd64.whl", hash = "sha256:f7b3002f95d1c13e24bcb4537baa8f0eb3838957067c91bb4959bc004a6435f5", size = 4026419, upload-time = "2026-06-08T23:02:50.829Z" },
     { url = "https://files.pythonhosted.org/packages/f9/fa/77453694888f03e5a8c8852d1514a0894d8e81c622d39edbaf308ea0dcf4/hf_xet-1.5.1-cp37-abi3-win_arm64.whl", hash = "sha256:93d090b57b211133f6c0dab0205ef5cb6d89162979ba75a74845045cc3063b8e", size = 3855178, upload-time = "2026-06-08T23:02:52.452Z" },
+]
+
+[[package]]
+name = "html5lib"
+version = "1.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "six" },
+    { name = "webencodings" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/ac/b6/b55c3f49042f1df3dcd422b7f224f939892ee94f22abcf503a9b7339eaf2/html5lib-1.1.tar.gz", hash = "sha256:b2e5b40261e20f354d198eae92afc10d750afb487ed5e50f9c4eaf07c184146f", size = 272215, upload-time = "2020-06-22T23:32:38.834Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/6c/dd/a834df6482147d48e225a49515aabc28974ad5a4ca3215c18a882565b028/html5lib-1.1-py2.py3-none-any.whl", hash = "sha256:0d78f8fde1c230e99fe37986a60526d7049ed4bf8a9fadbad5f00e22e58e041d", size = 112173, upload-time = "2020-06-22T23:32:36.781Z" },
 ]
 
 [[package]]
@@ -1262,6 +1277,15 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/fa/08/d9e2e0f9e8e6791d33aefc694ad7eefa7f901f63caff84a81ded38692f9c/watchfiles-1.2.0-cp312-cp312-win32.whl", hash = "sha256:7a2cffd17d27d2ecbb310c2b1d8174f222a5495b1a721894afa88ec11e25b898", size = 275480, upload-time = "2026-05-18T04:30:31.307Z" },
     { url = "https://files.pythonhosted.org/packages/1c/e6/9d42569c0102645cc8cea5d8c7d8a1e9d4ada2cb7f05f75e554b8aa2202a/watchfiles-1.2.0-cp312-cp312-win_amd64.whl", hash = "sha256:f155b3a1b2a5fc89cdc70d47ee5d54e3b75e88efa34982028a35daef9ba00379", size = 288718, upload-time = "2026-05-18T04:32:10.745Z" },
     { url = "https://files.pythonhosted.org/packages/0a/26/88e0dc6ee3898169d7fa22bb6a69cabf2502d2ee25cb8c876d1262d204f8/watchfiles-1.2.0-cp312-cp312-win_arm64.whl", hash = "sha256:8fa585ede612ee9f9e91b18bebf9ba11b9ae29a4e3a0d0cf6fca3e382133f0d5", size = 281026, upload-time = "2026-05-18T04:30:22.23Z" },
+]
+
+[[package]]
+name = "webencodings"
+version = "0.5.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/0b/02/ae6ceac1baeda530866a85075641cec12989bd8d31af6d5ab4a3e8c92f47/webencodings-0.5.1.tar.gz", hash = "sha256:b36a1c245f2d304965eb4e0a82848379241dc04b865afcc4aab16748587e1923", size = 9721, upload-time = "2017-04-05T20:21:34.189Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f4/24/2a3e3df732393fed8b3ebf2ec078f05546de641fe1b667ee316ec1dcf3b7/webencodings-0.5.1-py2.py3-none-any.whl", hash = "sha256:a0af1213f3c2226497a97e2b3aa01a7e4bee4f403f95be16fc9acd2947514a78", size = 11774, upload-time = "2017-04-05T20:21:32.581Z" },
 ]
 
 [[package]]

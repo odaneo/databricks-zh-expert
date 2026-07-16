@@ -160,12 +160,15 @@ async def test_knowledge_rag_schema_contract(test_engine: AsyncEngine) -> None:
     assert document_columns["content_hash"]["nullable"] is False
     assert document_columns["etag"]["nullable"] is True
     assert document_columns["last_modified"]["nullable"] is True
+    assert document_columns["missing_sync_count"]["nullable"] is False
+    assert document_columns["missing_since_at"]["nullable"] is True
     assert document_columns["source_updated_at"]["nullable"] is True
     assert document_columns["fetched_at"]["nullable"] is False
     assert str(chunk_columns["embedding"]["type"]).upper() == "VECTOR(1536)"
     assert str(chunk_columns["search_vector"]["type"]).upper() == "TSVECTOR"
     assert "ck_kb_documents_status" in document_checks
     assert "ck_kb_documents_chunk_count" in document_checks
+    assert "ck_kb_documents_missing_sync_count" in document_checks
     assert "ck_kb_chunks_chunk_index" in chunk_checks
     assert "ck_kb_chunks_token_count" in chunk_checks
     assert "ck_kb_ingestion_runs_status" in run_checks
@@ -186,6 +189,211 @@ async def test_knowledge_rag_schema_contract(test_engine: AsyncEngine) -> None:
     assert "using gin" in index_definitions["ix_kb_chunks_search_vector"].lower()
     assert "hnsw" not in rendered_indexes
     assert "ivfflat" not in rendered_indexes
+
+
+@pytest.mark.integration
+def test_catalog_presence_migration_preserves_existing_knowledge_document(
+    test_database_url: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DATABASE_URL", test_database_url)
+    get_settings.cache_clear()
+    config = Config("alembic.ini")
+    sync_database_url = (
+        make_url(test_database_url)
+        .set(drivername="postgresql")
+        .render_as_string(hide_password=False)
+    )
+    document_id = uuid4()
+
+    try:
+        command.downgrade(config, "0004_knowledge_rag")
+        with psycopg.connect(sync_database_url) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    INSERT INTO kb_documents (
+                        id,
+                        source_key,
+                        source_kind,
+                        title,
+                        source_url,
+                        canonical_url,
+                        category,
+                        cloud,
+                        locale,
+                        normalized_content,
+                        content_hash,
+                        status,
+                        chunk_count,
+                        fetched_at
+                    )
+                    VALUES (
+                        %s,
+                        'docs-before-0005',
+                        'general_html',
+                        '迁移前文档',
+                        'https://docs.databricks.com/migration-test/',
+                        'https://docs.databricks.com/migration-test/',
+                        'general',
+                        'aws',
+                        'en',
+                        '# 迁移前文档',
+                        %s,
+                        'active',
+                        0,
+                        now()
+                    )
+                    """,
+                    (document_id, "f" * 64),
+                )
+
+        command.upgrade(config, "head")
+        with psycopg.connect(sync_database_url) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT id, source_key, status, missing_sync_count, missing_since_at
+                    FROM kb_documents
+                    WHERE id = %s
+                    """,
+                    (document_id,),
+                )
+                migrated = cursor.fetchone()
+
+        assert migrated == (
+            document_id,
+            "docs-before-0005",
+            "active",
+            0,
+            None,
+        )
+    finally:
+        get_settings.cache_clear()
+        command.upgrade(config, "head")
+        with psycopg.connect(sync_database_url) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("DELETE FROM kb_documents WHERE id = %s", (document_id,))
+        get_settings.cache_clear()
+
+
+@pytest.mark.integration
+def test_catalog_link_migration_backfills_existing_document_catalogs(
+    test_database_url: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DATABASE_URL", test_database_url)
+    get_settings.cache_clear()
+    config = Config("alembic.ini")
+    sync_database_url = (
+        make_url(test_database_url)
+        .set(drivername="postgresql")
+        .render_as_string(hide_password=False)
+    )
+    docs_document_id = uuid4()
+    api_document_id = uuid4()
+
+    try:
+        command.downgrade(config, "0005_knowledge_catalog_presence")
+        with psycopg.connect(sync_database_url) as connection:
+            with connection.cursor() as cursor:
+                cursor.executemany(
+                    """
+                    INSERT INTO kb_documents (
+                        id,
+                        source_key,
+                        source_kind,
+                        title,
+                        source_url,
+                        canonical_url,
+                        category,
+                        cloud,
+                        locale,
+                        normalized_content,
+                        content_hash,
+                        status,
+                        chunk_count,
+                        fetched_at
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, 'aws', 'en', %s, %s,
+                            'active', 0, now())
+                    """,
+                    (
+                        (
+                            docs_document_id,
+                            "databricks-docs-before-0006",
+                            "general_html",
+                            "Docs migration source",
+                            "https://docs.databricks.com/migration-docs/",
+                            "https://docs.databricks.com/migration-docs/",
+                            "general",
+                            "# Docs migration source",
+                            "d" * 64,
+                        ),
+                        (
+                            api_document_id,
+                            "databricks-api-before-0006",
+                            "api_markdown",
+                            "API migration source",
+                            "https://docs.databricks.com/api/markdown/Test/Get.md",
+                            "https://docs.databricks.com/api/markdown/Test/Get.md",
+                            "api",
+                            "# API migration source",
+                            "a" * 64,
+                        ),
+                    ),
+                )
+
+        command.upgrade(config, "head")
+        with psycopg.connect(sync_database_url) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT id, catalog_id, source_kind
+                    FROM kb_documents
+                    WHERE id IN (%s, %s)
+                    ORDER BY id
+                    """,
+                    (docs_document_id, api_document_id),
+                )
+                migrated = {row[0]: (row[1], row[2]) for row in cursor.fetchall()}
+                cursor.execute(
+                    """
+                    SELECT is_nullable
+                    FROM information_schema.columns
+                    WHERE table_schema = current_schema()
+                      AND table_name = 'kb_documents'
+                      AND column_name = 'catalog_id'
+                    """
+                )
+                catalog_id_column = cursor.fetchone()
+                cursor.execute(
+                    """
+                    SELECT indexname
+                    FROM pg_indexes
+                    WHERE schemaname = current_schema()
+                      AND tablename = 'kb_documents'
+                      AND indexname = 'ix_kb_documents_catalog_id'
+                    """
+                )
+                catalog_index = cursor.fetchone()
+
+        assert migrated == {
+            docs_document_id: ("databricks-docs", "general_html"),
+            api_document_id: ("databricks-api", "api_markdown"),
+        }
+        assert catalog_id_column == ("NO",)
+        assert catalog_index == ("ix_kb_documents_catalog_id",)
+    finally:
+        get_settings.cache_clear()
+        command.upgrade(config, "head")
+        with psycopg.connect(sync_database_url) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "DELETE FROM kb_documents WHERE id IN (%s, %s)",
+                    (docs_document_id, api_document_id),
+                )
+        get_settings.cache_clear()
 
 
 @pytest.mark.integration

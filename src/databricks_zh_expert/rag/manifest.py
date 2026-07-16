@@ -6,11 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 from yaml import YAMLError
 
 from databricks_zh_expert.rag.types import (
-    ApiModuleSpec,
-    ApiOperationSpec,
     CatalogKind,
-    GeneralDocumentSpec,
-    KnowledgeCategory,
     KnowledgeManifest,
     SourceCatalog,
 )
@@ -45,40 +41,12 @@ class _IngestionModel(_StrictModel):
         return self
 
 
-class _GeneralDocumentModel(_StrictModel):
-    source_key: StableKey
-    url: str
-    category: KnowledgeCategory
-
-    _official_url = field_validator("url")(validate_official_url)
-
-
-class _ApiOperationModel(_StrictModel):
-    source_key: StableKey
-    title: str = Field(min_length=1, max_length=200)
-    category: KnowledgeCategory
-
-
-class _ApiModuleModel(_StrictModel):
-    name: str = Field(min_length=1, max_length=100)
-    include_operations: tuple[_ApiOperationModel, ...] = Field(min_length=1)
-
-    @model_validator(mode="after")
-    def validate_unique_operation_titles(self) -> Self:
-        titles = [operation.title.casefold() for operation in self.include_operations]
-        if len(titles) != len(set(titles)):
-            raise ValueError("API module 不能包含重复 operation title。")
-        return self
-
-
 class _CatalogModel(_StrictModel):
     id: StableKey
     kind: CatalogKind
     index_url: str
     cloud: Literal["aws"]
     locale: Literal["en"]
-    include_urls: tuple[_GeneralDocumentModel, ...] = ()
-    include_modules: tuple[_ApiModuleModel, ...] = ()
 
     _official_index_url = field_validator("index_url")(validate_official_url)
 
@@ -87,29 +55,15 @@ class _CatalogModel(_StrictModel):
         if self.kind is CatalogKind.DATABRICKS_DOCS:
             if self.index_url != "https://docs.databricks.com/llms.txt":
                 raise ValueError("通用文档目录必须使用官方 llms.txt。")
-            if not self.include_urls:
-                raise ValueError("通用文档 catalog 必须包含 include_urls。")
-            if self.include_modules:
-                raise ValueError("通用文档 catalog 不能包含 API module。")
-            urls = [document.url for document in self.include_urls]
-            if len(urls) != len(set(urls)):
-                raise ValueError("通用文档 catalog 不能包含重复 URL。")
             return self
 
         if self.index_url != "https://docs.databricks.com/api/llms.txt":
             raise ValueError("API 文档目录必须使用官方 api/llms.txt。")
-        if not self.include_modules:
-            raise ValueError("API catalog 必须包含具体 module 和 operation。")
-        if self.include_urls:
-            raise ValueError("API catalog 不能包含通用文档 URL。")
-        module_names = [module.name.casefold() for module in self.include_modules]
-        if len(module_names) != len(set(module_names)):
-            raise ValueError("API catalog 不能包含重复 module。")
         return self
 
 
 class _ManifestModel(_StrictModel):
-    version: Literal[1]
+    version: Literal[2]
     ingestion: _IngestionModel
     catalogs: tuple[_CatalogModel, ...] = Field(min_length=1)
 
@@ -119,17 +73,6 @@ class _ManifestModel(_StrictModel):
         if len(catalog_ids) != len(set(catalog_ids)):
             raise ValueError("catalog id 不能重复。")
 
-        source_keys = [
-            document.source_key for catalog in self.catalogs for document in catalog.include_urls
-        ]
-        source_keys.extend(
-            operation.source_key
-            for catalog in self.catalogs
-            for module in catalog.include_modules
-            for operation in module.include_operations
-        )
-        if len(source_keys) != len(set(source_keys)):
-            raise ValueError("source_key 不能重复。")
         return self
 
 
@@ -144,28 +87,6 @@ def _format_validation_error(error: ValidationError) -> str:
 def _to_domain(model: _ManifestModel) -> KnowledgeManifest:
     catalogs = []
     for catalog in model.catalogs:
-        documents = tuple(
-            GeneralDocumentSpec(
-                source_key=document.source_key,
-                url=document.url,
-                category=document.category,
-            )
-            for document in catalog.include_urls
-        )
-        modules = tuple(
-            ApiModuleSpec(
-                name=module.name,
-                operations=tuple(
-                    ApiOperationSpec(
-                        source_key=operation.source_key,
-                        title=operation.title,
-                        category=operation.category,
-                    )
-                    for operation in module.include_operations
-                ),
-            )
-            for module in catalog.include_modules
-        )
         catalogs.append(
             SourceCatalog(
                 id=catalog.id,
@@ -173,8 +94,6 @@ def _to_domain(model: _ManifestModel) -> KnowledgeManifest:
                 index_url=catalog.index_url,
                 cloud=catalog.cloud,
                 locale=catalog.locale,
-                documents=documents,
-                modules=modules,
             )
         )
 

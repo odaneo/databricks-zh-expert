@@ -1,0 +1,26 @@
+# Databricks API
+
+## Jobs
+
+### Jobs
+
+- [Create](markdown/Jobs/Jobs/Create.md)
+- [RunNow](markdown/Jobs/Jobs/RunNow.md)
+
+## Pipelines
+
+### Pipelines
+
+- [Create](markdown/Pipelines/Pipelines/Create.md)
+- [StartUpdate](markdown/Pipelines/Pipelines/StartUpdate.md)
+
+## Sql
+
+### Alerts
+
+- [Create](markdown/Sql/Alerts/Create.md)
+
+### Warehouses
+
+- [Create](markdown/Sql/Warehouses/Create.md)
+- [Get](markdown/Sql/Warehouses/Get.md)

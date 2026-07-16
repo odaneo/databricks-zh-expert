@@ -30,6 +30,7 @@ def _candidate(
     chunk_index: int = 0,
     vector_similarity: float | None = None,
     lexical_score: float | None = None,
+    link_only: bool = False,
 ) -> KnowledgeCandidate:
     return KnowledgeCandidate(
         chunk_id=_uuid(value),
@@ -45,6 +46,7 @@ def _candidate(
         source_ref=f"https://docs.databricks.com/aws/en/document-{value}#section",
         vector_similarity=vector_similarity,
         lexical_score=lexical_score,
+        link_only=link_only,
     )
 
 
@@ -89,6 +91,19 @@ def test_rrf_uses_stable_secondary_key_for_equal_scores() -> None:
     ranked = reciprocal_rank_fusion((vector_first,), (lexical_first,), rrf_k=60)
 
     assert tuple(candidate.source_key for candidate in ranked) == ("docs-a", "docs-z")
+
+
+def test_rrf_preserves_catalog_link_marker() -> None:
+    catalog_link = _candidate(
+        30,
+        source_key="docs-external-pricing",
+        vector_similarity=0.9,
+        link_only=True,
+    )
+
+    ranked = reciprocal_rank_fusion((catalog_link,), (), rrf_k=60)
+
+    assert ranked[0].link_only is True
 
 
 def test_rrf_deduplicates_repeated_chunk_within_each_channel() -> None:

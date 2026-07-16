@@ -12,7 +12,11 @@ from databricks_zh_expert.rag.types import (
 )
 
 
-def _document(content: str) -> NormalizedDocument:
+def _document(
+    content: str,
+    *,
+    heading_anchors: tuple[str | None, ...] = (),
+) -> NormalizedDocument:
     source = DiscoveredSource(
         source_key="docs-lakeflow-jobs",
         kind=SourceKind.GENERAL_HTML,
@@ -33,6 +37,7 @@ def _document(content: str) -> NormalizedDocument:
         source_updated_at="2026-07-10T08:30:00Z",
         etag='"jobs-v1"',
         last_modified="Fri, 10 Jul 2026 08:30:00 GMT",
+        heading_anchors=heading_anchors,
     )
 
 
@@ -160,6 +165,38 @@ Use bounded retries with clear failure alerts and idempotent task behavior.
     retry_chunk = next(chunk for chunk in first if chunk.heading_path[-1] == "Retry policy")
     assert retry_chunk.source_ref.endswith("#retry-policy")
     assert re.fullmatch(r"[0-9a-f]{64}", retry_chunk.content_hash)
+
+
+def test_official_heading_anchors_override_generated_slugs() -> None:
+    markdown = """# Transactions
+
+Overview of transaction behavior and concurrency controls.
+
+## Transaction isolation
+
+Transactions provide repeatable reads across statements and tables.
+
+### Conflict scenarios and concurrency
+
+Conflicts are detected when a transaction commits its changes.
+"""
+    document = _document(
+        markdown,
+        heading_anchors=(
+            "transactions",
+            "transaction-isolation",
+            "conflict-scenarios",
+        ),
+    )
+
+    chunks = MarkdownChunker(chunk_size_tokens=120, chunk_overlap_tokens=20).split(document)
+
+    conflict_chunk = next(
+        chunk for chunk in chunks if chunk.heading_path[-1] == "Conflict scenarios and concurrency"
+    )
+    assert conflict_chunk.source_ref == (
+        "https://docs.databricks.com/aws/en/jobs/#conflict-scenarios"
+    )
 
 
 def test_empty_sections_do_not_create_chunks() -> None:

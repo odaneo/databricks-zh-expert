@@ -20,6 +20,7 @@ def _ranked_chunk(
     source_ref: str | None = None,
     content: str | None = None,
     fused_score: float | None = None,
+    link_only: bool = False,
 ) -> RankedKnowledgeChunk:
     resolved_document_id = document_id or _uuid(value + 100)
     resolved_source_key = source_key or f"docs-{value}"
@@ -40,6 +41,7 @@ def _ranked_chunk(
         vector_rank=value,
         lexical_rank=None,
         fused_score=fused_score if fused_score is not None else 1 / (60 + value),
+        link_only=link_only,
     )
 
 
@@ -128,3 +130,26 @@ def test_context_has_stable_citations_metadata_and_untrusted_boundaries() -> Non
     assert f"标题：{first.title}" in bundle.context
     assert f"URL：{first.source_ref}" in bundle.context
     assert "Heading：Lakeflow Jobs > Task dependencies" in bundle.context
+
+
+def test_context_marks_catalog_link_as_unfetched_metadata() -> None:
+    pricing_url = "https://www.databricks.com/product/pricing"
+    pricing = _ranked_chunk(
+        10,
+        source_key="docs-external-pricing",
+        heading_path=(),
+        source_ref=pricing_url,
+        content=(
+            "资料类型：官方目录链接（未抓取目标正文）\n\n"
+            "标题：Pricing\n\n"
+            "目录摘要：Databricks pricing information.\n\n"
+            f"官方链接：{pricing_url}"
+        ),
+        link_only=True,
+    )
+
+    bundle = KnowledgeContextBuilder().build("Databricks 最新价格在哪里查看？", (pricing,))
+
+    assert "资料类型：官方目录链接（未抓取目标正文）" in bundle.context
+    assert f"URL：{pricing_url}" in bundle.context
+    assert bundle.citations[0].url == pricing_url

@@ -3,13 +3,15 @@
 > **执行要求：** 使用 `superpowers:executing-plans` 在当前会话逐任务执行；按用户偏好不使用子智能体。
 > 每个任务先写失败测试，再做最小实现，验证通过后单独提交。不得清理现有验收数据。
 
-**目标：** 从受控 Databricks 官方来源构建 PostgreSQL + pgvector 预置知识库，并通过现有 Chat API 的
-`knowledge_qa` Prompt 提供可恢复历史引用的中文问答。
+**目标：** 从 Databricks 两个官方 `llms.txt` 目录全量构建 PostgreSQL + pgvector 预置知识库，并通过现有
+Chat API 的 `knowledge_qa` Prompt 提供可恢复历史引用的中文问答。
 
-**架构：** YAML 清单限定官方来源；两个 `llms.txt` 只负责发现，选中正文经受限 HTTP 抓取、Markdown
-规范化和标题感知 Chunk 后，由 OpenAI Embedding 写入 PostgreSQL。在线请求使用 pgvector 精确检索与
-PostgreSQL 全文检索，通过 RRF 融合后交给现有 ModelGateway。完整文档、Chunk 和向量持久化，引用快照保存
-到 assistant message，检索分数只写 Trace 1.4。
+**架构：** YAML 只保存两个固定官方目录，不再保存页面、模块或 operation 白名单。同步器全量发现
+`https://docs.databricks.com/llms.txt` 和 `https://docs.databricks.com/api/llms.txt` 当前列出的全部唯一
+站内页面，正文经受限 HTTP 抓取、Markdown 规范化和标题感知 Chunk 后，由 OpenAI Embedding 写入
+PostgreSQL。在线请求使用 pgvector 精确检索与 PostgreSQL 全文检索，通过 RRF 融合后交给现有
+ModelGateway。站外链接保留在 Markdown 中但不发起抓取，引用快照保存到 assistant message，检索分数只写
+Trace 1.4。
 
 **技术栈：** Python 3.12.10、FastAPI 0.139.0、SQLAlchemy 2.0.51、Alembic 1.18.5、PostgreSQL 18、
 pgvector 0.8.5 服务端扩展、pgvector 0.5.0 Python 包、OpenAI 2.45.0、httpx 0.28.1、
@@ -20,12 +22,16 @@ pytest、Ruff、Pyright。
 
 `docs/superpowers/specs/2026-07-12-stage-4-prebuilt-databricks-rag-design.md`
 
+任务 8 是 2026-07-15 确认的产品范围变更，覆盖上述设计规格中的有限白名单决策。实现、真实全量同步、
+增量复验和质量门禁已经完成；独立 Git 提交等待用户指令。
+
 ## 已确认决策
 
 1. 只做预置知识库，不做用户上传和聊天请求期间实时建索引。
-2. `llms.txt` 与 `/api/llms.txt` 是发现目录，数据库保存选中页面的规范化完整正文。
-3. 首批约 30 至 50 篇资料，通用文档约 25 至 35 篇，API 页面约 5 至 15 篇。
-4. 只抓 `docs.databricks.com`，不实现 Agent Skills、Sitemap 或任意 URL 适配器。
+2. `llms.txt` 与 `/api/llms.txt` 是唯一发现目录，数据库保存目录列出的全部唯一站内页面规范化完整正文。
+3. 通用文档不使用 URL 白名单；API 文档不使用 module 或 operation 白名单。
+4. 只抓 `docs.databricks.com`。文档中的站外链接保留链接文字和 URL，但不递归抓取站外正文；不实现
+   Agent Skills、Sitemap 或任意 URL 适配器。
 5. PostgreSQL 保存完整 Markdown、Chunk 正文、向量和同步运行，不保存原始 HTML。
 6. 新增三张知识表：`kb_documents`、`kb_chunks`、`kb_ingestion_runs`。
 7. `messages` 增加 `source_citations JSONB`，不增加检索运行或检索结果表。
@@ -34,15 +40,18 @@ pytest、Ruff、Pyright。
 10. `knowledge_qa` 由客户端显式选择，不自动识别意图，不新增 `/api/rag/query`。
 11. 没有合格检索结果时不调用聊天模型。
 12. 检索排名和分数只写 Trace 1.4，用户历史引用从 `messages.source_citations` 恢复。
-13. 不引入 LlamaIndex、LangGraph、reranker、自动同步或并发同步。
+13. 不引入 LlamaIndex、LangGraph、reranker、定时同步或并发运行多个同步任务。
 14. 阶段 3 的 Prompt/Artifact 行为和已有验收数据必须保留。
+15. 同步命令保持 `databricks-zh-expert-kb sync`，不增加 `--scope` 或白名单模式；`--force` 只表示忽略增量
+    状态并重新抓取、切分和生成 Embedding，不改变来源范围。
 
 ## 全局约束
 
 1. 同步只由开发者 CLI 发起，HTTP API 不提供同步写入口。
 2. 自动测试不得访问 Databricks、OpenAI 或 DeepSeek 网络。
 3. 所有远程正文视为不可信数据，不能进入或覆盖 system message。
-4. 只接受清单中的官方 URL，每次重定向都重新校验 HTTPS 和 host。
+4. 只抓取两个官方目录发现的 `docs.databricks.com` HTTPS 页面，每次重定向都重新校验 HTTPS 和 host；
+   任何站外 URL 都不得进入抓取队列。
 5. 未变化文档不得重复切分或调用 Embedding。
 6. 单个文档全部抓取、解析、切分和 Embedding 成功后才事务性替换旧版本。
 7. 同一索引只允许一个 Embedding 模型和维度，切换时显式全量重建。
@@ -51,6 +60,9 @@ pytest、Ruff、Pyright。
 10. 每次 Python 改动后运行 Ruff 和 Pyright/Pylance；任务结束运行对应 pytest。
 11. 不运行 truncate、drop schema、测试数据清理或任何会减少开发库业务数据的命令。
 12. `.env`、API Key、Trace、数据库 dump 和官方正文副本不得提交到 Git。
+13. 页面身份、类别和 source key 必须自动生成；未知主题必须进入通用类别，不能因没有人工配置而被丢弃。
+14. 只有某个官方目录连续两次成功抓取并完整解析，且旧来源在两次结果中都不存在，才允许把该来源设为
+    `disabled`。目录失败既不累计也不清零缺失次数，绝不能批量禁用既有文档。
 
 ## 基线
 
@@ -68,15 +80,15 @@ pytest、Ruff、Pyright。
 ```text
 knowledge/
   databricks/
-    sources.yml                         受版本控制的官方来源清单
+    sources.yml                         只保存两个固定官方目录，不保存页面白名单
 
 src/databricks_zh_expert/
   rag/
     __init__.py
     constants.py                        跨环境一致的 Embedding、抓取和检索参数
     types.py                            来源、文档、Chunk、Embedding、引用类型
-    manifest.py                         YAML 清单解析和校验
-    catalogs.py                         两种 llms.txt 目录解析
+    manifest.py                         两个官方目录配置解析和校验
+    catalogs.py                         两种 llms.txt 全量目录解析和稳定来源身份
     fetcher.py                          受限 HTTP 和条件请求
     normalizer.py                       HTML / Markdown 正文规范化
     chunker.py                          标题感知 token 切分
@@ -104,6 +116,7 @@ src/databricks_zh_expert/
 
 alembic/versions/
   0004_knowledge_rag.py
+  0005_knowledge_catalog_presence.py      两次目录缺失确认状态列
 
 tests/
   fixtures/knowledge/                   少量离线 HTML、Markdown、llms fixture
@@ -124,6 +137,9 @@ tests/
 ```
 
 ---
+
+> 任务 1 至任务 7 记录的是首版有限白名单实现及其真实验收结果。任务 8 覆盖其中与来源范围、人工
+> `source_key` 和白名单有关的最终行为；历史步骤保留用于说明代码演进，不再作为最终产品约束。
 
 ### 任务 1：固定依赖、产品常量和官方来源清单
 
@@ -675,12 +691,12 @@ git commit -m "feat: add cited knowledge chat"
 - 修改：本计划，在实际执行时勾选任务状态
 - 修改：设计规格，仅在实现与规格确有偏差时更新
 
-- [ ] **步骤 1：创建固定中文评估集和 evaluator 测试**
+- [x] **步骤 1：创建固定中文评估集和 evaluator 测试**
 
 至少 20 题，覆盖 Jobs、Medallion、Auto Loader、Streaming、Unity Catalog、SQL 性能、成本和精选 API 页面。
 每题保存预期 source key、类别或 URL。evaluator 输出 Recall@5、MRR、失败题和实际来源，不调用聊天模型。
 
-- [ ] **步骤 2：运行完整自动质量门禁**
+- [x] **步骤 2：运行完整自动质量门禁**
 
 ```powershell
 uv lock --check
@@ -694,12 +710,12 @@ uv run --locked alembic check
 
 覆盖率必须不低于 80%，Pyright/Pylance 不得有错误。
 
-- [ ] **步骤 3：记录并保护现有验收数据**
+- [x] **步骤 3：记录并保护现有验收数据**
 
 真实同步前记录业务表数量和两个验收 session。不得运行 seed 清理、truncate、drop schema 或测试 fixture
 清理命令。同步后业务表数量只能因人工聊天验收增加，不能减少。
 
-- [ ] **步骤 4：真实 dry-run、同步和增量验证**
+- [x] **步骤 4：真实 dry-run、同步和增量验证**
 
 ```powershell
 uv run --locked databricks-zh-expert-kb sync --dry-run
@@ -717,20 +733,32 @@ uv run --locked databricks-zh-expert-kb evaluate
 4. active 文档约 30 至 50 篇，Chunk 数量处于合理范围。
 5. `Recall@5 >= 80%`；不达标时只调整来源、Chunk 或 RRF 参数。
 
-- [ ] **步骤 5：使用 DeepSeek V4 Flash 做真实聊天验收**
+- [x] **步骤 5：使用 DeepSeek V4 Flash 做真实聊天验收**
 
 使用 `prompt=knowledge_qa`、`model=deepseek-v4-flash` 至少验证 Jobs、Unity Catalog、Streaming、SQL 性能和
 超出范围的问题。确认查询 Embedding 使用 OpenAI，聊天使用 DeepSeek，响应和历史会话返回相同引用。
 
-- [ ] **步骤 6：检查 Trace 与数据保护**
+- [x] **步骤 6：检查 Trace 与数据保护**
 
 人工查看最新 1.4 JSONL，确认完整 RAG 上下文和分数存在，没有 Key、Authorization、原始 HTML 或向量数组；
 两个验收 session 和既有数据仍存在且内容未改变。
 
-- [ ] **步骤 7：精简更新 README**
+- [x] **步骤 7：精简更新 README**
 
 只补充 `alembic upgrade head`、首次知识同步和服务启动命令。不新增 RAG 环境变量，也不加入内部架构、API
 示例、预期输出或调试章节。
+
+执行结果（2026-07-14）：
+
+1. 官方清单发现并启用 43 篇文档，保存 1,224 个 Chunk，全部使用 1536 维向量。
+2. 恢复同步只更新先前失败的 1 篇文档；随后普通增量同步为 `changed=0`、`skipped=43`、`chunk=0`。
+3. 固定中文评估集共 27 题，`Recall@5=92.59%`，`MRR=82.72%`。
+4. Jobs、Unity Catalog、Streaming 和 SQL 性能问题均由 DeepSeek V4 Flash 一次成功回答并持久化 6 条引用；
+   域外问题在调用聊天模型前返回 `knowledge_context_not_found`。
+5. 四条真实模型调用均写入 Trace 1.4，未发现 API Key、原始 HTML 或向量数组。
+6. 真实验收日志保留在被 Git 忽略的 `.local/logs/stage-4-task-7/` 和 `.local/logs/model-calls.jsonl`。
+7. 修复 Docusaurus heading permalink 后，只重建 31 篇 `general_html` 文档；11 篇 API Markdown 文档和
+   730 个 API Chunk 的数据指纹保持不变，错误 `source_ref`、heading 和 Chunk 正文均清零。
 
 - [ ] **步骤 8：最终验证并提交**
 
@@ -749,11 +777,275 @@ git commit -m "test: complete stage four knowledge rag"
 
 提交前确认没有 `.env`、Trace、数据库 dump、API Key、原始 HTML 或下载的官方正文文件。
 
+---
+
+### 任务 8：移除白名单并全量同步官方 Docs 与 API 目录
+
+**小目标：** 让唯一的 `sync` 命令同步两个官方目录当前列出的全部站内文档，不再依赖人工维护页面、模块或
+operation 清单，同时保持增量更新、单文档原子发布、历史引用和既有业务数据安全。
+
+**全量范围定义：**
+
+1. Docs 全量是 `https://docs.databricks.com/llms.txt` 当前列出的全部唯一、可索引通用正文；两个目录文件
+   自身不作为正文入库，Docs 中的 `/api/` 链接由 API 目录统一处理，不重复抓取 React 外壳。
+2. API 全量是 `https://docs.databricks.com/api/llms.txt` 当前列出的全部唯一 API 页面；相对 URL 必须解析为
+   `docs.databricks.com` HTTPS URL。
+3. 全量范围只以这两个官方目录为准，不递归爬取正文中的普通链接，也不使用 Sitemap、搜索结果或页面猜测
+   新 URL。
+4. 文档 Markdown 中的站外链接保留锚文本和完整 URL，但站外 URL 永远不进入抓取队列、不生成
+   `kb_documents`、Chunk 或 Embedding。
+5. `llms.txt` 自身出现的站外资源只计入同步摘要的 `external_link_count`，不抓取站外正文。
+6. 2026-07-15 原始目录审计快照为 Docs 223 个站内唯一链接、API 1,033 个唯一页面；排除两个目录自身并
+   按内容所有权把 Docs `/api/` 链接交给 API 目录后，可索引正文为 Docs 221 篇、API 1,033 篇。数字只用于
+   当次记录；验收始终以执行同步时的实时去重结果为准，不能写进产品代码。
+7. 命令保持 `uv run --locked databricks-zh-expert-kb sync`。不增加 `--scope`、`--all` 或白名单模式；
+   `--force` 仍只控制是否绕过 ETag、Last-Modified 和内容哈希跳过逻辑。
+
+**文件：**
+
+- 修改：`docs/superpowers/specs/2026-07-12-stage-4-prebuilt-databricks-rag-design.md`
+- 修改：`knowledge/databricks/sources.yml`
+- 修改：`src/databricks_zh_expert/rag/types.py`
+- 修改：`src/databricks_zh_expert/rag/manifest.py`
+- 修改：`src/databricks_zh_expert/rag/catalogs.py`
+- 修改：`src/databricks_zh_expert/rag/normalizer.py`
+- 修改：`src/databricks_zh_expert/rag/ingestion.py`
+- 修改：`src/databricks_zh_expert/rag/repository.py`
+- 修改：`src/databricks_zh_expert/rag/evaluation.py`
+- 修改：`src/databricks_zh_expert/rag/cli.py`
+- 修改：`src/databricks_zh_expert/db/models.py`
+- 创建：`alembic/versions/0005_knowledge_catalog_presence.py`
+- 修改：`tests/fixtures/knowledge/databricks_llms.txt`
+- 修改：`tests/fixtures/knowledge/databricks_api_llms.txt`
+- 修改：`tests/fixtures/knowledge/databricks_api_llms_current.txt`
+- 修改：`tests/evals/databricks_rag.yml`
+- 修改：`tests/unit/test_knowledge_manifest.py`
+- 修改：`tests/unit/test_knowledge_sources.py`
+- 修改：`tests/unit/test_knowledge_ingestion.py`
+- 修改：`tests/unit/test_knowledge_eval.py`
+- 修改：`tests/integration/test_knowledge_repository.py`
+- 修改：`tests/integration/test_migrations.py`
+- 不新增知识表；在现有 `kb_documents` 增加目录缺失确认状态列
+
+**接口和身份规则：**
+
+1. `SourceCatalog` 最终只包含 `id`、`kind`、`index_url`、`cloud` 和 `locale`，删除 `documents`、`modules`、
+   `GeneralDocumentSpec`、`ApiModuleSpec` 和 `ApiOperationSpec`。
+2. `sources.yml` 升级为版本 2，只声明两个固定官方目录：
+
+```yaml
+version: 2
+
+ingestion:
+  chunk_size_tokens: 600
+  chunk_overlap_tokens: 80
+
+catalogs:
+  - id: databricks-docs
+    kind: databricks_llms_index
+    index_url: https://docs.databricks.com/llms.txt
+    cloud: aws
+    locale: en
+  - id: databricks-api
+    kind: databricks_api_llms_index
+    index_url: https://docs.databricks.com/api/llms.txt
+    cloud: aws
+    locale: en
+```
+
+3. `KnowledgeCatalogParser.discover()` 返回 `CatalogDiscoveryResult`，其中 `sources` 保存规范化、去重后的全部
+   站内 `DiscoveredSource`，`external_links` 保存目录中站外链接的标题和 URL，`duplicate_count` 保存目录
+   重复数量；不得用任何 include 集合过滤。
+4. `source_key` 根据目录 ID 和规范化 URL 自动生成：
+
+```text
+{catalog_id}-{sha256(normalized_url) 的前 24 个十六进制字符}
+```
+
+该值不依赖标题、目录顺序或人工别名，长度小于 100。目录重复链接只能生成一个来源。
+5. 通用文档类别根据官方主题自动推导，API 固定为 `api`；分类规则只赋元数据，绝不控制是否收录。无法识别
+   的新主题使用新增的 `general` 类别，仍必须同步。
+6. 同步前按 `source_kind + source_url` 识别数据库既有文档，并把旧人工 `source_key` 原位更新为新稳定 key，
+   保留 `kb_documents.id`、Chunk 外键和正文。2026-07-15 的基线是 43 篇，但产品代码不得硬编码该数量。
+   历史 `messages.source_citations` 是调用时快照，不反向改写。
+7. 固定评估集改用期望 canonical URL，不在 YAML 中硬编码哈希 source key。
+8. `kb_documents` 增加以下两列，不物理删除目录中消失的文档：
+
+```text
+missing_sync_count INTEGER NOT NULL DEFAULT 0
+missing_since_at   TIMESTAMPTZ NULL
+```
+
+`missing_sync_count` 只允许 `0..2`：当前成功目录中存在时为 0；第一次成功目录中缺失时变为 1，文档继续保持
+active；第二次成功目录中仍缺失时变为 2 并设为 `disabled`。目录请求或解析失败不修改这两列。
+第一次缺失后重新出现时清零；已经 disabled 的来源重新出现时，正文成功抓取并发布后恢复 active。
+
+- [x] **步骤 1：先同步设计规格中的最终范围**
+
+把设计规格中的 30 至 50 篇、`include_urls`、`include_modules`、API operation 白名单和“只同步选中页面”全部
+改为本任务的全量定义。明确外链保留但不抓取、命令不分 scope、实时目录数量不硬编码。
+
+- [x] **步骤 2：先写无白名单 manifest 和全量目录发现失败测试**
+
+测试至少覆盖：
+
+1. 版本 2 配置不接受 `include_urls` 或 `include_modules`。
+2. Docs fixture 的全部站内唯一链接都被发现，重复 URL 只保留一次。
+3. API fixture 的全部 module 和 operation 都被发现，不要求人工列举 operation。
+4. 相对 API URL 正确解析；非 HTTPS、错误 host 和危险重定向仍被拒绝。
+5. 未识别主题仍生成来源并使用 `general`，不能静默丢失。
+6. 站外链接不生成 `DiscoveredSource`，但增加 `external_link_count`。
+
+运行：
+
+```powershell
+uv run --locked pytest tests/unit/test_knowledge_manifest.py tests/unit/test_knowledge_sources.py -q
+```
+
+预期：测试先因现有 manifest 强制白名单、目录解析只返回选中页面而失败。
+
+- [x] **步骤 3：实现版本 2 目录配置、全量发现、去重和稳定 source key**
+
+删除 manifest 和 domain type 中的页面白名单结构。Docs/API 解析器遍历目录全部链接，先规范化 URL，再按
+`catalog_id + normalized_url` 去重并生成稳定 key。保留现有 Markdown AST 解析，不使用正则扫描 Markdown。
+
+运行：
+
+```powershell
+uv run --locked pytest tests/unit/test_knowledge_manifest.py tests/unit/test_knowledge_sources.py -q
+uv run --locked ruff check src/databricks_zh_expert/rag tests/unit/test_knowledge_manifest.py `
+  tests/unit/test_knowledge_sources.py
+uv run --locked pyright
+```
+
+- [x] **步骤 4：先写旧来源身份兼容和目录级禁用保护测试**
+
+测试至少覆盖：
+
+1. 现有人工 source key 按相同 `source_kind + source_url` 原位迁移，不新增重复 document。
+2. source key 更新后 document id 和既有 Chunk 数量保持不变。
+3. 第一次成功目录中缺失只设置 `missing_sync_count=1` 和 `missing_since_at`，文档仍为 active。
+4. 下一次成功读取同一目录仍缺失时才设置 `missing_sync_count=2` 和 `status=disabled`。
+5. 两次成功读取之间发生目录失败时不累计、不清零；下一次成功读取仍作为第二次有效确认。
+6. 第一次缺失后重新出现会清零缺失状态；disabled 来源重新出现但正文抓取失败时不提前恢复 active。
+7. Docs 目录失败时不修改任何 `general_html` 缺失状态；API 成功时仍可独立处理 `api_markdown`。
+8. API 目录失败时行为对称。
+9. 单个正文抓取或 Embedding 失败只使 run 变为 partial，旧文档版本继续可查询。
+
+- [x] **步骤 5：实现身份迁移和以成功发现结果为准的增量同步**
+
+把 `expected_source_keys` 从“manifest 人工配置”改为“每个成功目录的实际发现结果”。先执行来源身份协调，再做
+条件 GET。用目录级 `reconcile_catalog_presence(source_kind, observed_source_keys, observed_at)` 取代立即
+`disable_missing_sources`：重置重新出现的来源、累计第一次缺失、仅在第二次有效确认时禁用。目录失败时完全
+跳过该 `source_kind` 的 presence reconciliation。不得清空知识表，也不得通过删除重建来完成 key 迁移。
+
+运行：
+
+```powershell
+uv run --locked pytest tests/unit/test_knowledge_ingestion.py `
+  tests/integration/test_knowledge_repository.py -q
+uv run --locked ruff check src/databricks_zh_expert/rag tests/unit/test_knowledge_ingestion.py `
+  tests/integration/test_knowledge_repository.py
+uv run --locked pyright
+```
+
+- [x] **步骤 6：验证正文外链只保留、不抓取**
+
+fixture 同时包含站内链接、站外链接和站外图片。断言规范化 Markdown 保留站外锚文本与绝对 URL；抓取 Fake
+只收到目录发现的站内页面请求。不得递归跟随正文中的站内或站外普通链接，也不得为站外链接生成 Chunk 或
+Embedding。
+
+- [x] **步骤 7：保持单一 CLI 并更新评估身份**
+
+`sync`、`sync --dry-run`、`sync --force` 和 `status` 命令名称保持不变，解析器不得新增 `--scope` 或
+`--all`。同步 JSON 结果增加每个 catalog 的发现数量、去重数量、`external_link_count`、
+`pending_missing_count` 和 `disabled_count`，便于证明全量范围和两次删除确认。评估集改为 canonical URL
+断言，并保持 `Recall@5 >= 80%`。
+
+运行：
+
+```powershell
+uv run --locked pytest tests/unit/test_knowledge_ingestion.py tests/unit/test_knowledge_eval.py -q
+uv run --locked databricks-zh-expert-kb sync --help
+```
+
+- [x] **步骤 8：运行完整自动质量门禁**
+
+```powershell
+git diff --check
+uv lock --check
+uv run --locked ruff format --check .
+uv run --locked ruff check .
+uv run --locked pyright
+uv run --locked pytest --cov=databricks_zh_expert --cov-report=term-missing
+uv run --locked alembic check
+```
+
+覆盖率必须不低于 80%，Pyright/Pylance 不得有错误。
+
+- [x] **步骤 9：执行真实全量同步和增量复验**
+
+执行前后记录 `sessions`、`messages`、`model_calls` 和两个既有验收 session，不得清理任何数据。真实日志继续
+保存在被 Git 忽略的 `.local/logs/`。
+
+```powershell
+uv run --locked databricks-zh-expert-kb sync --dry-run
+uv run --locked databricks-zh-expert-kb sync
+uv run --locked databricks-zh-expert-kb status
+uv run --locked databricks-zh-expert-kb sync
+uv run --locked databricks-zh-expert-kb evaluate
+```
+
+验收：
+
+1. 首次 dry-run 报告的 Docs/API 去重站内数量与同一时刻两个官方目录解析结果完全相等。
+2. 成功同步后 active `general_html` 和 `api_markdown` 数量分别等于对应目录的实时唯一站内数量。
+3. 抓取日志中不存在对 `docs.databricks.com` 之外 host 的正文请求。
+4. 全部来源成功或明确列入 `error_summary`；最终阶段收尾要求 `failed_count=0`。
+5. 紧接着的第二次普通同步全部未变化来源走 skipped，不调用 Embedding。
+6. 相同 `source_kind + source_url` 无重复 active document，既有文档没有因 key 迁移产生副本。
+7. 固定检索评估仍达到 `Recall@5 >= 80%`。
+8. 既有业务数据和验收会话数量没有减少。
+9. fixture 验证第一次目录缺失仍可检索、第二次成功目录缺失才 disabled，目录失败不改变缺失次数。
+
+**2026-07-15/16 实测记录：**
+
+1. 实时发现并同步 Docs 目录 225 个来源（221 篇站内正文和 4 个 `catalog_link`）、API 1,034 篇，共
+   1,259 篇 active 文档和 17,712 个 Chunk；失败、待确认缺失和 disabled 数量均为 0。
+2. 增量同步先处理 28 个新增或变化来源并跳过 1,231 个；紧接着再次执行普通同步，1,259 个来源全部走
+   skipped，未重新生成 Embedding。
+3. 固定 28 题评估得到 `Recall@5 = 92.86%`、`MRR = 83.93%`，价格题第 1 名召回 Pricing URL，达到
+   80% 门槛。
+4. 迁移前业务基线为 `sessions=42`、`messages=360`、`model_calls=32`；两次保留的 DeepSeek Pricing
+   验收后为 `44/364/34`，两个阶段 3 验收 session 均仍存在。
+5. Pricing、Training、Knowledge Base 和 Community 四条站外目录链接均为 active、每条一个 Chunk 且
+   `link_only=true`；没有抓取站外目标页，普通官方文档中原有的外链仍正常保留。
+6. 数据库中没有旧人工 source key、重复的 active `source_kind + source_url` 或被清理的业务数据。
+7. `git diff --check`、`uv lock --check`、Ruff、Pyright、306 条 pytest 和 Alembic 均通过；总覆盖率
+   `90.30%`，完整 pytest 用时 `13.72s`。
+
+- [x] **步骤 10：更新阶段状态并单独提交全量同步**
+
+只在真实全量同步、增量复验和所有质量门禁通过后勾选任务 8，记录当时两个目录的 ETag、实时文档数、Chunk
+数和评估结果。README 的同步命令不变，无需增加内部架构说明。
+
+```powershell
+git status --short
+git add docs knowledge src tests
+git commit -m "feat: sync complete databricks knowledge catalogs"
+```
+
+提交前确认没有 `.env`、API Key、Trace、数据库 dump、原始 HTML、`llms.txt` 下载副本或批量官方正文文件。
+
+当前状态：阶段状态和实测结果已更新，用户已确认直接在当前分支提交，不创建分支或 PR。
+
 ## 阶段 4 完成定义
 
-1. 来源范围固定为约 30 至 50 篇 Databricks 官方资料。
+1. 两个官方目录当前列出的全部唯一 `docs.databricks.com` 文档均进入同步范围，不存在页面、module 或
+   operation 白名单。
 2. 一条 CLI 命令可以构建和增量更新知识库。
-3. 数据库只新增三张知识表和一个消息引用列。
+3. 数据库仍只使用三张知识表和一个消息引用列；任务 8 只给 `kb_documents` 增加目录缺失确认状态列，不新增
+   知识表。
 4. 未变化文档不重新生成 Embedding，失败文档保留上一版。
 5. pgvector 精确检索与全文检索能够返回稳定上下文。
 6. `knowledge_qa` 使用现有 Chat API 返回并持久化结构化官方引用。
@@ -763,3 +1055,5 @@ git commit -m "test: complete stage four knowledge rag"
 10. 固定评估达到 `Recall@5 >= 80%`。
 11. Ruff、Pyright/Pylance、pytest、覆盖率和 Alembic 门禁全部通过。
 12. 所有既有业务和验收数据均未被清理或重写。
+13. 文档中的站外链接保留为链接，但同步过程没有抓取任何站外正文。
+14. Docs 或 API 目录失败时不会改变该目录的缺失计数；文档只有连续两次成功目录快照都缺失时才 disabled。

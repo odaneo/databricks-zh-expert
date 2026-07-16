@@ -1,3 +1,4 @@
+import hashlib
 import logging
 from pathlib import Path
 
@@ -14,14 +15,11 @@ from databricks_zh_expert.rag.normalizer import (
     KnowledgeNormalizer,
 )
 from databricks_zh_expert.rag.types import (
-    ApiModuleSpec,
-    ApiOperationSpec,
     CatalogKind,
     DiscoveredSource,
     FetchCondition,
     FetchResult,
     FetchStatus,
-    GeneralDocumentSpec,
     KnowledgeCategory,
     SourceCatalog,
     SourceKind,
@@ -34,28 +32,29 @@ def _fixture(name: str) -> str:
     return (FIXTURE_DIR / name).read_text(encoding="utf-8")
 
 
-def _docs_catalog(*documents: GeneralDocumentSpec) -> SourceCatalog:
+def _docs_catalog() -> SourceCatalog:
     return SourceCatalog(
         id="databricks-docs",
         kind=CatalogKind.DATABRICKS_DOCS,
         index_url="https://docs.databricks.com/llms.txt",
         cloud="aws",
         locale="en",
-        documents=documents,
-        modules=(),
     )
 
 
-def _api_catalog(*modules: ApiModuleSpec) -> SourceCatalog:
+def _api_catalog() -> SourceCatalog:
     return SourceCatalog(
         id="databricks-api",
         kind=CatalogKind.DATABRICKS_API,
         index_url="https://docs.databricks.com/api/llms.txt",
         cloud="aws",
         locale="en",
-        documents=(),
-        modules=modules,
     )
+
+
+def _expected_source_key(catalog_id: str, url: str) -> str:
+    digest = hashlib.sha256(url.encode("utf-8")).hexdigest()[:24]
+    return f"{catalog_id}-{digest}"
 
 
 def _source(
@@ -100,116 +99,159 @@ def _fetched(
     )
 
 
-def test_general_catalog_returns_selected_pages_in_official_order() -> None:
-    catalog = _docs_catalog(
-        GeneralDocumentSpec(
-            source_key="docs-lakeflow-jobs",
-            url="https://docs.databricks.com/jobs/",
-            category=KnowledgeCategory.ORCHESTRATION,
-        ),
-        GeneralDocumentSpec(
-            source_key="docs-delta-lake",
-            url="https://docs.databricks.com/delta/",
-            category=KnowledgeCategory.DELTA_LAKE,
-        ),
+def test_general_catalog_returns_every_unique_official_page_and_external_links() -> None:
+    catalog = _docs_catalog()
+
+    result = KnowledgeCatalogParser().discover(_fixture("databricks_llms.txt"), catalog)
+
+    assert tuple(source.url for source in result.sources) == (
+        "https://docs.databricks.com/delta/",
+        "https://docs.databricks.com/compute/",
+        "https://docs.databricks.com/jobs/",
+        "https://docs.databricks.com/ingestion/cloud-object-storage/auto-loader/",
+        "https://docs.databricks.com/future/",
+    )
+    assert result.sources[0].source_key == _expected_source_key(
+        "databricks-docs",
+        "https://docs.databricks.com/delta/",
+    )
+    assert result.sources[0].title == "Delta Lake"
+    assert result.sources[0].topic == "Core platform"
+    assert result.sources[0].summary == "Delta Lake concepts and guidance."
+    assert result.sources[0].kind is SourceKind.GENERAL_HTML
+    assert result.sources[-1].category is KnowledgeCategory.GENERAL
+    assert result.duplicate_count == 1
+    assert tuple((link.title, link.url) for link in result.external_links) == (
+        ("Pricing", "https://www.databricks.com/product/pricing"),
+        ("Databricks Academy", "https://www.databricks.com/learn/training/home"),
+    )
+    pricing = result.external_links[0]
+    assert pricing.source_key == _expected_source_key(
+        "databricks-docs",
+        "https://www.databricks.com/product/pricing",
+    )
+    assert pricing.kind is SourceKind.CATALOG_LINK
+    assert pricing.category is KnowledgeCategory.GENERAL
+    assert pricing.catalog_id == "databricks-docs"
+    assert pricing.cloud == "aws"
+    assert pricing.locale == "en"
+    assert pricing.topic == "Additional resources"
+    assert pricing.summary == "External resources are links only."
+    assert result.all_sources == (*result.sources, *result.external_links)
+    assert all(source.url != catalog.index_url for source in result.sources)
+    assert all(
+        not source.url.startswith("https://docs.databricks.com/api/") for source in result.sources
     )
 
-    sources = KnowledgeCatalogParser().discover(_fixture("databricks_llms.txt"), catalog)
 
-    assert tuple(source.source_key for source in sources) == (
-        "docs-delta-lake",
-        "docs-lakeflow-jobs",
+def test_catalog_source_key_depends_on_catalog_and_normalized_url_only() -> None:
+    catalog = _docs_catalog()
+    first = KnowledgeCatalogParser().discover(
+        "## Topic\n\n- [First title](https://docs.databricks.com/delta/#overview)",
+        catalog,
     )
-    assert sources[0].title == "Delta Lake"
-    assert sources[0].topic == "Core platform"
-    assert sources[0].summary == "Delta Lake concepts and guidance."
-    assert sources[0].kind is SourceKind.GENERAL_HTML
-    assert all(source.url != catalog.index_url for source in sources)
-
-
-def test_general_catalog_deduplicates_repeated_official_links() -> None:
-    catalog = _docs_catalog(
-        GeneralDocumentSpec(
-            source_key="docs-delta-lake",
-            url="https://docs.databricks.com/delta/",
-            category=KnowledgeCategory.DELTA_LAKE,
-        )
+    second = KnowledgeCatalogParser().discover(
+        "## Renamed topic\n\n- [Renamed title](https://docs.databricks.com/delta/)",
+        catalog,
     )
 
-    sources = KnowledgeCatalogParser().discover(_fixture("databricks_llms.txt"), catalog)
-
-    assert len(sources) == 1
-    assert sources[0].title == "Delta Lake"
+    assert first.sources[0].source_key == second.sources[0].source_key
+    assert first.sources[0].url == "https://docs.databricks.com/delta/"
 
 
-def test_general_catalog_rejects_missing_allowlisted_page() -> None:
-    catalog = _docs_catalog(
-        GeneralDocumentSpec(
-            source_key="docs-missing",
-            url="https://docs.databricks.com/missing/",
-            category=KnowledgeCategory.ARCHITECTURE,
-        )
-    )
+def test_general_catalog_rejects_unsafe_official_page() -> None:
+    catalog = _docs_catalog()
 
     with pytest.raises(CatalogDiscoveryError) as error:
-        KnowledgeCatalogParser().discover(_fixture("databricks_llms.txt"), catalog)
-
-    assert "docs-missing" in str(error.value)
-
-
-def test_api_catalog_returns_only_selected_operations_in_official_order() -> None:
-    catalog = _api_catalog(
-        ApiModuleSpec(
-            name="Pipelines",
-            operations=(
-                ApiOperationSpec(
-                    source_key="api-pipelines-create",
-                    title="Create a pipeline",
-                    category=KnowledgeCategory.API,
-                ),
-            ),
-        ),
-        ApiModuleSpec(
-            name="Jobs",
-            operations=(
-                ApiOperationSpec(
-                    source_key="api-jobs-create",
-                    title="Create a new job",
-                    category=KnowledgeCategory.API,
-                ),
-            ),
-        ),
-    )
-
-    sources = KnowledgeCatalogParser().discover(_fixture("databricks_api_llms.txt"), catalog)
-
-    assert tuple(source.source_key for source in sources) == (
-        "api-jobs-create",
-        "api-pipelines-create",
-    )
-    assert sources[0].topic == "Jobs"
-    assert sources[0].url == ("https://docs.databricks.com/api/markdown/Jobs/Jobs/Create.md")
-    assert sources[0].kind is SourceKind.API_MARKDOWN
-
-
-def test_api_catalog_rejects_missing_operation() -> None:
-    catalog = _api_catalog(
-        ApiModuleSpec(
-            name="Jobs",
-            operations=(
-                ApiOperationSpec(
-                    source_key="api-jobs-reset",
-                    title="Reset an imaginary job",
-                    category=KnowledgeCategory.API,
-                ),
-            ),
+        KnowledgeCatalogParser().discover(
+            "## Topic\n\n- [Unsafe](http://docs.databricks.com/delta/)",
+            catalog,
         )
+
+    assert "HTTPS" in str(error.value)
+
+
+@pytest.mark.parametrize(
+    "url",
+    (
+        "http://www.databricks.com/product/pricing",
+        "https://user:password@www.databricks.com/product/pricing",
+        "https://www.databricks.com:8443/product/pricing",
+    ),
+)
+def test_general_catalog_rejects_unsafe_external_link(url: str) -> None:
+    with pytest.raises(CatalogDiscoveryError):
+        KnowledgeCatalogParser().discover(
+            f"## Resources\n\n- [Pricing]({url})",
+            _docs_catalog(),
+        )
+
+
+def test_catalog_link_normalization_uses_only_directory_metadata() -> None:
+    source = DiscoveredSource(
+        source_key=_expected_source_key(
+            "databricks-docs",
+            "https://www.databricks.com/product/pricing",
+        ),
+        kind=SourceKind.CATALOG_LINK,
+        title="Pricing",
+        url="https://www.databricks.com/product/pricing",
+        category=KnowledgeCategory.GENERAL,
+        catalog_id="databricks-docs",
+        cloud="aws",
+        locale="en",
+        topic="Additional resources",
+        summary="Databricks pricing information.",
     )
 
-    with pytest.raises(CatalogDiscoveryError) as error:
-        KnowledgeCatalogParser().discover(_fixture("databricks_api_llms.txt"), catalog)
+    document = KnowledgeNormalizer().normalize_catalog_link(source)
 
-    assert "api-jobs-reset" in str(error.value)
+    assert document.title == "Pricing"
+    assert document.canonical_url == source.url
+    assert document.etag is None
+    assert document.last_modified is None
+    assert document.source_updated_at is None
+    assert document.normalized_content == (
+        "资料类型：官方目录链接（未抓取目标正文）\n\n"
+        "标题：Pricing\n\n"
+        "目录摘要：Databricks pricing information.\n\n"
+        "官方链接：https://www.databricks.com/product/pricing\n"
+    )
+    assert "$" not in document.normalized_content
+    assert "DBU" not in document.normalized_content
+
+
+def test_api_catalog_returns_every_operation_in_official_order() -> None:
+    catalog = _api_catalog()
+
+    result = KnowledgeCatalogParser().discover(_fixture("databricks_api_llms.txt"), catalog)
+
+    assert tuple(source.title for source in result.sources) == (
+        "Create a new job",
+        "Get a single job",
+        "Delete a job",
+        "Create a pipeline",
+        "Edit a pipeline",
+        "Create a warehouse",
+    )
+    assert result.sources[0].topic == "Jobs"
+    assert result.sources[0].url == ("https://docs.databricks.com/api/markdown/Jobs/Jobs/Create.md")
+    assert result.sources[0].kind is SourceKind.API_MARKDOWN
+    assert all(source.category is KnowledgeCategory.API for source in result.sources)
+    assert result.external_links == ()
+    assert result.duplicate_count == 0
+
+
+def test_api_catalog_discovers_every_operation_in_current_format_fixture() -> None:
+    result = KnowledgeCatalogParser().discover(
+        _fixture("databricks_api_llms_current.txt"),
+        _api_catalog(),
+    )
+
+    assert len(result.sources) == 7
+    assert len({source.url for source in result.sources}) == 7
+    assert len({source.source_key for source in result.sources}) == 7
+    assert {"Jobs", "Pipelines", "Warehouses"} <= {source.topic for source in result.sources}
 
 
 @pytest.mark.asyncio
@@ -331,7 +373,7 @@ async def test_fetch_rejects_document_larger_than_limit() -> None:
         return httpx.Response(
             200,
             headers={"Content-Type": "text/html"},
-            content=b"x" * (2 * 1024 * 1024 + 1),
+            content=b"x" * (5 * 1024 * 1024 + 1),
             request=request,
         )
 
@@ -339,7 +381,7 @@ async def test_fetch_rejects_document_larger_than_limit() -> None:
         with pytest.raises(KnowledgeFetchError) as error:
             await KnowledgeFetcher(client).fetch(_source(), None)
 
-    assert "2 MiB" in str(error.value)
+    assert "5 MiB" in str(error.value)
 
 
 @pytest.mark.asyncio
@@ -390,6 +432,25 @@ async def test_fetch_does_not_retry_client_error() -> None:
 
 
 @pytest.mark.asyncio
+async def test_fetch_accepts_large_official_html_within_five_mib() -> None:
+    payload = b"x" * (3 * 1024 * 1024)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"Content-Type": "text/html; charset=utf-8"},
+            content=payload,
+            request=request,
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        result = await KnowledgeFetcher(client).fetch(_source(), None)
+
+    assert result.body is not None
+    assert len(result.body) == len(payload)
+
+
+@pytest.mark.asyncio
 async def test_fetch_logs_do_not_include_response_body_or_secrets(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
@@ -409,13 +470,7 @@ async def test_fetch_logs_do_not_include_response_body_or_secrets(
 
 @pytest.mark.asyncio
 async def test_fetch_catalog_accepts_plain_text_and_enforces_larger_limit() -> None:
-    catalog = _docs_catalog(
-        GeneralDocumentSpec(
-            source_key="docs-delta-lake",
-            url="https://docs.databricks.com/delta/",
-            category=KnowledgeCategory.DELTA_LAKE,
-        )
-    )
+    catalog = _docs_catalog()
 
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(
@@ -446,11 +501,44 @@ def test_normalize_html_extracts_only_article_and_preserves_markdown() -> None:
     assert "[Configure job tasks](https://docs.databricks.com/jobs/configure-task)" in (
         document.normalized_content
     )
+    assert "[Apache Spark](https://spark.apache.org/docs/latest/)" in (document.normalized_content)
+    assert "![Spark logo](https://spark.apache.org/images/spark-logo-trademark.png)" in (
+        document.normalized_content
+    )
     assert "Global navigation" not in document.normalized_content
     assert "Table of contents" not in document.normalized_content
     assert "Footer" not in document.normalized_content
     assert "feedback" not in document.normalized_content
     assert "secretNavigationState" not in document.normalized_content
+
+
+def test_normalize_html_removes_heading_permalinks_and_preserves_official_anchors() -> None:
+    body = (
+        _fixture("docs_page.html")
+        .replace(
+            "<h1>Lakeflow Jobs</h1>",
+            '<h1 id="lakeflow-jobs">Lakeflow Jobs'
+            '<a href="#lakeflow-jobs" class="hash-link" '
+            'aria-label="Direct link to Lakeflow Jobs" '
+            'title="Direct link to Lakeflow Jobs">\u200b</a></h1>',
+        )
+        .replace(
+            "<h2>Configure tasks</h2>",
+            '<h2 id="configure-tasks">Configure tasks'
+            '<a href="#configure-tasks" class="hash-link" '
+            'aria-label="Direct link to Configure tasks" '
+            'title="Direct link to Configure tasks">\u200b</a></h2>',
+        )
+    )
+
+    document = KnowledgeNormalizer().normalize(_fetched(body=body))
+
+    assert document.title == "Lakeflow Jobs"
+    assert document.heading_anchors == ("lakeflow-jobs", "configure-tasks")
+    assert "# Lakeflow Jobs\n" in document.normalized_content
+    assert "## Configure tasks\n" in document.normalized_content
+    assert "Direct link to" not in document.normalized_content
+    assert "hash-link" not in document.normalized_content
 
 
 def test_normalize_html_accepts_plain_article_fallback() -> None:
@@ -462,6 +550,28 @@ def test_normalize_html_accepts_plain_article_fallback() -> None:
     document = KnowledgeNormalizer().normalize(_fetched(body=body))
 
     assert document.title == "Lakeflow Jobs"
+
+
+def test_normalize_html_repairs_deeply_nested_table_markup() -> None:
+    malformed_rows = "".join(
+        f"<tr><td><p>System table {index}<td><p>Description {index}" for index in range(300)
+    )
+    body = (
+        "<html><head>"
+        '<link rel="canonical" href="https://docs.databricks.com/admin/system-tables/">'
+        "</head><body>"
+        '<article class="theme-doc-markdown markdown">'
+        "<h1>System tables</h1>"
+        "<p>Use system tables to observe account usage and operational data.</p>"
+        f"<table><tbody>{malformed_rows}</tbody></table>"
+        "</article></body></html>"
+    )
+
+    document = KnowledgeNormalizer().normalize(_fetched(body=body))
+
+    assert document.title == "System tables"
+    assert "System table 0" in document.normalized_content
+    assert "Description 299" in document.normalized_content
 
 
 def test_normalize_api_markdown_preserves_source_structure() -> None:

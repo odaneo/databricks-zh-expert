@@ -16,7 +16,7 @@ from databricks_zh_expert.db.models import (
 from databricks_zh_expert.rag.chunker import KnowledgeChunk
 from databricks_zh_expert.rag.constants import EMBEDDING_DIMENSIONS, EMBEDDING_MODEL
 from databricks_zh_expert.rag.embeddings import EmbeddingResult
-from databricks_zh_expert.rag.types import NormalizedDocument
+from databricks_zh_expert.rag.types import DiscoveredSource, NormalizedDocument, SourceKind
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,6 +39,12 @@ class IngestionRunCompletion:
     failed_count: int
     chunk_count: int
     error_summary: tuple[dict[str, str], ...]
+
+
+@dataclass(frozen=True, slots=True)
+class CatalogPresenceResult:
+    pending_missing_count: int
+    disabled_count: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,6 +72,7 @@ class KnowledgeCandidate:
     source_ref: str
     vector_similarity: float | None
     lexical_score: float | None
+    link_only: bool = False
 
 
 class KnowledgeRepository:
@@ -144,6 +151,70 @@ class KnowledgeRepository:
             chunk_count=document.chunk_count,
         )
 
+    async def reconcile_source_identities(
+        self,
+        sources: Sequence[DiscoveredSource],
+    ) -> int:
+        if not sources:
+            return 0
+        async with self._session_factory() as session:
+            async with session.begin():
+                catalog_ids = {source.catalog_id for source in sources}
+                documents = tuple(
+                    (
+                        await session.scalars(
+                            select(KnowledgeDocument)
+                            .where(KnowledgeDocument.catalog_id.in_(catalog_ids))
+                            .with_for_update()
+                        )
+                    ).all()
+                )
+                by_source_key = {document.source_key: document for document in documents}
+                by_identity: dict[tuple[str, str], list[KnowledgeDocument]] = {}
+                for document in documents:
+                    by_identity.setdefault(
+                        (document.catalog_id, document.source_url),
+                        [],
+                    ).append(document)
+
+                migrated_count = 0
+                for source in sources:
+                    legacy_documents = by_identity.get(
+                        (source.catalog_id, source.url),
+                        [],
+                    )
+                    if len(legacy_documents) > 1:
+                        raise ValueError("同一知识来源 URL 存在多个历史文档，无法迁移 source key。")
+                    current = by_source_key.get(source.source_key)
+                    if current is not None:
+                        if legacy_documents and legacy_documents[0].id != current.id:
+                            raise ValueError("知识来源 URL 与 source key 分别指向不同历史文档。")
+                        stored = current
+                    elif legacy_documents:
+                        stored = legacy_documents[0]
+                        by_source_key.pop(stored.source_key, None)
+                        stored.source_key = source.source_key
+                        by_source_key[source.source_key] = stored
+                        migrated_count += 1
+                    else:
+                        continue
+
+                    metadata_changed = (
+                        stored.catalog_id != source.catalog_id
+                        or stored.source_kind != source.kind.value
+                        or stored.category != source.category.value
+                        or stored.cloud != source.cloud
+                        or stored.locale != source.locale
+                    )
+                    stored.catalog_id = source.catalog_id
+                    stored.source_kind = source.kind.value
+                    stored.category = source.category.value
+                    stored.cloud = source.cloud
+                    stored.locale = source.locale
+                    if current is None or metadata_changed:
+                        stored.updated_at = datetime.now(UTC)
+                return migrated_count
+
     async def list_chunks(self, source_key: str) -> tuple[KnowledgeChunkRecord, ...]:
         async with self._session_factory() as session:
             result = await session.scalars(
@@ -183,6 +254,7 @@ class KnowledgeRepository:
                     stored = KnowledgeDocument(
                         id=uuid4(),
                         source_key=document.source.source_key,
+                        catalog_id=document.source.catalog_id,
                         source_kind=document.source.kind.value,
                         title=document.title,
                         source_url=document.source.url,
@@ -196,12 +268,15 @@ class KnowledgeRepository:
                         last_modified=document.last_modified,
                         status="active",
                         chunk_count=len(chunks),
+                        missing_sync_count=0,
+                        missing_since_at=None,
                         source_updated_at=_parse_source_timestamp(document.source_updated_at),
                         fetched_at=fetched_at,
                     )
                     session.add(stored)
                     await session.flush()
                 else:
+                    stored.catalog_id = document.source.catalog_id
                     stored.source_kind = document.source.kind.value
                     stored.title = document.title
                     stored.source_url = document.source.url
@@ -215,6 +290,8 @@ class KnowledgeRepository:
                     stored.last_modified = document.last_modified
                     stored.status = "active"
                     stored.chunk_count = len(chunks)
+                    stored.missing_sync_count = 0
+                    stored.missing_since_at = None
                     stored.source_updated_at = _parse_source_timestamp(document.source_updated_at)
                     stored.fetched_at = fetched_at
                     stored.updated_at = datetime.now(UTC)
@@ -238,6 +315,7 @@ class KnowledgeRepository:
                             chunk_metadata={
                                 "catalog_id": document.source.catalog_id,
                                 "topic": document.source.topic,
+                                "link_only": document.source.kind is SourceKind.CATALOG_LINK,
                             },
                             embedding=list(embedding.embedding),
                             embedding_model=EMBEDDING_MODEL,
@@ -256,6 +334,8 @@ class KnowledgeRepository:
     ) -> None:
         values: dict[str, object] = {
             "status": "active",
+            "missing_sync_count": 0,
+            "missing_since_at": None,
             "fetched_at": fetched_at,
             "updated_at": datetime.now(UTC),
         }
@@ -270,18 +350,51 @@ class KnowledgeRepository:
                 .values(**values)
             )
 
-    async def disable_missing_sources(self, active_source_keys: set[str]) -> int:
-        predicate = KnowledgeDocument.status == "active"
-        if active_source_keys:
-            predicate = predicate & KnowledgeDocument.source_key.not_in(active_source_keys)
-        async with self._session_factory.begin() as session:
-            disabled_ids = await session.scalars(
-                update(KnowledgeDocument)
-                .where(predicate)
-                .values(status="disabled", updated_at=datetime.now(UTC))
-                .returning(KnowledgeDocument.id)
-            )
-            return len(disabled_ids.all())
+    async def reconcile_catalog_presence(
+        self,
+        catalog_id: str,
+        observed_source_keys: set[str],
+        *,
+        observed_at: datetime,
+    ) -> CatalogPresenceResult:
+        pending_missing_count = 0
+        disabled_count = 0
+        async with self._session_factory() as session:
+            async with session.begin():
+                documents = tuple(
+                    (
+                        await session.scalars(
+                            select(KnowledgeDocument)
+                            .where(KnowledgeDocument.catalog_id == catalog_id)
+                            .with_for_update()
+                        )
+                    ).all()
+                )
+                for document in documents:
+                    if document.source_key in observed_source_keys:
+                        if document.missing_sync_count or document.missing_since_at is not None:
+                            document.missing_sync_count = 0
+                            document.missing_since_at = None
+                            document.updated_at = datetime.now(UTC)
+                        continue
+                    if document.status != "active":
+                        continue
+                    if document.missing_sync_count == 0:
+                        document.missing_sync_count = 1
+                        document.missing_since_at = observed_at
+                        document.updated_at = datetime.now(UTC)
+                        pending_missing_count += 1
+                        continue
+
+                    document.missing_sync_count = 2
+                    document.status = "disabled"
+                    document.updated_at = datetime.now(UTC)
+                    disabled_count += 1
+
+        return CatalogPresenceResult(
+            pending_missing_count=pending_missing_count,
+            disabled_count=disabled_count,
+        )
 
     async def get_index_status(self) -> KnowledgeIndexStatus:
         async with self._session_factory() as session:
@@ -495,4 +608,5 @@ def _knowledge_candidate(
         source_ref=chunk.source_ref,
         vector_similarity=vector_similarity,
         lexical_score=lexical_score,
+        link_only=chunk.chunk_metadata.get("link_only") is True,
     )

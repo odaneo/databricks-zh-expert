@@ -1,4 +1,5 @@
 from collections.abc import AsyncIterator
+from dataclasses import replace
 from datetime import UTC, datetime
 
 import pytest
@@ -74,6 +75,35 @@ def _document(
         source_updated_at="2026-07-10T08:30:00Z",
         etag='"jobs-v1"',
         last_modified="Fri, 10 Jul 2026 08:30:00 GMT",
+    )
+
+
+def _catalog_link_document(source_key: str) -> NormalizedDocument:
+    source = DiscoveredSource(
+        source_key=source_key,
+        kind=SourceKind.CATALOG_LINK,
+        title="Pricing",
+        url="https://www.databricks.com/product/pricing",
+        category=KnowledgeCategory.GENERAL,
+        catalog_id="databricks-docs",
+        cloud="aws",
+        locale="en",
+        topic="Additional resources",
+        summary="Databricks pricing information.",
+    )
+    return NormalizedDocument(
+        source=source,
+        title="Pricing",
+        canonical_url=source.url,
+        normalized_content=(
+            "资料类型：官方目录链接（未抓取目标正文）\n\n"
+            "标题：Pricing\n\n"
+            "目录摘要：Databricks pricing information.\n\n"
+            f"官方链接：{source.url}\n"
+        ),
+        source_updated_at=None,
+        etag=None,
+        last_modified=None,
     )
 
 
@@ -166,6 +196,7 @@ async def test_repository_publishes_document_chunks_and_succeeded_run(
 
     assert document is not None
     assert document.id == document_id
+    assert document.catalog_id == "databricks-docs"
     assert document.status == "active"
     assert document.chunk_count == 2
     assert document.content_hash == "b" * 64
@@ -179,6 +210,44 @@ async def test_repository_publishes_document_chunks_and_succeeded_run(
     assert index_status.queryable is True
     assert index_status.active_document_count == 1
     assert index_status.chunk_count == 2
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_repository_publishes_catalog_link_with_link_only_metadata(
+    knowledge_repository: KnowledgeRepository,
+) -> None:
+    source_key = "databricks-docs-pricing-link"
+    document = _catalog_link_document(source_key)
+    chunk = KnowledgeChunk(
+        chunk_index=0,
+        heading_path=(),
+        content=document.normalized_content,
+        content_hash="c" * 64,
+        token_count=40,
+        source_ref=document.canonical_url,
+    )
+
+    await knowledge_repository.publish_document(
+        document,
+        content_hash="d" * 64,
+        chunks=(chunk,),
+        embeddings=(_embedding(0, 0.1),),
+        fetched_at=datetime(2026, 7, 16, 1, 0, tzinfo=UTC),
+    )
+
+    stored = await knowledge_repository.get_document(source_key)
+    chunks = await knowledge_repository.list_chunks(source_key)
+    assert stored is not None
+    assert stored.catalog_id == "databricks-docs"
+    assert stored.source_kind == "catalog_link"
+    assert stored.source_url == "https://www.databricks.com/product/pricing"
+    assert chunks[0].source_ref == stored.source_url
+    assert chunks[0].chunk_metadata == {
+        "catalog_id": "databricks-docs",
+        "topic": "Additional resources",
+        "link_only": True,
+    }
 
 
 @pytest.mark.integration
@@ -218,7 +287,7 @@ async def test_publish_transaction_failure_preserves_previous_document_and_chunk
 
 @pytest.mark.integration
 @pytest.mark.asyncio
-async def test_disable_missing_sources_marks_rows_without_deleting_them(
+async def test_catalog_presence_disables_only_after_two_successful_missing_snapshots(
     knowledge_repository: KnowledgeRepository,
 ) -> None:
     for source_key in ("docs-kept", "docs-removed"):
@@ -230,16 +299,121 @@ async def test_disable_missing_sources_marks_rows_without_deleting_them(
             fetched_at=datetime(2026, 7, 13, 1, 0, tzinfo=UTC),
         )
 
-    disabled_count = await knowledge_repository.disable_missing_sources({"docs-kept"})
+    first_observed_at = datetime(2026, 7, 14, 1, 0, tzinfo=UTC)
+    first_result = await knowledge_repository.reconcile_catalog_presence(
+        "databricks-docs",
+        {"docs-kept"},
+        observed_at=first_observed_at,
+    )
 
     kept = await knowledge_repository.get_document("docs-kept")
     removed = await knowledge_repository.get_document("docs-removed")
     removed_chunks = await knowledge_repository.list_chunks("docs-removed")
 
-    assert disabled_count == 1
+    assert first_result.pending_missing_count == 1
+    assert first_result.disabled_count == 0
     assert kept is not None and kept.status == "active"
-    assert removed is not None and removed.status == "disabled"
+    assert kept.missing_sync_count == 0
+    assert kept.missing_since_at is None
+    assert removed is not None and removed.status == "active"
+    assert removed.missing_sync_count == 1
+    assert removed.missing_since_at == first_observed_at
     assert len(removed_chunks) == 1
+
+    second_result = await knowledge_repository.reconcile_catalog_presence(
+        "databricks-docs",
+        {"docs-kept"},
+        observed_at=datetime(2026, 7, 14, 2, 0, tzinfo=UTC),
+    )
+    removed = await knowledge_repository.get_document("docs-removed")
+
+    assert second_result.pending_missing_count == 0
+    assert second_result.disabled_count == 1
+    assert removed is not None and removed.status == "disabled"
+    assert removed.missing_sync_count == 2
+    assert removed.missing_since_at == first_observed_at
+    assert len(await knowledge_repository.list_chunks("docs-removed")) == 1
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_reappearing_source_resets_missing_state_without_early_reactivation(
+    knowledge_repository: KnowledgeRepository,
+) -> None:
+    await knowledge_repository.publish_document(
+        _document("docs-reappearing"),
+        content_hash="d" * 64,
+        chunks=(_chunk(0, "# Reappearing\n\nContent.\n"),),
+        embeddings=(_embedding(0, 0.1),),
+        fetched_at=datetime(2026, 7, 14, 1, 0, tzinfo=UTC),
+    )
+    await knowledge_repository.reconcile_catalog_presence(
+        "databricks-docs",
+        set(),
+        observed_at=datetime(2026, 7, 14, 2, 0, tzinfo=UTC),
+    )
+    await knowledge_repository.reconcile_catalog_presence(
+        "databricks-docs",
+        set(),
+        observed_at=datetime(2026, 7, 14, 3, 0, tzinfo=UTC),
+    )
+
+    result = await knowledge_repository.reconcile_catalog_presence(
+        "databricks-docs",
+        {"docs-reappearing"},
+        observed_at=datetime(2026, 7, 14, 4, 0, tzinfo=UTC),
+    )
+    document = await knowledge_repository.get_document("docs-reappearing")
+
+    assert result.pending_missing_count == 0
+    assert result.disabled_count == 0
+    assert document is not None and document.status == "disabled"
+    assert document.missing_sync_count == 0
+    assert document.missing_since_at is None
+
+    await knowledge_repository.mark_document_checked(
+        "docs-reappearing",
+        etag='"reappearing-v1"',
+        last_modified=None,
+        fetched_at=datetime(2026, 7, 14, 4, 5, tzinfo=UTC),
+    )
+    document = await knowledge_repository.get_document("docs-reappearing")
+
+    assert document is not None and document.status == "active"
+    assert document.missing_sync_count == 0
+    assert document.missing_since_at is None
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_source_identity_reconciliation_preserves_document_and_chunks(
+    knowledge_repository: KnowledgeRepository,
+) -> None:
+    document_id = await knowledge_repository.publish_document(
+        _document("docs-legacy-jobs"),
+        content_hash="e" * 64,
+        chunks=(_chunk(0, "# Legacy\n\nContent.\n"),),
+        embeddings=(_embedding(0, 0.1),),
+        fetched_at=datetime(2026, 7, 14, 1, 0, tzinfo=UTC),
+    )
+    discovered = replace(
+        _document("databricks-docs-1234567890abcdef12345678").source,
+        kind=SourceKind.CATALOG_LINK,
+        category=KnowledgeCategory.GENERAL,
+    )
+
+    migrated_count = await knowledge_repository.reconcile_source_identities((discovered,))
+
+    assert migrated_count == 1
+    assert await knowledge_repository.get_document("docs-legacy-jobs") is None
+    migrated = await knowledge_repository.get_document(discovered.source_key)
+    chunks = await knowledge_repository.list_chunks(discovered.source_key)
+    assert migrated is not None and migrated.id == document_id
+    assert migrated.catalog_id == "databricks-docs"
+    assert migrated.source_kind == "catalog_link"
+    assert migrated.category == "general"
+    assert len(chunks) == 1
+    assert chunks[0].document_id == document_id
 
 
 @pytest.mark.integration
@@ -262,7 +436,11 @@ async def test_knowledge_repository_never_changes_business_table_counts(
         embeddings=(_embedding(0, 0.1),),
         fetched_at=datetime(2026, 7, 13, 1, 0, tzinfo=UTC),
     )
-    await knowledge_repository.disable_missing_sources(set())
+    await knowledge_repository.reconcile_catalog_presence(
+        "databricks-docs",
+        set(),
+        observed_at=datetime(2026, 7, 14, 2, 0, tzinfo=UTC),
+    )
 
     async with test_engine.connect() as connection:
         after = (
@@ -335,7 +513,16 @@ async def test_vector_candidates_only_include_active_documents(
         first=1.0,
         second=0.0,
     )
-    await knowledge_repository.disable_missing_sources({"docs-active"})
+    await knowledge_repository.reconcile_catalog_presence(
+        "databricks-docs",
+        {"docs-active"},
+        observed_at=datetime(2026, 7, 14, 2, 0, tzinfo=UTC),
+    )
+    await knowledge_repository.reconcile_catalog_presence(
+        "databricks-docs",
+        {"docs-active"},
+        observed_at=datetime(2026, 7, 14, 3, 0, tzinfo=UTC),
+    )
     query = _directional_embedding(0, first=1.0, second=0.0).embedding
 
     candidates = await knowledge_repository.find_vector_candidates(query, limit=30)

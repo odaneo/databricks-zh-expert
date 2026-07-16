@@ -137,12 +137,17 @@ class MarkdownChunker:
                 }
                 hierarchy[level] = title
 
-            base_anchor = self._slug(title)
-            anchor = None
-            if base_anchor:
-                occurrence = slug_counts.get(base_anchor, 0)
-                slug_counts[base_anchor] = occurrence + 1
-                anchor = base_anchor if occurrence == 0 else f"{base_anchor}-{occurrence}"
+            anchor = (
+                document.heading_anchors[len(headings)]
+                if len(headings) < len(document.heading_anchors)
+                else None
+            )
+            if anchor is None:
+                base_anchor = self._slug(title)
+                if base_anchor:
+                    occurrence = slug_counts.get(base_anchor, 0)
+                    slug_counts[base_anchor] = occurrence + 1
+                    anchor = base_anchor if occurrence == 0 else f"{base_anchor}-{occurrence}"
             headings.append(
                 _Heading(
                     start_line=token.map[0],

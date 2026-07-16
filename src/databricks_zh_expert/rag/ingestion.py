@@ -15,11 +15,14 @@ from databricks_zh_expert.rag.embeddings import EmbeddingClient, EmbeddingResult
 from databricks_zh_expert.rag.manifest import load_manifest
 from databricks_zh_expert.rag.normalizer import KnowledgeNormalizer
 from databricks_zh_expert.rag.repository import (
+    CatalogPresenceResult,
     DocumentState,
     IngestionRunCompletion,
 )
 from databricks_zh_expert.rag.types import (
+    CatalogDiscoveryResult,
     CatalogFetchResult,
+    CatalogKind,
     DiscoveredSource,
     FetchCondition,
     FetchResult,
@@ -27,6 +30,7 @@ from databricks_zh_expert.rag.types import (
     KnowledgeManifest,
     NormalizedDocument,
     SourceCatalog,
+    SourceKind,
 )
 
 logger = logging.getLogger(__name__)
@@ -43,6 +47,19 @@ class IngestionRepository(Protocol):
     ) -> None: ...
 
     async def get_document_state(self, source_key: str) -> DocumentState | None: ...
+
+    async def reconcile_source_identities(
+        self,
+        sources: Sequence[DiscoveredSource],
+    ) -> int: ...
+
+    async def reconcile_catalog_presence(
+        self,
+        catalog_id: str,
+        observed_source_keys: set[str],
+        *,
+        observed_at: datetime,
+    ) -> CatalogPresenceResult: ...
 
     async def publish_document(
         self,
@@ -63,8 +80,6 @@ class IngestionRepository(Protocol):
         fetched_at: datetime,
     ) -> None: ...
 
-    async def disable_missing_sources(self, active_source_keys: set[str]) -> int: ...
-
 
 class IngestionFetcher(Protocol):
     async def fetch_catalog(self, catalog: SourceCatalog) -> CatalogFetchResult: ...
@@ -77,6 +92,17 @@ class IngestionFetcher(Protocol):
 
 
 @dataclass(frozen=True, slots=True)
+class CatalogSyncStats:
+    catalog_id: str
+    source_kind: str
+    discovered_count: int
+    duplicate_count: int
+    external_link_count: int
+    pending_missing_count: int
+    disabled_count: int
+
+
+@dataclass(frozen=True, slots=True)
 class KnowledgeSyncResult:
     status: str
     run_id: UUID | None
@@ -86,8 +112,16 @@ class KnowledgeSyncResult:
     skipped_count: int
     failed_count: int
     chunk_count: int
+    pending_missing_count: int
     disabled_count: int
+    catalogs: tuple[CatalogSyncStats, ...]
     error_summary: tuple[dict[str, str], ...]
+
+
+@dataclass(frozen=True, slots=True)
+class _CatalogOutcome:
+    catalog: SourceCatalog
+    discovery: CatalogDiscoveryResult | None
 
 
 class KnowledgeIngestionService:
@@ -120,8 +154,8 @@ class KnowledgeIngestionService:
         manifest_hash = hashlib.sha256(manifest_bytes).hexdigest()
         run_id = None if dry_run else await self._repository.start_run(manifest_hash)
         failures: list[dict[str, str]] = []
-        discovered = await self._discover_sources(manifest, failures)
-        expected_source_keys = _manifest_source_keys(manifest)
+        catalog_outcomes = await self._discover_catalogs(manifest, failures)
+        discovered = _flatten_sources(catalog_outcomes)
 
         if dry_run:
             skipped_count = await self._validate_fetches(discovered, failures)
@@ -134,7 +168,9 @@ class KnowledgeIngestionService:
                 skipped_count=skipped_count,
                 failed_count=len(failures),
                 chunk_count=0,
+                pending_missing_count=0,
                 disabled_count=0,
+                catalogs=_catalog_stats(catalog_outcomes, {}),
                 error_summary=tuple(failures),
             )
 
@@ -145,8 +181,33 @@ class KnowledgeIngestionService:
         changed_count = 0
         skipped_count = 0
         chunk_count = 0
+        ready_sources: list[DiscoveredSource] = []
+        presence_by_catalog: dict[str, CatalogPresenceResult] = {}
+        observed_at = datetime.now(UTC)
 
-        for source in discovered:
+        for outcome in catalog_outcomes:
+            if outcome.discovery is None:
+                continue
+            catalog_sources = outcome.discovery.all_sources
+            try:
+                await self._repository.reconcile_source_identities(catalog_sources)
+                presence = await self._repository.reconcile_catalog_presence(
+                    outcome.catalog.id,
+                    {source.source_key for source in catalog_sources},
+                    observed_at=observed_at,
+                )
+            except Exception as error:
+                failures.append(_safe_failure(outcome.catalog.id, error))
+                logger.warning(
+                    "知识目录状态协调失败：catalog_id=%s error_type=%s",
+                    outcome.catalog.id,
+                    type(error).__name__,
+                )
+                continue
+            presence_by_catalog[outcome.catalog.id] = presence
+            ready_sources.extend(catalog_sources)
+
+        for source in ready_sources:
             try:
                 outcome = await self._sync_source(source, chunker, force=force)
             except Exception as error:
@@ -163,15 +224,10 @@ class KnowledgeIngestionService:
                 changed_count += 1
                 chunk_count += outcome
 
-        disabled_count = 0
-        try:
-            disabled_count = await self._repository.disable_missing_sources(expected_source_keys)
-        except Exception as error:
-            failures.append(_safe_failure("manifest", error))
-            logger.warning(
-                "知识来源禁用同步失败：error_type=%s",
-                type(error).__name__,
-            )
+        pending_missing_count = sum(
+            presence.pending_missing_count for presence in presence_by_catalog.values()
+        )
+        disabled_count = sum(presence.disabled_count for presence in presence_by_catalog.values())
 
         status = _run_status(
             failed_count=len(failures),
@@ -197,20 +253,22 @@ class KnowledgeIngestionService:
             skipped_count=skipped_count,
             failed_count=len(failures),
             chunk_count=chunk_count,
+            pending_missing_count=pending_missing_count,
             disabled_count=disabled_count,
+            catalogs=_catalog_stats(catalog_outcomes, presence_by_catalog),
             error_summary=tuple(failures),
         )
 
-    async def _discover_sources(
+    async def _discover_catalogs(
         self,
         manifest: KnowledgeManifest,
         failures: list[dict[str, str]],
-    ) -> tuple[DiscoveredSource, ...]:
-        discovered: list[DiscoveredSource] = []
+    ) -> tuple[_CatalogOutcome, ...]:
+        outcomes: list[_CatalogOutcome] = []
         for catalog in manifest.catalogs:
             try:
                 fetched = await self._fetcher.fetch_catalog(catalog)
-                discovered.extend(self._catalog_parser.discover(fetched.content, catalog))
+                discovery = self._catalog_parser.discover(fetched.content, catalog)
             except Exception as error:
                 failures.append(_safe_failure(catalog.id, error))
                 logger.warning(
@@ -218,7 +276,10 @@ class KnowledgeIngestionService:
                     catalog.id,
                     type(error).__name__,
                 )
-        return tuple(discovered)
+                outcomes.append(_CatalogOutcome(catalog=catalog, discovery=None))
+            else:
+                outcomes.append(_CatalogOutcome(catalog=catalog, discovery=discovery))
+        return tuple(outcomes)
 
     async def _validate_fetches(
         self,
@@ -227,6 +288,9 @@ class KnowledgeIngestionService:
     ) -> int:
         succeeded = 0
         for source in sources:
+            if source.kind is SourceKind.CATALOG_LINK:
+                succeeded += 1
+                continue
             try:
                 await self._fetcher.fetch(source, None)
             except Exception as error:
@@ -248,17 +312,29 @@ class KnowledgeIngestionService:
         force: bool,
     ) -> int | None:
         state = await self._repository.get_document_state(source.source_key)
+        fetched_at = datetime.now(UTC)
+        if source.kind is SourceKind.CATALOG_LINK:
+            document = self._normalizer.normalize_catalog_link(source)
+            return await self._publish_if_changed(
+                document,
+                state,
+                chunker,
+                fetched_at=fetched_at,
+                force=force,
+            )
+
         condition = None
-        if state is not None and not force:
+        if state is not None and state.status == "active" and not force:
             condition = FetchCondition(
                 etag=state.etag,
                 last_modified=state.last_modified,
             )
         fetched = await self._fetcher.fetch(source, condition)
-        fetched_at = datetime.now(UTC)
         if fetched.status is FetchStatus.NOT_MODIFIED:
             if state is None:
                 raise ValueError("未保存的知识来源不能返回 304。")
+            if state.status != "active":
+                raise ValueError("已禁用的知识来源必须重新抓取正文后才能恢复。")
             await self._repository.mark_document_checked(
                 source.source_key,
                 etag=fetched.etag,
@@ -268,10 +344,27 @@ class KnowledgeIngestionService:
             return None
 
         document = self._normalizer.normalize(fetched)
+        return await self._publish_if_changed(
+            document,
+            state,
+            chunker,
+            fetched_at=fetched_at,
+            force=force,
+        )
+
+    async def _publish_if_changed(
+        self,
+        document: NormalizedDocument,
+        state: DocumentState | None,
+        chunker: MarkdownChunker,
+        *,
+        fetched_at: datetime,
+        force: bool,
+    ) -> int | None:
         content_hash = hashlib.sha256(document.normalized_content.encode("utf-8")).hexdigest()
         if state is not None and state.content_hash == content_hash and not force:
             await self._repository.mark_document_checked(
-                source.source_key,
+                document.source.source_key,
                 etag=document.etag,
                 last_modified=document.last_modified,
                 fetched_at=fetched_at,
@@ -294,17 +387,43 @@ class KnowledgeIngestionService:
         return len(chunks)
 
 
-def _manifest_source_keys(manifest: KnowledgeManifest) -> set[str]:
-    source_keys = {
-        document.source_key for catalog in manifest.catalogs for document in catalog.documents
-    }
-    source_keys.update(
-        operation.source_key
-        for catalog in manifest.catalogs
-        for module in catalog.modules
-        for operation in module.operations
+def _flatten_sources(outcomes: Sequence[_CatalogOutcome]) -> tuple[DiscoveredSource, ...]:
+    return tuple(
+        source
+        for outcome in outcomes
+        if outcome.discovery is not None
+        for source in outcome.discovery.all_sources
     )
-    return source_keys
+
+
+def _catalog_stats(
+    outcomes: Sequence[_CatalogOutcome],
+    presence_by_catalog: dict[str, CatalogPresenceResult],
+) -> tuple[CatalogSyncStats, ...]:
+    stats = []
+    for outcome in outcomes:
+        discovery = outcome.discovery
+        presence = presence_by_catalog.get(outcome.catalog.id)
+        stats.append(
+            CatalogSyncStats(
+                catalog_id=outcome.catalog.id,
+                source_kind=_source_kind(outcome.catalog.kind).value,
+                discovered_count=len(discovery.all_sources) if discovery is not None else 0,
+                duplicate_count=discovery.duplicate_count if discovery is not None else 0,
+                external_link_count=(len(discovery.external_links) if discovery is not None else 0),
+                pending_missing_count=(
+                    presence.pending_missing_count if presence is not None else 0
+                ),
+                disabled_count=presence.disabled_count if presence is not None else 0,
+            )
+        )
+    return tuple(stats)
+
+
+def _source_kind(catalog_kind: CatalogKind) -> SourceKind:
+    if catalog_kind is CatalogKind.DATABRICKS_DOCS:
+        return SourceKind.GENERAL_HTML
+    return SourceKind.API_MARKDOWN
 
 
 def _load_manifest_asset(path: Path) -> tuple[bytes, KnowledgeManifest]:

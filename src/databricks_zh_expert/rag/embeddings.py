@@ -5,12 +5,16 @@ from math import isfinite
 from time import perf_counter
 from typing import Any, Protocol, cast
 
+import tiktoken
 from openai import AsyncOpenAI
 from pydantic import SecretStr
 
 from databricks_zh_expert.rag.constants import EMBEDDING_DIMENSIONS, EMBEDDING_MODEL
 
 logger = logging.getLogger(__name__)
+_EMBEDDING_MAX_INPUT_TOKENS = 8192
+_EMBEDDING_MAX_BATCH_ITEMS = 2048
+_EMBEDDING_MAX_BATCH_TOKENS = 300_000
 
 
 class EmbeddingError(RuntimeError):
@@ -73,15 +77,34 @@ class OpenAIEmbeddingClient:
             )
         else:
             self._client = None
+        self._encoding = tiktoken.get_encoding("cl100k_base")
 
     async def embed_documents(self, texts: Sequence[str]) -> tuple[EmbeddingResult, ...]:
         inputs = self._validate_inputs(texts)
         if self._client is None:
             raise EmbeddingNotConfiguredError("未配置 OpenAI API Key，知识向量能力不可用。")
 
+        results: list[EmbeddingResult] = []
+        offset = 0
+        for batch in self._batch_inputs(inputs):
+            batch_results = await self._embed_batch(batch)
+            results.extend(
+                EmbeddingResult(
+                    index=offset + result.index,
+                    embedding=result.embedding,
+                )
+                for result in batch_results
+            )
+            offset += len(batch)
+        return tuple(results)
+
+    async def _embed_batch(self, inputs: list[str]) -> tuple[EmbeddingResult, ...]:
+        client = self._client
+        if client is None:
+            raise EmbeddingNotConfiguredError("未配置 OpenAI API Key，知识向量能力不可用。")
         started_at = perf_counter()
         try:
-            response = await self._client.embeddings.create(
+            response = await client.embeddings.create(
                 input=inputs,
                 model=EMBEDDING_MODEL,
                 dimensions=EMBEDDING_DIMENSIONS,
@@ -118,11 +141,32 @@ class OpenAIEmbeddingClient:
         inputs = list(texts)
         if not inputs:
             raise EmbeddingInputError("Embedding 输入不能为空。")
-        if len(inputs) > 2048:
-            raise EmbeddingInputError("单次 Embedding 请求最多包含 2048 项。")
         if any(not isinstance(text, str) or not text.strip() for text in inputs):
             raise EmbeddingInputError("Embedding 输入不能包含空文本。")
         return inputs
+
+    def _batch_inputs(self, inputs: list[str]) -> tuple[list[str], ...]:
+        batches: list[list[str]] = []
+        batch: list[str] = []
+        batch_tokens = 0
+
+        for value in inputs:
+            token_count = len(self._encoding.encode(value))
+            if token_count > _EMBEDDING_MAX_INPUT_TOKENS:
+                raise EmbeddingInputError("单个 Embedding 输入不能超过 8192 tokens。")
+            if batch and (
+                len(batch) >= _EMBEDDING_MAX_BATCH_ITEMS
+                or batch_tokens + token_count > _EMBEDDING_MAX_BATCH_TOKENS
+            ):
+                batches.append(batch)
+                batch = []
+                batch_tokens = 0
+            batch.append(value)
+            batch_tokens += token_count
+
+        if batch:
+            batches.append(batch)
+        return tuple(batches)
 
     @staticmethod
     def _validate_response(response: object, expected_count: int) -> tuple[EmbeddingResult, ...]:

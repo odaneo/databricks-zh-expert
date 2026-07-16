@@ -91,14 +91,21 @@ uv run --locked pyright
 uv run --locked pytest --cov=databricks_zh_expert --cov-report=term-missing
 ```
 
-## 9. 启动 FastAPI
+## 9. 构建预置知识库
+
+```powershell
+uv run --locked databricks-zh-expert-kb sync
+uv run --locked databricks-zh-expert-kb status
+```
+
+## 10. 启动 FastAPI
 
 ```powershell
 uv run --locked databricks-zh-expert
 ```
 打开 http://127.0.0.1:8000/docs
 
-## 10. 停止数据库
+## 11. 停止数据库
 
 停止容器并保留数据卷：
 

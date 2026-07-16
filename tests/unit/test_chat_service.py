@@ -652,7 +652,7 @@ async def test_knowledge_prompt_retrieves_once_after_user_and_orders_messages() 
     ]
     assert bundle.selected_chunks[0].content not in gateway.received_messages[0].content
     assert result.prompt_name is PromptName.KNOWLEDGE_QA
-    assert result.prompt_version == "1.1.0"
+    assert result.prompt_version == "1.2.0"
     assert result.assistant_message.source_citations == [
         {
             "citation_id": "S1",

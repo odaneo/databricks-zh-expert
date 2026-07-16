@@ -123,7 +123,7 @@ class KnowledgeDocument(Base):
     __tablename__ = "kb_documents"
     __table_args__ = (
         CheckConstraint(
-            "source_kind IN ('general_html', 'api_markdown')",
+            "source_kind IN ('general_html', 'api_markdown', 'catalog_link')",
             name="ck_kb_documents_source_kind",
         ),
         CheckConstraint(
@@ -131,12 +131,18 @@ class KnowledgeDocument(Base):
             name="ck_kb_documents_status",
         ),
         CheckConstraint("chunk_count >= 0", name="ck_kb_documents_chunk_count"),
+        CheckConstraint(
+            "missing_sync_count >= 0 AND missing_sync_count <= 2",
+            name="ck_kb_documents_missing_sync_count",
+        ),
         UniqueConstraint("source_key", name="uq_kb_documents_source_key"),
+        Index("ix_kb_documents_catalog_id", "catalog_id"),
         Index("ix_kb_documents_status", "status"),
     )
 
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
     source_key: Mapped[str] = mapped_column(String(100), nullable=False)
+    catalog_id: Mapped[str] = mapped_column(String(100), nullable=False)
     source_kind: Mapped[str] = mapped_column(String(30), nullable=False)
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     source_url: Mapped[str] = mapped_column(Text, nullable=False)
@@ -157,6 +163,15 @@ class KnowledgeDocument(Base):
         Integer,
         server_default=text("0"),
         nullable=False,
+    )
+    missing_sync_count: Mapped[int] = mapped_column(
+        Integer,
+        server_default=text("0"),
+        nullable=False,
+    )
+    missing_since_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
     )
     source_updated_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),

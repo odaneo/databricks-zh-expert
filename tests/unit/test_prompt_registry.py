@@ -47,7 +47,7 @@ def test_knowledge_prompt_is_available_with_citation_contract() -> None:
 
     assert knowledge.available is True
     assert knowledge.unavailable_reason is None
-    assert knowledge.version == "1.1.0"
+    assert knowledge.version == "1.2.0"
     assert knowledge.required_sections[-1] == "引用来源"
 
 
@@ -66,7 +66,7 @@ def test_code_prompts_declare_their_fence_languages() -> None:
 def test_every_prompt_has_a_semantic_version() -> None:
     versions = {spec.name: spec.version for spec in PROMPT_SPECS}
 
-    assert versions[PromptName.KNOWLEDGE_QA] == "1.1.0"
+    assert versions[PromptName.KNOWLEDGE_QA] == "1.2.0"
     assert all(
         version == "1.0.1"
         for name, version in versions.items()

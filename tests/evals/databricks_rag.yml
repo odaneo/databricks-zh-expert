@@ -1,0 +1,184 @@
+version: 1
+
+cases:
+  - id: jobs-retry-and-dependencies
+    category: jobs
+    question: Lakeflow Jobs 中如何设计任务依赖和失败重试？
+    expected_urls:
+      - https://docs.databricks.com/jobs/
+      - https://docs.databricks.com/jobs/configure-task
+
+  - id: jobs-schedule
+    category: jobs
+    question: 如何为 Lakeflow Job 配置定时调度？
+    expected_urls:
+      - https://docs.databricks.com/jobs/scheduled
+      - https://docs.databricks.com/jobs/
+
+  - id: jobs-task-configuration
+    category: jobs
+    question: Lakeflow Jobs 的任务类型和依赖条件应该如何配置？
+    expected_urls:
+      - https://docs.databricks.com/jobs/configure-task
+      - https://docs.databricks.com/jobs/
+
+  - id: medallion-bronze-silver-gold
+    category: medallion
+    question: Bronze、Silver、Gold 分层架构分别承担什么职责？
+    expected_urls:
+      - https://docs.databricks.com/lakehouse/
+      - https://docs.databricks.com/data-engineering/best-practices
+
+  - id: medallion-delta-tables
+    category: medallion
+    question: 为什么 Lakehouse 分层数据通常使用 Delta 表？
+    expected_urls:
+      - https://docs.databricks.com/delta/
+      - https://docs.databricks.com/tables/
+
+  - id: medallion-change-data-feed
+    category: medallion
+    question: 如何使用 Delta Change Data Feed 增量处理表变更？
+    expected_urls:
+      - https://docs.databricks.com/tables/features/change-data-feed
+
+  - id: auto-loader-incremental-files
+    category: auto_loader
+    question: Auto Loader 如何增量摄取云对象存储中的新文件？
+    expected_urls:
+      - https://docs.databricks.com/ingestion/cloud-object-storage/auto-loader/
+
+  - id: auto-loader-schema-evolution
+    category: auto_loader
+    question: Auto Loader 如何处理 schema evolution 和 rescued data？
+    expected_urls:
+      - https://docs.databricks.com/ingestion/cloud-object-storage/auto-loader/
+
+  - id: streaming-checkpoint
+    category: streaming
+    question: Structured Streaming 为什么需要 checkpoint 和状态管理？
+    expected_urls:
+      - https://docs.databricks.com/structured-streaming/concepts
+
+  - id: streaming-auto-loader-choice
+    category: streaming
+    question: Auto Loader 与 Structured Streaming 在文件流摄取中是什么关系？
+    expected_urls:
+      - https://docs.databricks.com/ingestion/cloud-object-storage/auto-loader/
+      - https://docs.databricks.com/structured-streaming/concepts
+
+  - id: streaming-lakeflow-pipelines
+    category: streaming
+    question: Lakeflow Spark Declarative Pipelines 如何支持流式数据管道？
+    expected_urls:
+      - https://docs.databricks.com/ldp/
+      - https://docs.databricks.com/ldp/concepts
+
+  - id: unity-catalog-access-control
+    category: unity_catalog
+    question: Unity Catalog 的访问控制和权限继承应该如何设计？
+    expected_urls:
+      - https://docs.databricks.com/data-governance/unity-catalog/access-control
+      - https://docs.databricks.com/data-governance/unity-catalog/manage-privileges/
+
+  - id: unity-catalog-lineage
+    category: unity_catalog
+    question: 如何使用 Unity Catalog 查看数据血缘？
+    expected_urls:
+      - https://docs.databricks.com/data-governance/unity-catalog/data-lineage
+
+  - id: unity-catalog-overview
+    category: unity_catalog
+    question: Unity Catalog 为 Databricks 数据治理提供哪些核心能力？
+    expected_urls:
+      - https://docs.databricks.com/data-governance/unity-catalog/
+
+  - id: sql-performance-photon
+    category: sql_performance
+    question: Photon 如何提升 Databricks SQL 和 DataFrame 查询性能？
+    expected_urls:
+      - https://docs.databricks.com/compute/photon
+
+  - id: sql-performance-query-history
+    category: sql_performance
+    question: 如何通过 Query History 排查 Databricks SQL 慢查询？
+    expected_urls:
+      - https://docs.databricks.com/sql/user/queries/query-history
+
+  - id: sql-performance-warehouse
+    category: sql_performance
+    question: SQL Warehouse 和 Serverless SQL Warehouse 应该如何选择？
+    expected_urls:
+      - https://docs.databricks.com/compute/sql-warehouse/
+      - https://docs.databricks.com/admin/sql/serverless
+
+  - id: sql-performance-optimizations
+    category: sql_performance
+    question: Databricks 提供哪些表和查询优化能力？
+    expected_urls:
+      - https://docs.databricks.com/optimizations/
+      - https://docs.databricks.com/compute/photon
+
+  - id: cost-system-tables
+    category: cost
+    question: 如何使用 system tables 分析 Databricks 账户用量和成本？
+    expected_urls:
+      - https://docs.databricks.com/admin/system-tables/
+      - https://docs.databricks.com/admin/usage
+
+  - id: cost-management-overview
+    category: cost
+    question: Databricks 成本管理应该监控哪些用量数据？
+    expected_urls:
+      - https://docs.databricks.com/admin/usage
+      - https://docs.databricks.com/admin/system-tables/
+
+  - id: cost-serverless-sql
+    category: cost
+    question: 使用 Serverless SQL Warehouse 时如何考虑性能与成本？
+    expected_urls:
+      - https://docs.databricks.com/admin/sql/serverless
+      - https://docs.databricks.com/admin/usage
+
+  - id: api-jobs-create
+    category: api
+    question: Jobs REST API 中如何使用 Create a new job 创建作业？
+    expected_urls:
+      - https://docs.databricks.com/api/markdown/Jobs/Jobs/Create.md
+
+  - id: api-jobs-run-now
+    category: api
+    question: Jobs REST API 中如何使用 Trigger a new job run 立即运行作业？
+    expected_urls:
+      - https://docs.databricks.com/api/markdown/Jobs/Jobs/RunNow.md
+
+  - id: api-jobs-get-run
+    category: api
+    question: Jobs REST API 中如何使用 Get a single job run 查询运行详情？
+    expected_urls:
+      - https://docs.databricks.com/api/markdown/Jobs/Jobs/GetRun.md
+
+  - id: api-pipelines-create-edit
+    category: api
+    question: Pipelines REST API 如何创建并修改 pipeline？
+    expected_urls:
+      - https://docs.databricks.com/api/markdown/Pipelines/Pipelines/Create.md
+      - https://docs.databricks.com/api/markdown/Pipelines/Pipelines/Update.md
+
+  - id: api-pipelines-start
+    category: api
+    question: Pipelines REST API 如何启动一次 pipeline update？
+    expected_urls:
+      - https://docs.databricks.com/api/markdown/Pipelines/Pipelines/StartUpdate.md
+
+  - id: api-warehouses-create
+    category: api
+    question: SQL Warehouses REST API 如何创建 warehouse？
+    expected_urls:
+      - https://docs.databricks.com/api/markdown/Sql/Warehouses/Create.md
+
+  - id: cost-pricing-link
+    category: cost
+    question: Databricks 的最新价格在哪里查看？
+    expected_urls:
+      - https://www.databricks.com/product/pricing

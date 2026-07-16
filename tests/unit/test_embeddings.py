@@ -7,6 +7,7 @@ from typing import Any
 import pytest
 from pydantic import SecretStr
 
+import databricks_zh_expert.rag.embeddings as embeddings_module
 from databricks_zh_expert.main import create_app
 from databricks_zh_expert.rag.embeddings import (
     EmbeddingInputError,
@@ -39,6 +40,21 @@ class _FakeEmbeddingsResource:
 class _FakeOpenAI:
     def __init__(self, resource: _FakeEmbeddingsResource) -> None:
         self.embeddings = resource
+
+
+class _DynamicEmbeddingsResource(_FakeEmbeddingsResource):
+    def __init__(self) -> None:
+        self.requests: list[dict[str, Any]] = []
+
+    async def create(self, **kwargs: Any) -> object:
+        self.requests.append(kwargs)
+        inputs = kwargs["input"]
+        assert isinstance(inputs, list)
+        vector = _vector(0.25)
+        return _response(
+            *(_FakeEmbedding(index=index, embedding=vector) for index in range(len(inputs))),
+            prompt_tokens=len(inputs),
+        )
 
 
 def _vector(value: float = 0.0, *, dimensions: int = 1536) -> list[float]:
@@ -98,6 +114,48 @@ async def test_embed_query_uses_one_item_batch() -> None:
     assert resource.requests[0]["input"] == ["如何设计 Lakeflow Jobs？"]
     assert result.index == 0
     assert result.embedding[0] == 0.3
+
+
+@pytest.mark.asyncio
+async def test_embed_documents_batches_by_item_limit_and_restores_global_indexes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        embeddings_module,
+        "_EMBEDDING_MAX_BATCH_ITEMS",
+        2,
+        raising=False,
+    )
+    resource = _DynamicEmbeddingsResource()
+
+    results = await _client(resource).embed_documents(("first", "second", "third"))
+
+    assert [request["input"] for request in resource.requests] == [
+        ["first", "second"],
+        ["third"],
+    ]
+    assert tuple(result.index for result in results) == (0, 1, 2)
+
+
+@pytest.mark.asyncio
+async def test_embed_documents_batches_before_total_token_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        embeddings_module,
+        "_EMBEDDING_MAX_BATCH_TOKENS",
+        2,
+        raising=False,
+    )
+    resource = _DynamicEmbeddingsResource()
+
+    results = await _client(resource).embed_documents(("one", "two", "three"))
+
+    assert [request["input"] for request in resource.requests] == [
+        ["one", "two"],
+        ["three"],
+    ]
+    assert tuple(result.index for result in results) == (0, 1, 2)
 
 
 @pytest.mark.asyncio
