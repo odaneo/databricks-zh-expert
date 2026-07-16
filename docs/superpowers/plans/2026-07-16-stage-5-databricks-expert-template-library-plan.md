@@ -416,7 +416,7 @@ git commit -m "feat: add core databricks expert templates"
 
 - Consumes: 任务 2 的 core ID。
 - Produces: 八个 `layer=retail_sales_demo`、`profile=retail_sales_demo`、`cloud=aws`、`is_mock=true` 资产。
-- Produces: Profile 的零售默认模板映射和五条显式 `extends` 关系。
+- Produces: Profile 的零售默认模板映射和六条显式 `extends` 关系。
 
 - [ ] **Step 1: 写覆盖层业务契约测试**
 

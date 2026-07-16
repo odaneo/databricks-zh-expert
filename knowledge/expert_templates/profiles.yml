@@ -22,9 +22,9 @@ profiles:
     is_mock: true
     default: false
     prompt_defaults:
-      databricks_qa: [ingestion.s3_auto_loader, medallion.standard]
-      sql_generation: [code.delta_merge_sql, code.gold_aggregation_sql]
-      pyspark_generation: [code.autoloader_pyspark, code.quality_expectations_python]
-      workflow_design: [workflow.lakeflow_jobs, pipeline.lakeflow_sdp]
-      proposal_generation: [deliverable.technical_proposal, deliverable.architecture_design]
-      self_check: [checklist.production_readiness, checklist.workflow_monitoring]
+      databricks_qa: [retail.project_context, retail.source_contracts]
+      sql_generation: [retail.gold_data_products, code.delta_merge_sql]
+      pyspark_generation: [retail.medallion_mapping, code.autoloader_pyspark]
+      workflow_design: [retail.workflow_dag, retail.end_to_end_architecture]
+      proposal_generation: [retail.project_context, retail.end_to_end_architecture]
+      self_check: [retail.production_acceptance]
