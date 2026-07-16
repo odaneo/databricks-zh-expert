@@ -1,6 +1,6 @@
 import asyncio
 import os
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Sequence
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -11,7 +11,7 @@ from dotenv import dotenv_values
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from pydantic import SecretStr
-from sqlalchemy import delete
+from sqlalchemy import delete, update
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -23,8 +23,17 @@ from sqlalchemy.ext.asyncio import (
 from alembic import command
 from databricks_zh_expert.api.dependencies import get_db_session
 from databricks_zh_expert.core.config import Settings, get_settings
-from databricks_zh_expert.db.models import ChatSession
+from databricks_zh_expert.db.models import (
+    ChatSession,
+    ExpertTemplateChunkRecord,
+    ExpertTemplateRecord,
+    ExpertTemplateSyncRun,
+)
+from databricks_zh_expert.expert_templates.registry import ExpertTemplateRegistry
+from databricks_zh_expert.expert_templates.repository import ExpertTemplateRepository
+from databricks_zh_expert.expert_templates.sync import ExpertTemplateSyncService
 from databricks_zh_expert.main import create_app
+from databricks_zh_expert.rag.embeddings import EmbeddingResult
 
 
 class SettingsFactory(Protocol):
@@ -55,6 +64,16 @@ def pytest_asyncio_loop_factories(
 ) -> dict[str, Callable[[], asyncio.AbstractEventLoop]]:
     del config, item
     return {"selector": asyncio.SelectorEventLoop}
+
+
+class _DeterministicExpertEmbeddingClient:
+    async def embed_documents(
+        self,
+        texts: Sequence[str],
+    ) -> tuple[EmbeddingResult, ...]:
+        return tuple(
+            EmbeddingResult(index=index, embedding=(0.01,) * 1536) for index, _ in enumerate(texts)
+        )
 
 
 @pytest.fixture(scope="session")
@@ -117,6 +136,63 @@ async def test_db_session(test_engine: AsyncEngine) -> AsyncIterator[AsyncSessio
             await session.commit()
 
 
+@pytest.fixture(scope="session")
+def expert_template_registry() -> ExpertTemplateRegistry:
+    return ExpertTemplateRegistry.create_default()
+
+
+async def _clear_expert_template_index(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with session_factory.begin() as session:
+        await session.execute(update(ExpertTemplateRecord).values(extends_id=None))
+        await session.execute(delete(ExpertTemplateChunkRecord))
+        await session.execute(delete(ExpertTemplateRecord))
+        await session.execute(delete(ExpertTemplateSyncRun))
+
+
+@pytest_asyncio.fixture
+async def empty_expert_template_index(
+    test_engine: AsyncEngine,
+) -> AsyncIterator[None]:
+    session_factory = async_sessionmaker(
+        bind=test_engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+    await _clear_expert_template_index(session_factory)
+    try:
+        yield
+    finally:
+        await _clear_expert_template_index(session_factory)
+
+
+@pytest_asyncio.fixture
+async def ready_expert_template_index(
+    test_engine: AsyncEngine,
+    expert_template_registry: ExpertTemplateRegistry,
+) -> AsyncIterator[ExpertTemplateRepository]:
+    session_factory = async_sessionmaker(
+        bind=test_engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+    await _clear_expert_template_index(session_factory)
+    repository = ExpertTemplateRepository(
+        session_factory,
+        registry=expert_template_registry,
+    )
+    service = ExpertTemplateSyncService(
+        repository=repository,
+        embedding_client=_DeterministicExpertEmbeddingClient(),
+    )
+    await service.sync(expert_template_registry)
+    try:
+        yield repository
+    finally:
+        await _clear_expert_template_index(session_factory)
+
+
 @pytest_asyncio.fixture
 async def test_app(
     settings_factory: SettingsFactory,
@@ -138,6 +214,19 @@ async def test_app(
 
 @pytest_asyncio.fixture
 async def client(test_app: FastAPI) -> AsyncIterator[AsyncClient]:
+    async with AsyncClient(
+        transport=ASGITransport(app=test_app),
+        base_url="http://test",
+    ) as async_client:
+        yield async_client
+
+
+@pytest_asyncio.fixture
+async def ready_client(
+    test_app: FastAPI,
+    ready_expert_template_index: ExpertTemplateRepository,
+) -> AsyncIterator[AsyncClient]:
+    del ready_expert_template_index
     async with AsyncClient(
         transport=ASGITransport(app=test_app),
         base_url="http://test",

@@ -11,8 +11,8 @@ class ChatRepository:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
 
-    async def create_session(self, title: str) -> ChatSession:
-        session = ChatSession(title=title)
+    async def create_session(self, title: str, expert_profile: str) -> ChatSession:
+        session = ChatSession(title=title, expert_profile=expert_profile)
         self.db.add(session)
         await self.db.commit()
         await self.db.refresh(session)

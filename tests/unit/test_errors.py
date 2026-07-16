@@ -4,8 +4,42 @@ import pytest
 from fastapi import Query
 from httpx import ASGITransport, AsyncClient
 
+import databricks_zh_expert.core.errors as errors_module
 from databricks_zh_expert.core.errors import AppError
 from databricks_zh_expert.main import create_app
+
+
+@pytest.mark.parametrize(
+    ("class_name", "code", "message", "status_code"),
+    (
+        (
+            "ExpertProfileNotFoundAppError",
+            "expert_profile_not_found",
+            "专家配置不存在。",
+            422,
+        ),
+        (
+            "ExpertTemplateIndexNotReadyAppError",
+            "expert_template_index_not_ready",
+            "专家模板索引尚未就绪。",
+            503,
+        ),
+    ),
+)
+def test_expert_template_errors_have_stable_contract(
+    class_name: str,
+    code: str,
+    message: str,
+    status_code: int,
+) -> None:
+    error_type = getattr(errors_module, class_name, None)
+
+    assert callable(error_type)
+    error = error_type()
+    assert isinstance(error, AppError)
+    assert error.code == code
+    assert error.message == message
+    assert error.status_code == status_code
 
 
 @pytest.mark.asyncio

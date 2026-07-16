@@ -39,6 +39,24 @@ class KnowledgeContextNotFoundAppError(AppError):
         )
 
 
+class ExpertProfileNotFoundAppError(AppError):
+    def __init__(self) -> None:
+        super().__init__(
+            code="expert_profile_not_found",
+            message="专家配置不存在。",
+            status_code=422,
+        )
+
+
+class ExpertTemplateIndexNotReadyAppError(AppError):
+    def __init__(self) -> None:
+        super().__init__(
+            code="expert_template_index_not_ready",
+            message="专家模板索引尚未就绪。",
+            status_code=503,
+        )
+
+
 class EmbeddingNotConfiguredAppError(AppError):
     def __init__(self) -> None:
         super().__init__(

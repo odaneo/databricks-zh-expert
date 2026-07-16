@@ -9,6 +9,8 @@ from databricks_zh_expert.chat.repository import ChatRepository
 from databricks_zh_expert.chat.service import ChatService
 from databricks_zh_expert.core.config import Settings
 from databricks_zh_expert.db.session import Database
+from databricks_zh_expert.expert_templates.registry import ExpertTemplateRegistry
+from databricks_zh_expert.expert_templates.repository import ExpertTemplateRepository
 from databricks_zh_expert.llm.client import ModelTransport
 from databricks_zh_expert.llm.gateway import (
     FallbackModelGateway,
@@ -74,6 +76,20 @@ def get_prompt_registry(request: Request) -> PromptRegistry:
 
 def get_artifact_parser(request: Request) -> MarkdownArtifactParser:
     return cast(MarkdownArtifactParser, request.app.state.artifact_parser)
+
+
+def get_expert_template_registry(request: Request) -> ExpertTemplateRegistry:
+    return cast(
+        ExpertTemplateRegistry,
+        request.app.state.expert_template_registry,
+    )
+
+
+def get_expert_template_repository(request: Request) -> ExpertTemplateRepository:
+    return cast(
+        ExpertTemplateRepository,
+        request.app.state.expert_template_repository,
+    )
 
 
 def get_knowledge_repository(request: Request) -> KnowledgeRepository:

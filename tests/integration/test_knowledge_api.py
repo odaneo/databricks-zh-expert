@@ -9,6 +9,7 @@ from sqlalchemy import delete, update
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from databricks_zh_expert.db.models import KnowledgeDocument, KnowledgeIngestionRun
+from databricks_zh_expert.expert_templates.repository import ExpertTemplateRepository
 from databricks_zh_expert.rag.chunker import KnowledgeChunk
 from databricks_zh_expert.rag.embeddings import EmbeddingResult
 from databricks_zh_expert.rag.repository import (
@@ -190,10 +191,15 @@ async def test_knowledge_api_does_not_expose_sources_or_sync_routes(
 async def test_ready_health_does_not_depend_on_knowledge_index(
     client: AsyncClient,
     knowledge_repository_for_api: KnowledgeRepository,
+    ready_expert_template_index: ExpertTemplateRepository,
 ) -> None:
-    del knowledge_repository_for_api
+    del knowledge_repository_for_api, ready_expert_template_index
 
     response = await client.get("/health/ready")
 
     assert response.status_code == 200
-    assert response.json() == {"status": "ready", "database": "ok"}
+    assert response.json() == {
+        "status": "ready",
+        "database": "ok",
+        "expert_templates": "ok",
+    }

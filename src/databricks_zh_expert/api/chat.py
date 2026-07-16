@@ -3,7 +3,11 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, status
 
-from databricks_zh_expert.api.dependencies import get_chat_repository, get_chat_service
+from databricks_zh_expert.api.dependencies import (
+    get_chat_repository,
+    get_chat_service,
+    get_expert_template_registry,
+)
 from databricks_zh_expert.chat.repository import ChatRepository
 from databricks_zh_expert.chat.schemas import (
     ArtifactMetadataResponse,
@@ -15,7 +19,11 @@ from databricks_zh_expert.chat.schemas import (
     SessionResponse,
 )
 from databricks_zh_expert.chat.service import ChatService
-from databricks_zh_expert.core.errors import AppError
+from databricks_zh_expert.core.errors import AppError, ExpertProfileNotFoundAppError
+from databricks_zh_expert.expert_templates.registry import (
+    ExpertTemplateRegistry,
+    ExpertTemplateRegistryError,
+)
 
 router = APIRouter(prefix="/api/chat", tags=["会话"])
 
@@ -28,8 +36,16 @@ router = APIRouter(prefix="/api/chat", tags=["会话"])
 async def create_session(
     payload: SessionCreate,
     repository: Annotated[ChatRepository, Depends(get_chat_repository)],
+    expert_registry: Annotated[
+        ExpertTemplateRegistry,
+        Depends(get_expert_template_registry),
+    ],
 ) -> SessionResponse:
-    session = await repository.create_session(payload.title)
+    try:
+        expert_registry.get_profile(payload.expert_profile)
+    except ExpertTemplateRegistryError:
+        raise ExpertProfileNotFoundAppError() from None
+    session = await repository.create_session(payload.title, payload.expert_profile)
     return SessionResponse.model_validate(session)
 
 
@@ -60,6 +76,7 @@ async def get_session(
     return SessionDetail(
         id=session.id,
         title=session.title,
+        expert_profile=session.expert_profile,
         created_at=session.created_at,
         updated_at=session.updated_at,
         messages=[MessageResponse.model_validate(message) for message in messages],

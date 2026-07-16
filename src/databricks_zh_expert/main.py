@@ -7,6 +7,7 @@ from fastapi import FastAPI
 
 from databricks_zh_expert import __version__
 from databricks_zh_expert.api.chat import router as chat_router
+from databricks_zh_expert.api.expert_templates import router as expert_templates_router
 from databricks_zh_expert.api.health import router as health_router
 from databricks_zh_expert.api.knowledge import router as knowledge_router
 from databricks_zh_expert.api.models import router as models_router
@@ -20,6 +21,8 @@ from databricks_zh_expert.core.runtime import (
     selector_event_loop_factory,
 )
 from databricks_zh_expert.db.session import Database
+from databricks_zh_expert.expert_templates.registry import ExpertTemplateRegistry
+from databricks_zh_expert.expert_templates.repository import ExpertTemplateRepository
 from databricks_zh_expert.observability.model_trace import (
     JsonlModelTraceSink,
     ModelTraceSink,
@@ -61,12 +64,18 @@ def create_app(
     model_trace_sink: ModelTraceSink | None = None,
     prompt_registry: PromptRegistry | None = None,
     artifact_parser: MarkdownArtifactParser | None = None,
+    expert_template_registry: ExpertTemplateRegistry | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
     prompt_registry = prompt_registry or PromptRegistry.create_default()
     artifact_parser = artifact_parser or MarkdownArtifactParser()
+    expert_template_registry = expert_template_registry or ExpertTemplateRegistry.create_default()
     prompt_registry.validate_all()
     database = database or Database(settings.database_url)
+    expert_template_repository = ExpertTemplateRepository(
+        database.session_factory,
+        registry=expert_template_registry,
+    )
     model_trace_sink = model_trace_sink or (
         JsonlModelTraceSink(settings.model_trace_path)
         if settings.model_trace_enabled
@@ -85,9 +94,12 @@ def create_app(
     app.state.model_trace_sink = model_trace_sink
     app.state.prompt_registry = prompt_registry
     app.state.artifact_parser = artifact_parser
+    app.state.expert_template_registry = expert_template_registry
+    app.state.expert_template_repository = expert_template_repository
     register_exception_handlers(app)
     app.include_router(health_router)
     app.include_router(chat_router)
+    app.include_router(expert_templates_router)
     app.include_router(knowledge_router)
     app.include_router(models_router)
     app.include_router(prompts_router)

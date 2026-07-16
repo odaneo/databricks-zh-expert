@@ -3,7 +3,7 @@ from uuid import UUID
 
 import pytest
 from httpx import AsyncClient
-from sqlalchemy import select, update
+from sqlalchemy import insert, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from databricks_zh_expert.artifacts.types import ArtifactType
@@ -23,16 +23,89 @@ async def test_create_and_get_session(
 
     assert create_response.status_code == 201
     session_id = create_response.json()["id"]
+    assert create_response.json()["expert_profile"] == "generic"
 
     get_response = await client.get(f"/api/chat/sessions/{session_id}")
 
     assert get_response.status_code == 200
     assert get_response.json()["title"] == "每日销售分析"
+    assert get_response.json()["expert_profile"] == "generic"
     assert get_response.json()["messages"] == []
     stored_profile = await test_db_session.scalar(
         select(ChatSession.expert_profile).where(ChatSession.id == UUID(session_id))
     )
     assert stored_profile == "generic"
+
+
+async def test_create_session_persists_profile_in_list_and_detail(
+    client: AsyncClient,
+) -> None:
+    create_response = await client.post(
+        "/api/chat/sessions",
+        json={
+            "title": "零售销售设计",
+            "expert_profile": "retail_sales_demo",
+        },
+    )
+
+    assert create_response.status_code == 201
+    assert create_response.json()["expert_profile"] == "retail_sales_demo"
+    session_id = create_response.json()["id"]
+
+    list_response = await client.get("/api/chat/sessions")
+    detail_response = await client.get(f"/api/chat/sessions/{session_id}")
+
+    assert list_response.status_code == 200
+    assert list_response.json()[0]["expert_profile"] == "retail_sales_demo"
+    assert detail_response.status_code == 200
+    assert detail_response.json()["expert_profile"] == "retail_sales_demo"
+
+
+async def test_create_session_rejects_unknown_expert_profile(
+    client: AsyncClient,
+) -> None:
+    response = await client.post(
+        "/api/chat/sessions",
+        json={"title": "错误会话", "expert_profile": "unknown"},
+    )
+
+    assert response.status_code == 422
+    assert response.json() == {
+        "code": "expert_profile_not_found",
+        "message": "专家配置不存在。",
+        "details": None,
+    }
+
+
+async def test_historical_session_without_explicit_profile_returns_generic(
+    client: AsyncClient,
+    test_db_session: AsyncSession,
+) -> None:
+    session_id = await test_db_session.scalar(
+        insert(ChatSession).values(title="历史会话").returning(ChatSession.id)
+    )
+    await test_db_session.commit()
+    assert session_id is not None
+
+    response = await client.get(f"/api/chat/sessions/{session_id}")
+
+    assert response.status_code == 200
+    assert response.json()["expert_profile"] == "generic"
+
+
+async def test_session_profile_has_no_update_route(client: AsyncClient) -> None:
+    create_response = await client.post(
+        "/api/chat/sessions",
+        json={"title": "不可变 Profile"},
+    )
+    session_id = create_response.json()["id"]
+
+    response = await client.patch(
+        f"/api/chat/sessions/{session_id}",
+        json={"expert_profile": "retail_sales_demo"},
+    )
+
+    assert response.status_code == 405
 
 
 async def test_create_session_uses_default_title_and_rejects_empty_title(

@@ -10,6 +10,8 @@ import databricks_zh_expert.main as main_module
 from databricks_zh_expert.api.dependencies import get_db_session
 from databricks_zh_expert.artifacts.markdown import MarkdownArtifactParser
 from databricks_zh_expert.db.session import Database
+from databricks_zh_expert.expert_templates.registry import ExpertTemplateRegistry
+from databricks_zh_expert.expert_templates.types import ExpertTemplateIndexStatus
 from databricks_zh_expert.observability.model_trace import (
     JsonlModelTraceSink,
     NullModelTraceSink,
@@ -33,6 +35,24 @@ class UnavailableSession:
     async def execute(self, statement: object) -> None:
         del statement
         raise SQLAlchemyError("测试数据库不可用")
+
+
+class FakeExpertTemplateStatusRepository:
+    def __init__(self, *, queryable: bool = True) -> None:
+        self.queryable = queryable
+        self.source_hashes: list[str] = []
+
+    async def get_index_status(self, current_source_hash: str) -> ExpertTemplateIndexStatus:
+        self.source_hashes.append(current_source_hash)
+        return ExpertTemplateIndexStatus(
+            latest_run_status="succeeded" if self.queryable else None,
+            source_hash_matches=self.queryable,
+            active_template_count=37 if self.queryable else 0,
+            chunk_count=100 if self.queryable else 0,
+            embedding_model="text-embedding-3-small" if self.queryable else None,
+            embedding_dimensions=1536 if self.queryable else None,
+            queryable=self.queryable,
+        )
 
 
 async def healthy_db_session() -> AsyncIterator[HealthySession]:
@@ -151,6 +171,19 @@ def test_app_factory_validates_and_stores_prompt_components(
     assert app.state.artifact_parser is artifact_parser
 
 
+def test_app_factory_stores_injected_expert_template_registry(
+    settings_factory,
+) -> None:
+    registry = ExpertTemplateRegistry.create_default()
+
+    app = create_app(
+        settings=settings_factory(),
+        expert_template_registry=registry,
+    )
+
+    assert app.state.expert_template_registry is registry
+
+
 def test_app_factory_rejects_invalid_prompt_template_immediately(
     settings_factory,
 ) -> None:
@@ -194,6 +227,8 @@ async def test_health_returns_injected_application_status_without_database_depen
     settings_factory,
 ) -> None:
     app = create_app(settings=settings_factory())
+    repository = FakeExpertTemplateStatusRepository()
+    app.state.expert_template_repository = repository
     async with AsyncClient(
         transport=ASGITransport(app=app),
         base_url="http://test",
@@ -207,11 +242,14 @@ async def test_health_returns_injected_application_status_without_database_depen
         "environment": "test",
         "version": "0.1.0",
     }
+    assert repository.source_hashes == []
 
 
 @pytest.mark.asyncio
 async def test_live_health_uses_the_same_application_status(settings_factory) -> None:
     app = create_app(settings=settings_factory())
+    repository = FakeExpertTemplateStatusRepository()
+    app.state.expert_template_repository = repository
     async with AsyncClient(
         transport=ASGITransport(app=app),
         base_url="http://test",
@@ -225,11 +263,14 @@ async def test_live_health_uses_the_same_application_status(settings_factory) ->
         "environment": "test",
         "version": "0.1.0",
     }
+    assert repository.source_hashes == []
 
 
 @pytest.mark.asyncio
 async def test_ready_health_executes_the_database_probe(settings_factory) -> None:
     app = create_app(settings=settings_factory())
+    repository = FakeExpertTemplateStatusRepository()
+    app.state.expert_template_repository = repository
     app.dependency_overrides[get_db_session] = healthy_db_session
 
     async with AsyncClient(
@@ -239,7 +280,35 @@ async def test_ready_health_executes_the_database_probe(settings_factory) -> Non
         response = await client.get("/health/ready")
 
     assert response.status_code == 200
-    assert response.json() == {"status": "ready", "database": "ok"}
+    assert response.json() == {
+        "status": "ready",
+        "database": "ok",
+        "expert_templates": "ok",
+    }
+    assert repository.source_hashes == [app.state.expert_template_registry.source_hash]
+
+
+@pytest.mark.asyncio
+async def test_ready_health_maps_unready_expert_index_to_service_unavailable(
+    settings_factory,
+) -> None:
+    app = create_app(settings=settings_factory())
+    repository = FakeExpertTemplateStatusRepository(queryable=False)
+    app.state.expert_template_repository = repository
+    app.dependency_overrides[get_db_session] = healthy_db_session
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        response = await client.get("/health/ready")
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "code": "expert_template_index_not_ready",
+        "message": "专家模板索引尚未就绪。",
+        "details": None,
+    }
 
 
 @pytest.mark.asyncio
@@ -247,6 +316,8 @@ async def test_ready_health_maps_database_errors_to_service_unavailable(
     settings_factory,
 ) -> None:
     app = create_app(settings=settings_factory())
+    repository = FakeExpertTemplateStatusRepository()
+    app.state.expert_template_repository = repository
     app.dependency_overrides[get_db_session] = unavailable_db_session
 
     async with AsyncClient(
@@ -261,3 +332,4 @@ async def test_ready_health_maps_database_errors_to_service_unavailable(
         "message": "数据库暂时不可用。",
         "details": None,
     }
+    assert repository.source_hashes == []
