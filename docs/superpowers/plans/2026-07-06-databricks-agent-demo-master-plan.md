@@ -512,46 +512,62 @@ HNSW 或 IVFFlat。
 
 ## 阶段 5：Databricks 专家模板库
 
+### 当前状态
+
+设计规格和实施计划已完成，尚未开始代码实现。
+
 ### 小目标
 
-把项目的专业价值沉淀为可复用知识资产。
+在阶段 4 官方事实 RAG 之外，增加可版本化、可检索、可审计的项目方法、架构取舍、代码模式、检查清单和
+交付结构，使回答更接近真实项目交付。
 
 ### 技术栈
 
 1. Markdown。
 2. YAML。
-3. Prompt Registry。
+3. PostgreSQL + pgvector。
+4. Prompt Registry。
+5. OpenAI Embedding。
 
-### 知识资产分类
+### 已确认边界
 
-1. 官方文档摘要。
-2. 常用 Databricks SQL 模板。
-3. 常用 PySpark 模板。
-4. Bronze / Silver / Gold 设计模板。
-5. Workflow 设计模板。
-6. Unity Catalog 权限建议模板。
-7. 成本优化检查清单。
-8. 性能优化检查清单。
-9. 常见项目交付文档结构。
+1. 使用“通用核心层 + AWS 零售销售 Mock 覆盖层”。
+2. 同一 Git 仓库、同一 PostgreSQL、独立专家模板表，不混入 `kb_*` 官方知识表。
+3. 模板使用 Markdown + YAML Front Matter，Profile 使用 YAML 清单。
+4. 会话级 `expert_profile` 默认为 `generic`；具体模板由系统自动选择。
+5. Mock 架构覆盖 S3 日批、RDS PostgreSQL、AWS DMS、S3 Parquet、Auto Loader 和 Kinesis。
+6. Medallion 转换使用 Lakeflow Spark Declarative Pipelines 的稳定能力，不采用 Preview 功能。
+7. 模板分为 blueprint、decision guide、code pattern、checklist、deliverable 五类。
+8. 第一版约 37 个短而具体的专家资产。
+9. 官方事实与 Mock 经验分别检索，官方引用只来自阶段 4 数据。
+10. 模板候选、最终选择、版本、Profile 和继承关系写入 `model_calls` 与 Trace 1.5。
 
-### 推荐目录
+### 数据流
 
 ```text
-knowledge/
-  databricks/
-    summaries/
-    sql_templates/
-    pyspark_templates/
-    medallion_templates/
-    workflow_templates/
-    unity_catalog/
-    cost_optimization/
-    performance_optimization/
+Git Markdown / YAML
+-> 严格 Registry 校验
+-> 显式增量同步与 OpenAI Embedding
+-> expert_templates / expert_template_chunks
+-> Profile 与 Prompt 预过滤
+-> 向量 + 全文混合检索
+-> 与阶段 4 官方上下文组合
+-> 模型生成 Artifact
+-> model_calls 与 Trace 1.5 审计
 ```
 
 ### 完成标准
 
-Agent 在回答时可以引用这些模板，使输出更像真实项目交付内容，而不是泛泛解释。
+1. generic 与 retail_sales_demo 两个 Profile 可用且会话内不可变。
+2. 专家模板可原子同步、版本化和检索，不污染官方来源引用。
+3. 固定模板评估达到 Recall@3 >= 90%，跨 Profile 误用为 0。
+4. Agent 能结合官方事实与专家模板生成代码、Workflow、提案和检查清单。
+5. 真实验收数据和 Trace 保留，Ruff、Pyright、pytest、覆盖率和 Alembic 全部通过。
+
+详细设计和逐任务计划见：
+
+1. `docs/superpowers/specs/2026-07-16-stage-5-databricks-expert-template-library-design.md`。
+2. `docs/superpowers/plans/2026-07-16-stage-5-databricks-expert-template-library-plan.md`。
 
 ---
 
@@ -902,10 +918,10 @@ Agent 生成的 SQL 和 PySpark 可能存在环境差异，不能默认可执行
 
 ## 8. 近期最推荐的下一步
 
-阶段 1 至阶段 4 已完成实现和验收。近期先提交阶段 4 任务 8 的全量同步变更，随后进入阶段 5 Databricks
-专家模板库。
+阶段 1 至阶段 4 已完成实现和验收。阶段 5 的设计规格和实施计划已经完成，近期下一步是执行阶段 5 任务 1：
+固定模板契约、Profile 和 Registry；当前尚未开始阶段 5 代码实现。
 
-已完成阶段的详细设计和实施步骤见：
+已完成与已规划阶段的详细设计和实施步骤见：
 
 1. `docs/superpowers/specs/2026-07-10-stage-1-backend-design.md`。
 2. `docs/superpowers/plans/2026-07-10-stage-1-backend-plan.md`。
@@ -915,3 +931,5 @@ Agent 生成的 SQL 和 PySpark 可能存在环境差异，不能默认可执行
 6. `docs/superpowers/plans/2026-07-11-stage-3-prompt-registry-markdown-artifact-plan.md`。
 7. `docs/superpowers/specs/2026-07-12-stage-4-prebuilt-databricks-rag-design.md`。
 8. `docs/superpowers/plans/2026-07-12-stage-4-prebuilt-databricks-rag-plan.md`。
+9. `docs/superpowers/specs/2026-07-16-stage-5-databricks-expert-template-library-design.md`。
+10. `docs/superpowers/plans/2026-07-16-stage-5-databricks-expert-template-library-plan.md`。
