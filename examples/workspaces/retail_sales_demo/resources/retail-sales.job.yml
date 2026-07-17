@@ -1,0 +1,39 @@
+# Mock Job 资源骨架，不包含 workspace、计算资源或身份配置。
+resources:
+  jobs:
+    retail_sales_demo_ingestion:
+      name: "[MOCK] retail-sales-demo-ingestion"
+      description: POS 日批 Bronze 摄取的参数和任务结构样例，部署前必须补充并验证环境配置。
+      max_concurrent_runs: 1
+      tags:
+        project: retail_sales_demo
+        data_classification: mock
+      parameters:
+        - name: catalog
+          default: ${var.catalog}
+        - name: pos_source_path
+          default: ${var.pos_source_path}
+        - name: checkpoint_root
+          default: ${var.checkpoint_root}
+        - name: processing_date
+          default: ""
+      tasks:
+        - task_key: ingest_pos_sales
+          description: 使用 Auto Loader 摄取 POS Parquet 的 Mock 任务。
+          spark_python_task:
+            python_file: ../src/bronze/ingest_pos_sales.py
+            parameters:
+              - --catalog
+              - "{{job.parameters.catalog}}"
+              - --source-path
+              - "{{job.parameters.pos_source_path}}"
+              - --checkpoint-path
+              - "{{job.parameters.checkpoint_root}}/pos_sales"
+              - --processing-date
+              - "{{job.parameters.processing_date}}"
+          environment_key: default
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
+            dependencies: []

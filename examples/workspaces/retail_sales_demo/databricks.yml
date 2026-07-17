@@ -1,0 +1,38 @@
+# Mock Databricks Asset Bundle 骨架，仅供代码生成上下文使用。
+bundle:
+  name: retail-sales-demo-mock
+
+include:
+  - resources/*.yml
+
+variables:
+  catalog:
+    description: 目标 Unity Catalog 名称。
+    default: retail_dev
+  pos_source_path:
+    description: POS Parquet 的模拟 Volume 路径。
+    default: /Volumes/retail_dev/landing/retail_input/pos
+  checkpoint_root:
+    description: 流式状态的模拟 Volume 根路径。
+    default: /Volumes/retail_dev/ops/retail_state/checkpoints
+
+targets:
+  dev:
+    default: true
+    mode: development
+    variables:
+      catalog: retail_dev
+      pos_source_path: /Volumes/retail_dev/landing/retail_input/pos
+      checkpoint_root: /Volumes/retail_dev/ops/retail_state/checkpoints
+  test:
+    mode: production
+    variables:
+      catalog: retail_test
+      pos_source_path: /Volumes/retail_test/landing/retail_input/pos
+      checkpoint_root: /Volumes/retail_test/ops/retail_state/checkpoints
+  prod:
+    mode: production
+    variables:
+      catalog: retail_prod
+      pos_source_path: /Volumes/retail_prod/landing/retail_input/pos
+      checkpoint_root: /Volumes/retail_prod/ops/retail_state/checkpoints
