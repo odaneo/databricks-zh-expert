@@ -1,0 +1,20 @@
+schema_version: 1
+tables:
+  - name: bronze.pos_sales_raw
+    purpose: 保存 POS 销售原始数据
+    fields:
+      - name: transaction_id
+        type: STRING
+        nullable: false
+      - name: _ingest_ts
+        type: TIMESTAMP
+        nullable: false
+  - name: gold.daily_sales
+    purpose: 提供每日门店销售指标
+    fields:
+      - name: business_date
+        type: DATE
+        nullable: false
+      - name: net_amount
+        type: DECIMAL(18,2)
+        nullable: false

@@ -1,0 +1,42 @@
+schema_version: 1
+id: retail_sales_demo
+display_name: AWS 零售销售分析 Demo
+description: 用于验证项目工作区契约的最小 AWS 零售销售模拟项目。
+version: 1.0.0
+cloud: aws
+is_mock: true
+default_context:
+  sql_generation:
+    - contract.tables
+  pyspark_generation:
+    - contract.tables
+    - project.overview
+sources:
+  - id: project.overview
+    kind: project
+    path: docs/project-overview.md
+    title: 项目概览
+    summary: 零售销售项目的业务范围、数据来源和分层目标。
+    prompt_names:
+      - sql_generation
+      - pyspark_generation
+    tags:
+      - 项目
+      - 零售销售
+      - AWS
+    always_include: false
+  - id: contract.tables
+    kind: schema
+    path: contracts/tables.yml
+    title: 项目表结构
+    summary: Bronze、Silver 和 Gold 表及字段定义。
+    prompt_names:
+      - sql_generation
+      - pyspark_generation
+    tags:
+      - 表结构
+      - 字段
+      - Bronze
+      - Silver
+      - Gold
+    always_include: true
