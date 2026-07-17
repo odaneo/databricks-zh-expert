@@ -5,11 +5,11 @@ from typing import Any, cast
 import pytest
 import yaml
 
-from databricks_zh_expert.prompts.registry import PromptName
 from databricks_zh_expert.workspace.constants import (
     WORKSPACE_ALLOWED_SUFFIXES,
     WORKSPACE_CONTEXT_MAX_TOKENS,
     WORKSPACE_CONTEXT_TOP_K,
+    WORKSPACE_PACKAGE_MAX_BYTES,
     WORKSPACE_ROOT,
     WORKSPACE_SOURCE_MAX_BYTES,
 )
@@ -17,13 +17,21 @@ from databricks_zh_expert.workspace.registry import (
     WorkspaceRegistry,
     WorkspaceRegistryError,
 )
-from databricks_zh_expert.workspace.types import WorkspaceSourceKind
+from databricks_zh_expert.workspace.types import WorkspaceMode, WorkspaceSourceKind
 
 FIXTURE_ROOT = Path(__file__).parents[1] / "fixtures" / "workspaces"
 
 
+def _workspace_root(root: Path) -> Path:
+    return root / "retail_sales_demo"
+
+
+def _package_root(root: Path) -> Path:
+    return _workspace_root(root) / ".databricks-expert"
+
+
 def _manifest_path(root: Path) -> Path:
-    return root / "retail_sales_demo" / ".databricks-expert" / "project.yml"
+    return _package_root(root) / "project.yml"
 
 
 def _load_manifest(root: Path) -> dict[str, Any]:
@@ -40,77 +48,121 @@ def _write_manifest(root: Path, payload: dict[str, Any]) -> None:
 
 def build_workspace_fixture(root: Path, *, mutation: str | None = None) -> Path:
     shutil.copytree(FIXTURE_ROOT / "valid", root)
-    workspace_root = root / "retail_sales_demo"
     payload = _load_manifest(root)
-    sources = cast(list[dict[str, Any]], payload["sources"])
+    source_schemas = cast(list[dict[str, Any]], payload["source_schemas"])
+    source_files = cast(list[str], source_schemas[0]["files"])
 
     if mutation == "unknown_manifest_field":
         payload["unexpected"] = True
+    elif mutation == "legacy_manifest":
+        payload["sources"] = []
     elif mutation == "invalid_workspace_id":
         payload["id"] = "Retail-Sales"
     elif mutation == "invalid_semver":
         payload["version"] = "1.0"
-    elif mutation == "unknown_prompt":
-        cast(list[str], sources[0]["prompt_names"]).append("not_registered")
-    elif mutation == "unknown_default_source":
-        cast(dict[str, list[str]], payload["default_context"])["sql_generation"] = [
-            "contract.missing"
-        ]
-    elif mutation == "absolute_source_path":
-        sources[0]["path"] = (root / "outside.md").resolve().as_posix()
-    elif mutation == "parent_traversal":
-        sources[0]["path"] = "../outside.md"
-    elif mutation == "forbidden_extension":
-        sources[0]["path"] = "docs/project-overview.exe"
+    elif mutation == "invalid_workspace_mode":
+        payload["workspace_mode"] = "existing"
+    elif mutation == "missing_requirements":
+        cast(dict[str, str], payload["documents"]).pop("requirements")
+    elif mutation == "missing_source_schemas":
+        payload["source_schemas"] = []
     elif mutation == "duplicate_source_id":
-        sources[0]["id"] = sources[1]["id"]
+        source_schemas.append(dict(source_schemas[0]))
+    elif mutation == "duplicate_source_file":
+        source_files.append(source_files[0])
+    elif mutation == "absolute_source_path":
+        source_files[0] = (root / "outside.sql").resolve().as_posix()
+    elif mutation == "parent_traversal":
+        source_files[0] = "../outside.sql"
+    elif mutation == "outside_source_directory":
+        source_files[0] = "rds-postgresql.sql"
+    elif mutation == "forbidden_extension":
+        source_files[0] = "source-schema/rds-postgresql.py"
 
     _write_manifest(root, payload)
 
-    source_path = workspace_root / "docs" / "project-overview.md"
+    source_path = _package_root(root) / "source-schema" / "rds-postgresql.sql"
     if mutation == "non_utf8_source":
         source_path.write_bytes(b"\xff\xfe\x00")
     elif mutation == "oversized_source":
         source_path.write_bytes(b"a" * (WORKSPACE_SOURCE_MAX_BYTES + 1))
+    elif mutation == "source_contains_dml":
+        source_path.write_text(
+            source_path.read_text(encoding="utf-8")
+            + "\nINSERT INTO public.customer VALUES ('1', 'secret@example.com', now());\n",
+            encoding="utf-8",
+        )
+    elif mutation == "missing_requirements_section":
+        requirements_path = _package_root(root) / "requirements.md"
+        requirements_path.write_text(
+            requirements_path.read_text(encoding="utf-8").replace(
+                "## 技术约束\n\n使用 AWS 和 Databricks 正式功能。\n\n",
+                "",
+            ),
+            encoding="utf-8",
+        )
+    elif mutation == "missing_rules_section":
+        rules_path = _package_root(root) / "business-rules.md"
+        rules_path.write_text(
+            rules_path.read_text(encoding="utf-8").replace(
+                "## PII 与权限\n\n邮箱属于直接识别字段。\n\n",
+                "",
+            ),
+            encoding="utf-8",
+        )
     return root
 
 
 def test_fixed_workspace_constants_and_source_kinds() -> None:
     assert WORKSPACE_ROOT == Path("examples/workspaces")
-    assert WORKSPACE_SOURCE_MAX_BYTES == 256_000
-    assert WORKSPACE_CONTEXT_TOP_K == 6
-    assert WORKSPACE_CONTEXT_MAX_TOKENS == 4_000
-    assert WORKSPACE_ALLOWED_SUFFIXES == frozenset({".md", ".yml", ".yaml", ".sql", ".py"})
+    assert WORKSPACE_SOURCE_MAX_BYTES == 2 * 1024 * 1024
+    assert WORKSPACE_PACKAGE_MAX_BYTES == 20 * 1024 * 1024
+    assert WORKSPACE_CONTEXT_TOP_K == 8
+    assert WORKSPACE_CONTEXT_MAX_TOKENS == 8_000
+    assert WORKSPACE_ALLOWED_SUFFIXES == frozenset({".md", ".sql"})
+    assert tuple(WorkspaceMode) == (WorkspaceMode.GREENFIELD,)
     assert tuple(WorkspaceSourceKind) == (
-        WorkspaceSourceKind.PROJECT,
-        WorkspaceSourceKind.SCHEMA,
-        WorkspaceSourceKind.MAPPING,
+        WorkspaceSourceKind.REQUIREMENT,
+        WorkspaceSourceKind.SOURCE_DDL,
         WorkspaceSourceKind.RULE,
-        WorkspaceSourceKind.DDL,
-        WorkspaceSourceKind.CODE,
-        WorkspaceSourceKind.BUNDLE,
     )
 
 
-def test_registry_loads_workspace_and_explicit_sources() -> None:
+def test_registry_loads_greenfield_workspace_sources() -> None:
     registry = WorkspaceRegistry.load(FIXTURE_ROOT / "valid")
 
-    assert tuple(workspace.workspace_id for workspace in registry.workspaces) == (
-        "retail_sales_demo",
-    )
     workspace = registry.get("retail_sales_demo")
+    assert workspace.workspace_mode is WorkspaceMode.GREENFIELD
     assert workspace.version == "1.0.0"
     assert workspace.cloud == "aws"
     assert workspace.is_mock is True
     assert [source.source_id for source in workspace.sources] == [
-        "contract.tables",
-        "project.overview",
+        "requirements",
+        "rules",
+        "source_ddl.rds_postgresql.rds-postgresql",
     ]
-    assert workspace.default_context[PromptName.SQL_GENERATION] == ("contract.tables",)
+    assert [source.kind for source in workspace.sources] == [
+        WorkspaceSourceKind.REQUIREMENT,
+        WorkspaceSourceKind.RULE,
+        WorkspaceSourceKind.SOURCE_DDL,
+    ]
+    assert workspace.sources[-1].dialect == "postgresql"
+    assert workspace.sources[-1].source_path == (
+        ".databricks-expert/source-schema/rds-postgresql.sql"
+    )
     assert len(workspace.source_hash) == 64
     assert all(len(source.content_hash) == 64 for source in workspace.sources)
     assert all("\\" not in source.source_path for source in workspace.sources)
     assert all("\r" not in source.content for source in workspace.sources)
+
+
+def test_registry_accepts_real_project_is_mock_false(tmp_path: Path) -> None:
+    root = build_workspace_fixture(tmp_path / "registry")
+    payload = _load_manifest(root)
+    payload["is_mock"] = False
+    _write_manifest(root, payload)
+
+    assert WorkspaceRegistry.load(root).get("retail_sales_demo").is_mock is False
 
 
 def test_registry_hash_is_stable_across_newline_styles(tmp_path: Path) -> None:
@@ -130,19 +182,26 @@ def test_registry_hash_is_stable_across_newline_styles(tmp_path: Path) -> None:
     ("mutation", "expected_message"),
     [
         ("unknown_manifest_field", "包含未知字段"),
+        ("legacy_manifest", "包含未知字段"),
         ("invalid_workspace_id", "工作区 ID"),
         ("invalid_semver", "版本必须使用 MAJOR.MINOR.PATCH"),
-        ("unknown_prompt", "Prompt 未注册"),
-        ("unknown_default_source", "默认上下文引用不存在"),
-        ("absolute_source_path", "必须使用工作区相对路径"),
+        ("invalid_workspace_mode", "模式必须为 greenfield"),
+        ("missing_requirements", "documents"),
+        ("missing_source_schemas", "至少登记一个源 Schema"),
+        ("duplicate_source_id", "源 Schema ID 不能重复"),
+        ("duplicate_source_file", "源 Schema 文件不能重复"),
+        ("absolute_source_path", "必须使用输入包相对路径"),
         ("parent_traversal", "不能包含 .."),
-        ("forbidden_extension", "文件类型不允许"),
+        ("outside_source_directory", "必须位于 source-schema 目录"),
+        ("forbidden_extension", "只允许 SQL"),
         ("non_utf8_source", "必须使用 UTF-8"),
         ("oversized_source", "超过最大大小"),
-        ("duplicate_source_id", "Source ID 不能重复"),
+        ("source_contains_dml", "不能包含数据写入语句"),
+        ("missing_requirements_section", "requirements.md 缺少章节：技术约束"),
+        ("missing_rules_section", "business-rules.md 缺少章节：PII 与权限"),
     ],
 )
-def test_registry_rejects_invalid_workspace(
+def test_registry_rejects_invalid_greenfield_workspace(
     tmp_path: Path,
     mutation: str,
     expected_message: str,
@@ -153,13 +212,13 @@ def test_registry_rejects_invalid_workspace(
         WorkspaceRegistry.load(root)
 
 
-def test_registry_rejects_symlink_escape_without_requiring_windows_symlink_permission(
+def test_registry_rejects_symlink_escape_without_windows_symlink_permission(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     root = build_workspace_fixture(tmp_path / "registry")
-    escaped_source = (root / "retail_sales_demo" / "docs" / "project-overview.md").absolute()
-    outside = (tmp_path / "outside.md").resolve()
+    escaped_source = (_package_root(root) / "source-schema" / "rds-postgresql.sql").absolute()
+    outside = (tmp_path / "outside.sql").resolve()
     original_resolve = Path.resolve
 
     def fake_resolve(path: Path, strict: bool = False) -> Path:
@@ -169,7 +228,7 @@ def test_registry_rejects_symlink_escape_without_requiring_windows_symlink_permi
 
     monkeypatch.setattr(Path, "resolve", fake_resolve)
 
-    with pytest.raises(WorkspaceRegistryError, match="工作区目录之外"):
+    with pytest.raises(WorkspaceRegistryError, match="输入包目录之外"):
         WorkspaceRegistry.load(root)
 
 

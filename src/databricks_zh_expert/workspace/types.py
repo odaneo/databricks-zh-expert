@@ -1,29 +1,31 @@
-from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
+from typing import Literal
 
-from databricks_zh_expert.prompts.registry import PromptName
+
+class WorkspaceMode(StrEnum):
+    GREENFIELD = "greenfield"
 
 
 class WorkspaceSourceKind(StrEnum):
-    PROJECT = "project"
-    SCHEMA = "schema"
-    MAPPING = "mapping"
+    REQUIREMENT = "requirement"
+    SOURCE_DDL = "source_ddl"
     RULE = "rule"
-    DDL = "ddl"
-    CODE = "code"
-    BUNDLE = "bundle"
+
+
+class WorkspaceContextPurpose(StrEnum):
+    DDL = "ddl_generation"
+    MAPPING = "mapping_generation"
+    SQL = "sql_generation"
+    PYSPARK = "pyspark_generation"
+    NOTEBOOK = "notebook_generation"
 
 
 @dataclass(frozen=True, slots=True)
 class WorkspaceSource:
     source_id: str
     kind: WorkspaceSourceKind
-    title: str
-    summary: str
-    prompt_names: tuple[PromptName, ...]
-    tags: tuple[str, ...]
-    always_include: bool
+    dialect: str | None
     source_path: str
     content: str
     content_hash: str
@@ -32,11 +34,61 @@ class WorkspaceSource:
 @dataclass(frozen=True, slots=True)
 class WorkspaceDefinition:
     workspace_id: str
+    workspace_mode: WorkspaceMode
     display_name: str
     description: str
     version: str
     cloud: str
     is_mock: bool
     source_hash: str
-    default_context: Mapping[PromptName, tuple[str, ...]]
     sources: tuple[WorkspaceSource, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class WorkspaceContextUnit:
+    unit_id: str
+    source_id: str
+    kind: WorkspaceSourceKind
+    dialect: str | None
+    source_path: str
+    title: str
+    content: str
+    content_hash: str
+    order: int
+
+
+@dataclass(frozen=True, slots=True)
+class WorkspaceContextCandidate:
+    rank: int
+    unit_id: str
+    source_id: str
+    kind: WorkspaceSourceKind
+    source_path: str
+    content_hash: str
+    score: float
+    selected: bool
+
+
+@dataclass(frozen=True, slots=True)
+class WorkspaceContextSelection:
+    unit_id: str
+    source_id: str
+    kind: WorkspaceSourceKind
+    source_path: str
+    content_hash: str
+    rank: int
+    reason: Literal["lexical", "fallback"]
+
+
+@dataclass(frozen=True, slots=True)
+class WorkspaceContextBundle:
+    workspace_id: str
+    workspace_mode: WorkspaceMode
+    workspace_version: str
+    workspace_source_hash: str
+    query: str
+    purpose: WorkspaceContextPurpose
+    ranked_candidates: tuple[WorkspaceContextCandidate, ...]
+    selected_units: tuple[WorkspaceContextSelection, ...]
+    context: str
+    context_token_count: int

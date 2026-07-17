@@ -1,111 +1,24 @@
 schema_version: 1
+workspace_mode: greenfield
 id: retail_sales_demo
 display_name: AWS 零售销售分析 Demo
-description: 基于 AWS 的零售销售 Databricks Mock 项目工作区。
+description: 从源系统 Schema 开始设计 Databricks Lakehouse 的 Mock 项目。
 version: 1.0.0
 cloud: aws
 is_mock: true
-default_context:
-  sql_generation:
-    - contract.tables
-    - contract.mappings
-    - contract.business_rules
-    - ddl.bronze
-    - ddl.silver
-    - ddl.gold
-  pyspark_generation:
-    - project.overview
-    - contract.tables
-    - contract.mappings
-    - contract.business_rules
-    - code.parameters
-    - code.pos_auto_loader
-sources:
-  - id: project.overview
-    kind: project
-    path: docs/project-overview.md
-    title: 项目概览
-    summary: AWS 零售销售 Mock 项目的范围、来源、分层和 SLA 假设。
-    prompt_names: [sql_generation, pyspark_generation]
-    tags: [项目, AWS, 零售销售, Mock, SLA]
-    always_include: false
-  - id: bundle.root
-    kind: bundle
-    path: databricks.yml
-    title: Databricks Asset Bundle 骨架
-    summary: dev、test、prod 三环境变量和资源入口的 Mock 配置。
-    prompt_names: [sql_generation, pyspark_generation]
-    tags: [bundle, 环境, catalog, 部署骨架]
-    always_include: false
-  - id: bundle.job
-    kind: bundle
-    path: resources/retail-sales.job.yml
-    title: 零售销售作业骨架
-    summary: POS Bronze 摄取任务和运行参数的 Mock Job 资源。
-    prompt_names: [sql_generation, pyspark_generation]
-    tags: [job, workflow, 参数, pos]
-    always_include: false
-  - id: contract.tables
-    kind: schema
-    path: contracts/tables.yml
-    title: 项目表结构
-    summary: 16 张 Bronze、Silver、Gold 逻辑表的字段、粒度和 PII 定义。
-    prompt_names: [sql_generation, pyspark_generation]
-    tags: [表结构, 字段, bronze, silver, gold, pii]
-    always_include: false
-  - id: contract.mappings
-    kind: mapping
-    path: contracts/mappings.yml
-    title: 源到目标映射
-    summary: POS、DMS、Kinesis、Silver 到四个 Gold 产品的字段映射。
-    prompt_names: [sql_generation, pyspark_generation]
-    tags: [映射, pos, dms, kinesis, gold]
-    always_include: false
-  - id: contract.business_rules
-    kind: rule
-    path: contracts/business-rules.yml
-    title: 项目业务规则
-    summary: CDC、去重、金额、PII、时区、发布和质量门规则。
-    prompt_names: [sql_generation, pyspark_generation]
-    tags: [业务规则, cdc, 去重, 金额, pii, sla]
-    always_include: false
-  - id: ddl.bronze
-    kind: ddl
-    path: sql/ddl/bronze.sql
-    title: Bronze DDL
-    summary: 六张 Bronze 原始表的 Databricks SQL Mock DDL。
-    prompt_names: [sql_generation]
-    tags: [ddl, sql, bronze, 原始层]
-    always_include: false
-  - id: ddl.silver
-    kind: ddl
-    path: sql/ddl/silver.sql
-    title: Silver DDL
-    summary: 六张 Silver 维度与事实表的 Databricks SQL Mock DDL。
-    prompt_names: [sql_generation]
-    tags: [ddl, sql, silver, 事实表, 维度表]
-    always_include: false
-  - id: ddl.gold
-    kind: ddl
-    path: sql/ddl/gold.sql
-    title: Gold DDL
-    summary: 四个 Gold 数据产品的 Databricks SQL Mock DDL。
-    prompt_names: [sql_generation]
-    tags: [ddl, sql, gold, 数据产品]
-    always_include: false
-  - id: code.parameters
-    kind: code
-    path: src/common/parameters.py
-    title: 运行参数样例
-    summary: Catalog、来源、checkpoint 和处理日期的集中参数读取方式。
-    prompt_names: [pyspark_generation]
-    tags: [python, 参数, catalog, checkpoint]
-    always_include: false
-  - id: code.pos_auto_loader
-    kind: code
-    path: src/bronze/ingest_pos_sales.py
-    title: POS Auto Loader 样例
-    summary: POS Parquet 显式 Schema、摄取元数据和 rescued data 的 PySpark 风格。
-    prompt_names: [pyspark_generation]
-    tags: [pyspark, auto_loader, pos, bronze, rescued_data]
-    always_include: false
+documents:
+  requirements: requirements.md
+  business_rules: business-rules.md
+source_schemas:
+  - id: rds_postgresql
+    dialect: postgresql
+    files:
+      - source-schema/rds-postgresql.sql
+  - id: pos_parquet
+    dialect: spark_sql
+    files:
+      - source-schema/pos-parquet.sql
+  - id: kinesis_events
+    dialect: spark_sql
+    files:
+      - source-schema/kinesis-events.sql

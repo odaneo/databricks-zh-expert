@@ -22,6 +22,7 @@ dependencies = [
     "python-dotenv==1.2.2",
     "pyyaml==6.0.3",
     "sqlalchemy[asyncio]==2.0.51",
+    "sqlparse==0.5.3",
     "tiktoken==0.13.0",
     "uvicorn[standard]==0.51.0",
 ]
