@@ -81,6 +81,12 @@ Remove-Item Env:DATABASE_URL
 uv run --locked python -m databricks_zh_expert.devtools.seed_demo_data
 ```
 
+初始化专家模板索引：
+
+```powershell
+uv run databricks-zh-expert-templates sync
+```
+
 ## 8. 运行项目检查
 
 ```powershell

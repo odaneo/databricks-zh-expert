@@ -57,6 +57,15 @@ class ExpertTemplateIndexNotReadyAppError(AppError):
         )
 
 
+class ExpertTemplateContextNotFoundAppError(AppError):
+    def __init__(self) -> None:
+        super().__init__(
+            code="expert_template_context_not_found",
+            message="没有找到可用的专家模板上下文。",
+            status_code=404,
+        )
+
+
 class EmbeddingNotConfiguredAppError(AppError):
     def __init__(self) -> None:
         super().__init__(

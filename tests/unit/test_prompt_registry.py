@@ -5,6 +5,17 @@ from databricks_zh_expert.prompts.registry import (
     PromptName,
 )
 
+EXPECTED_CONTEXT_POLICY = {
+    PromptName.DATABRICKS_QA: (False, True),
+    PromptName.KNOWLEDGE_QA: (True, False),
+    PromptName.SQL_GENERATION: (True, True),
+    PromptName.PYSPARK_GENERATION: (True, True),
+    PromptName.WORKFLOW_DESIGN: (True, True),
+    PromptName.PROPOSAL_GENERATION: (True, True),
+    PromptName.SELF_CHECK: (False, True),
+    PromptName.DOCUMENT_SUMMARY: (False, False),
+}
+
 
 def test_prompt_names_are_fixed() -> None:
     assert tuple(PromptName) == (
@@ -86,3 +97,9 @@ def test_code_prompts_do_not_require_document_sections() -> None:
     assert all(
         spec.required_sections for spec in PROMPT_SPECS if spec.name not in code_prompt_names
     )
+
+
+def test_prompt_context_policy_is_explicit() -> None:
+    assert {
+        spec.name: (spec.use_official_knowledge, spec.use_expert_templates) for spec in PROMPT_SPECS
+    } == EXPECTED_CONTEXT_POLICY

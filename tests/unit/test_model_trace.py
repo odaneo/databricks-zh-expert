@@ -13,6 +13,9 @@ from databricks_zh_expert.llm.client import JsonObject
 from databricks_zh_expert.llm.model_registry import ModelAlias
 from databricks_zh_expert.observability.model_trace import (
     ArtifactValidationTrace,
+    ExpertTemplateCandidateTrace,
+    ExpertTemplateSelectionTrace,
+    ExpertTemplateTrace,
     JsonlModelTraceSink,
     ModelCallTrace,
     RetrievalCandidateTrace,
@@ -67,6 +70,7 @@ def make_trace() -> ModelCallTrace:
             },
         },
         error=None,
+        expert_profile="generic",
     )
 
 
@@ -80,7 +84,7 @@ async def test_jsonl_trace_sink_writes_complete_utf8_input_and_output(tmp_path) 
 
     payload = json.loads(trace_path.read_text(encoding="utf-8"))
     assert payload == {
-        "schema_version": "1.4",
+        "schema_version": "1.5",
         "protocol": "openai.chat.completions",
         "trace": {
             "model_call_id": str(trace.model_call_id),
@@ -101,8 +105,10 @@ async def test_jsonl_trace_sink_writes_complete_utf8_input_and_output(tmp_path) 
                 "valid": True,
                 "violations": [],
             },
+            "expert_profile": "generic",
         },
         "retrieval": None,
+        "expert_templates": None,
         "request": trace.request,
         "response": trace.response,
         "error": None,
@@ -122,7 +128,7 @@ def test_trace_serializes_missing_artifact_validation_for_provider_failure() -> 
     assert payload["retrieval"] is None
 
 
-def test_trace_14_serializes_rag_scores_sources_and_actual_context() -> None:
+def test_trace_15_serializes_rag_scores_sources_and_actual_context() -> None:
     context = "【不可信资料开始】\n[S1] Retry guidance.\n【不可信资料结束】"
     retrieval = RetrievalTrace(
         embedding_model="text-embedding-3-small",
@@ -159,7 +165,7 @@ def test_trace_14_serializes_rag_scores_sources_and_actual_context() -> None:
 
     payload = json.loads(JsonlModelTraceSink._serialize(trace))
 
-    assert payload["schema_version"] == "1.4"
+    assert payload["schema_version"] == "1.5"
     assert payload["retrieval"] == {
         "embedding_model": "text-embedding-3-small",
         "latency_ms": 37,
@@ -179,6 +185,95 @@ def test_trace_14_serializes_rag_scores_sources_and_actual_context() -> None:
         "selected_urls": ["https://docs.databricks.com/aws/en/jobs/#retries"],
     }
     assert payload["request"]["messages"][1]["content"] == context
+
+
+def test_trace_15_serializes_expert_candidates_selections_and_actual_context() -> None:
+    expert_context = "以下内容是内部专家模板。\n【内部专家模板开始】"
+    expert_templates = ExpertTemplateTrace(
+        status="selected",
+        embedding_model="text-embedding-3-small",
+        latency_ms=31,
+        context_token_count=2140,
+        candidates=(
+            ExpertTemplateCandidateTrace(
+                template_id="retail.workflow_dag",
+                version="1.0.0",
+                rank=1,
+                vector_rank=1,
+                vector_score=0.82,
+                lexical_rank=2,
+                lexical_score=0.17,
+                fused_score=0.0325,
+                selected=True,
+            ),
+        ),
+        selected=(
+            ExpertTemplateSelectionTrace(
+                template_id="retail.workflow_dag",
+                version="1.0.0",
+                content_hash="a" * 64,
+                layer="retail_sales_demo",
+                profile="retail_sales_demo",
+                rank=1,
+                reason="semantic",
+                extends="workflow.lakeflow_jobs@1.0.0",
+            ),
+        ),
+    )
+    trace = replace(
+        make_trace(),
+        prompt_name=PromptName.WORKFLOW_DESIGN,
+        expert_profile="retail_sales_demo",
+        expert_templates=expert_templates,
+        request={
+            "model": "deepseek/deepseek-v4-flash",
+            "messages": [
+                {"role": "system", "content": "工作流系统 Prompt"},
+                {"role": "user", "content": expert_context},
+                {"role": "user", "content": "官方知识上下文"},
+                {"role": "user", "content": "设计零售工作流"},
+            ],
+        },
+    )
+
+    payload = json.loads(JsonlModelTraceSink._serialize(trace))
+
+    assert payload["schema_version"] == "1.5"
+    assert payload["trace"]["expert_profile"] == "retail_sales_demo"
+    assert payload["expert_templates"] == {
+        "status": "selected",
+        "embedding_model": "text-embedding-3-small",
+        "latency_ms": 31,
+        "context_token_count": 2140,
+        "candidates": [
+            {
+                "template_id": "retail.workflow_dag",
+                "version": "1.0.0",
+                "rank": 1,
+                "vector_rank": 1,
+                "vector_score": 0.82,
+                "lexical_rank": 2,
+                "lexical_score": 0.17,
+                "fused_score": 0.0325,
+                "selected": True,
+            }
+        ],
+        "selected": [
+            {
+                "template_id": "retail.workflow_dag",
+                "version": "1.0.0",
+                "content_hash": "a" * 64,
+                "layer": "retail_sales_demo",
+                "profile": "retail_sales_demo",
+                "rank": 1,
+                "reason": "semantic",
+                "extends": "workflow.lakeflow_jobs@1.0.0",
+            }
+        ],
+    }
+    assert payload["request"]["messages"][-3]["content"] == expert_context
+    assert "source_path" not in json.dumps(payload["expert_templates"])
+    assert "C:\\" not in json.dumps(payload["expert_templates"])
 
 
 def test_rag_trace_does_not_contain_credentials_raw_html_or_embedding_arrays() -> None:

@@ -9,6 +9,9 @@
 
 **技术栈：** Python 3.12.10、FastAPI、Pydantic 2、PyYAML、markdown-it-py、tiktoken、SQLAlchemy 2、Alembic、PostgreSQL、pgvector、OpenAI Embedding、LiteLLM、pytest、Ruff、Pyright、uv。
 
+**当前状态：** 实现、真实验收和代码提交均已完成。真实索引包含 37 个 active 模板和 121 个
+Chunk；固定评估 Recall@3 为 96.67%，Profile 泄漏和继承遗漏均为 0；两次 DeepSeek 冒烟及 Trace 1.5 已保留。
+
 ## 全局约束
 
 1. 第一版只支持 `generic` 与 `retail_sales_demo` 两个文件注册 Profile；默认值固定为 `generic`。
@@ -133,7 +136,7 @@ alembic/versions/0007_expert_templates.py
 - Produces: `profiles`、`templates`、`default_profile_id`、`source_hash` 只读属性。
 - Consumes: 现有 `PromptName`、PyYAML、markdown-it-py，不访问数据库或网络。
 
-- [ ] **Step 1: 先写 Registry 失败测试**
+- [x] **Step 1: 先写 Registry 失败测试**
 
 在 `tests/unit/test_expert_template_registry.py` 固定以下行为：
 
@@ -167,7 +170,7 @@ def test_registry_rejects_invalid_assets(tmp_path: Path, mutation: str, expected
 
 测试辅助函数必须在测试文件内写出完整、最小的 YAML 和 Markdown，不依赖生产资产。
 
-- [ ] **Step 2: 运行测试并确认因模块不存在而失败**
+- [x] **Step 2: 运行测试并确认因模块不存在而失败**
 
 ```powershell
 uv run --locked pytest tests/unit/test_expert_template_registry.py -q
@@ -175,7 +178,7 @@ uv run --locked pytest tests/unit/test_expert_template_registry.py -q
 
 预期：FAIL，错误包含 `ModuleNotFoundError: databricks_zh_expert.expert_templates`。
 
-- [ ] **Step 3: 实现严格类型与固定常量**
+- [x] **Step 3: 实现严格类型与固定常量**
 
 在 `constants.py` 定义规格中的根目录、Chunk、候选、top-k、token 和分数常量；不得读取 `.env`：
 
@@ -214,7 +217,7 @@ class ExpertTemplateSource:
     content_hash: str
 ```
 
-- [ ] **Step 4: 实现安全 Front Matter 与 Markdown Registry**
+- [x] **Step 4: 实现安全 Front Matter 与 Markdown Registry**
 
 `registry.py` 必须：
 
@@ -225,7 +228,7 @@ class ExpertTemplateSource:
 5. 对排序后的 `profiles.yml` 与 Markdown 内容 Hash 计算稳定 `source_hash`。
 6. 抛出只包含中文安全信息的 `ExpertTemplateRegistryError`，不泄露绝对路径。
 
-- [ ] **Step 5: 运行 Registry 测试**
+- [x] **Step 5: 运行 Registry 测试**
 
 ```powershell
 uv run --locked pytest tests/unit/test_expert_template_registry.py -q
@@ -233,7 +236,7 @@ uv run --locked pytest tests/unit/test_expert_template_registry.py -q
 
 预期：PASS。
 
-- [ ] **Step 6: 运行静态检查**
+- [x] **Step 6: 运行静态检查**
 
 ```powershell
 uv run --locked ruff format src/databricks_zh_expert/expert_templates tests/unit/test_expert_template_registry.py
@@ -243,7 +246,7 @@ uv run --locked pyright
 
 预期：Ruff 通过，Pyright 0 errors。
 
-- [ ] **Step 7: 提交任务 1**
+- [x] **Step 7: 提交任务 1**
 
 ```powershell
 git add src/databricks_zh_expert/expert_templates tests/unit/test_expert_template_registry.py tests/fixtures/expert_templates
@@ -295,7 +298,7 @@ git commit -m "feat: add expert template registry"
 - Produces: `generic` Profile 六个专家启用 Prompt 的默认模板映射。
 - Produces: 暂时注册 `retail_sales_demo`，其默认模板先指向 core；任务 3 再切换到覆盖资产。
 
-- [ ] **Step 1: 写生产资产目录测试**
+- [x] **Step 1: 写生产资产目录测试**
 
 ```python
 EXPECTED_CORE_IDS = {
@@ -342,7 +345,7 @@ def test_production_core_template_catalog_is_complete() -> None:
 另加测试保证六个专家启用 Prompt 均有默认模板、全部 `official_refs` 使用 HTTPS、代码模板含正确 fenced
 language，任何正文都不包含凭据样式或“已经执行成功”断言。
 
-- [ ] **Step 2: 运行测试并确认生产目录不存在**
+- [x] **Step 2: 运行测试并确认生产目录不存在**
 
 ```powershell
 uv run --locked pytest tests/unit/test_expert_template_content.py -q
@@ -350,7 +353,7 @@ uv run --locked pytest tests/unit/test_expert_template_content.py -q
 
 预期：FAIL，错误指出 `knowledge/expert_templates/profiles.yml` 不存在。
 
-- [ ] **Step 3: 编写 Profile 清单和 29 个核心资产**
+- [x] **Step 3: 编写 Profile 清单和 29 个核心资产**
 
 每个文件必须使用规格中的完整 Front Matter，版本从 `1.0.0` 开始。正文原则：
 
@@ -362,7 +365,7 @@ uv run --locked pytest tests/unit/test_expert_template_content.py -q
 6. 引用当前官方 Docs 或 AWS 文档时只写维护链接，不复制长篇原文。
 7. 不写 Preview 功能、价格、虚构基准、真实客户或已运行结果。
 
-- [ ] **Step 4: 运行内容和 Registry 测试**
+- [x] **Step 4: 运行内容和 Registry 测试**
 
 ```powershell
 uv run --locked pytest tests/unit/test_expert_template_registry.py tests/unit/test_expert_template_content.py -q
@@ -370,7 +373,7 @@ uv run --locked pytest tests/unit/test_expert_template_registry.py tests/unit/te
 
 预期：PASS，生产 Registry 加载 29 个 core 模板。
 
-- [ ] **Step 5: 检查模板长度和重复内容**
+- [x] **Step 5: 检查模板长度和重复内容**
 
 ```powershell
 Get-ChildItem knowledge/expert_templates/core -Recurse -Filter *.md | ForEach-Object { "{0}`t{1}" -f $_.Length, $_.FullName }
@@ -379,7 +382,7 @@ rg -n "Public Preview|Experimental|真实客户|已经执行成功" knowledge/ex
 
 预期：每个资产内容非空且尺寸合理；第二条命令无命中。人工抽查相邻模板没有整段重复。
 
-- [ ] **Step 6: 运行文档相关静态检查**
+- [x] **Step 6: 运行文档相关静态检查**
 
 ```powershell
 uv run --locked ruff check src/databricks_zh_expert/expert_templates tests/unit/test_expert_template_content.py
@@ -388,7 +391,7 @@ uv run --locked pyright
 
 预期：全部通过。
 
-- [ ] **Step 7: 提交任务 2**
+- [x] **Step 7: 提交任务 2**
 
 ```powershell
 git add knowledge/expert_templates src/databricks_zh_expert/expert_templates tests/unit/test_expert_template_content.py
@@ -418,7 +421,7 @@ git commit -m "feat: add core databricks expert templates"
 - Produces: 八个 `layer=retail_sales_demo`、`profile=retail_sales_demo`、`cloud=aws`、`is_mock=true` 资产。
 - Produces: Profile 的零售默认模板映射和六条显式 `extends` 关系。
 
-- [ ] **Step 1: 写覆盖层业务契约测试**
+- [x] **Step 1: 写覆盖层业务契约测试**
 
 ```python
 def test_retail_profile_contains_confirmed_mock_architecture() -> None:
@@ -446,7 +449,7 @@ def test_retail_profile_contains_confirmed_mock_architecture() -> None:
 
 另加断言覆盖四个 Gold 数据产品、五类角色、PII 边界、全部 Mock 标识和父模板存在性。
 
-- [ ] **Step 2: 运行测试并确认覆盖资产缺失**
+- [x] **Step 2: 运行测试并确认覆盖资产缺失**
 
 ```powershell
 uv run --locked pytest tests/unit/test_expert_template_content.py -q
@@ -454,7 +457,7 @@ uv run --locked pytest tests/unit/test_expert_template_content.py -q
 
 预期：FAIL，零售模板数量为 0。
 
-- [ ] **Step 3: 编写八个连贯的零售覆盖资产**
+- [x] **Step 3: 编写八个连贯的零售覆盖资产**
 
 内容必须共享同一套项目词汇和字段假设：
 
@@ -471,7 +474,7 @@ Schema: bronze、silver、gold、ops
 Gold 资产固定覆盖每日销售、商品表现、库存健康、客户与渠道。PII 原始联系方式只能出现在受限 Bronze
 假设中，Gold 只能保留分析标识和非直接识别属性。
 
-- [ ] **Step 4: 更新零售 Profile 默认模板**
+- [x] **Step 4: 更新零售 Profile 默认模板**
 
 `profiles.yml` 中 `retail_sales_demo` 保留 core + overlay 两层，并至少把：
 
@@ -483,7 +486,7 @@ self_check: [retail.production_acceptance]
 
 作为无语义命中时的默认值。默认映射引用的模板必须对相应 Prompt 可用。
 
-- [ ] **Step 5: 运行 Registry 和内容测试**
+- [x] **Step 5: 运行 Registry 和内容测试**
 
 ```powershell
 uv run --locked pytest tests/unit/test_expert_template_registry.py tests/unit/test_expert_template_content.py -q
@@ -491,7 +494,7 @@ uv run --locked pytest tests/unit/test_expert_template_registry.py tests/unit/te
 
 预期：PASS，总资产数为 37，零售层为 8，继承无循环。
 
-- [ ] **Step 6: 运行静态检查并提交任务 3**
+- [x] **Step 6: 运行静态检查并提交任务 3**
 
 ```powershell
 uv run --locked ruff check src tests/unit/test_expert_template_content.py
@@ -519,7 +522,7 @@ git commit -m "feat: add retail sales expert profile"
 - Produces: `ModelCall.expert_profile: str | None`、`expert_template_selections: list[dict[str, Any]] | None`。
 - Consumes: 阶段 4 已启用的 PostgreSQL `vector` 扩展和当前 Schema。
 
-- [ ] **Step 1: 扩展 ORM 与迁移测试断言**
+- [x] **Step 1: 扩展 ORM 与迁移测试断言**
 
 在 `tests/unit/test_models.py` 把预期表集合扩展为九张表，并断言：
 
@@ -533,7 +536,7 @@ assert ExpertTemplateChunkRecord.__table__.c.embedding.type.dim == 1536
 在迁移测试中执行 0006 -> 0007 -> 0006 -> 0007，确认历史 session 变为 `generic`，历史 model_call 两字段
 保持 NULL，三个新表和索引可重复创建与删除。
 
-- [ ] **Step 2: 运行模型与迁移测试并确认失败**
+- [x] **Step 2: 运行模型与迁移测试并确认失败**
 
 ```powershell
 uv run --locked pytest tests/unit/test_models.py tests/integration/test_migrations.py -q
@@ -541,7 +544,7 @@ uv run --locked pytest tests/unit/test_models.py tests/integration/test_migratio
 
 预期：FAIL，缺少 0007 和专家 ORM。
 
-- [ ] **Step 3: 实现 `0007_expert_templates`**
+- [x] **Step 3: 实现 `0007_expert_templates`**
 
 迁移必须一次完成：
 
@@ -553,7 +556,7 @@ uv run --locked pytest tests/unit/test_models.py tests/integration/test_migratio
 6. `template_id` active 部分唯一索引：`WHERE status = 'active'`。
 7. downgrade 先删 Chunk、模板和运行表，再删新增列；不修改原有业务表内容。
 
-- [ ] **Step 4: 实现 ORM 模型**
+- [x] **Step 4: 实现 ORM 模型**
 
 类名和表名固定为：
 
@@ -574,7 +577,7 @@ class ExpertTemplateSyncRun(Base):
 `model_calls` 两个新增字段保持可空且不加 server default。`extends_id` 使用自引用 FK，删除策略为
 RESTRICT。
 
-- [ ] **Step 5: 运行迁移、模型和会话回归测试**
+- [x] **Step 5: 运行迁移、模型和会话回归测试**
 
 ```powershell
 uv run --locked pytest tests/unit/test_models.py tests/integration/test_migrations.py tests/integration/test_sessions_api.py -q
@@ -585,7 +588,7 @@ uv run --locked alembic check
 
 预期：聚焦测试通过，current 为 0007，Alembic 无新操作。
 
-- [ ] **Step 6: 运行静态检查并提交任务 4**
+- [x] **Step 6: 运行静态检查并提交任务 4**
 
 ```powershell
 uv run --locked ruff format alembic/versions/0007_expert_templates.py src/databricks_zh_expert/db/models.py tests/unit/test_models.py tests/integration/test_migrations.py
@@ -618,7 +621,7 @@ git commit -m "feat: add expert template schema"
 - Produces: `extract_lexical_query()` 共享实现。
 - Preserves: `rag.chunker.MarkdownChunker.split(NormalizedDocument)` 和阶段 4 排序的外部行为。
 
-- [ ] **Step 1: 写共享组件契约测试**
+- [x] **Step 1: 写共享组件契约测试**
 
 ```python
 def test_shared_markdown_chunker_is_deterministic() -> None:
@@ -642,7 +645,7 @@ def test_rrf_ids_returns_stable_ranks() -> None:
     assert [item.item_id for item in result] == [UUID(int=2), UUID(int=1), UUID(int=3)]
 ```
 
-- [ ] **Step 2: 运行共享与阶段 4 回归测试并确认新测试失败**
+- [x] **Step 2: 运行共享与阶段 4 回归测试并确认新测试失败**
 
 ```powershell
 uv run --locked pytest tests/unit/test_search_markdown.py tests/unit/test_search_hybrid.py tests/unit/test_knowledge_chunker.py tests/unit/test_knowledge_retrieval.py -q
@@ -650,7 +653,7 @@ uv run --locked pytest tests/unit/test_search_markdown.py tests/unit/test_search
 
 预期：新模块不存在；原阶段 4 测试仍通过。
 
-- [ ] **Step 3: 移动通用 Chunk 实现并保留 RAG 适配器**
+- [x] **Step 3: 移动通用 Chunk 实现并保留 RAG 适配器**
 
 共享接口固定为：
 
@@ -676,7 +679,7 @@ class MarkdownChunk:
 `rag/chunker.py` 只负责把 `NormalizedDocument` 转为 `MarkdownSource`，并把共享 Chunk 暴露为兼容的
 `KnowledgeChunk`。不得改变阶段 4 anchor 修复、代码围栏、token 窗口和 source_ref 行为。
 
-- [ ] **Step 4: 抽取共享词法查询与 RRF ID 排名**
+- [x] **Step 4: 抽取共享词法查询与 RRF ID 排名**
 
 `search/hybrid.py` 返回不携带业务正文的稳定排名：
 
@@ -691,7 +694,7 @@ class FusionRank:
 
 阶段 4 `rag/retrieval.py` 使用该结果重新组装 `RankedKnowledgeChunk`，所有既有测试结果必须完全一致。
 
-- [ ] **Step 5: 运行共享和完整阶段 4 检索测试**
+- [x] **Step 5: 运行共享和完整阶段 4 检索测试**
 
 ```powershell
 uv run --locked pytest tests/unit/test_search_markdown.py tests/unit/test_search_hybrid.py tests/unit/test_knowledge_chunker.py tests/unit/test_knowledge_retrieval.py tests/unit/test_rag_context.py tests/unit/test_knowledge_eval.py -q
@@ -699,7 +702,7 @@ uv run --locked pytest tests/unit/test_search_markdown.py tests/unit/test_search
 
 预期：全部通过，阶段 4 Recall 相关测试无回归。
 
-- [ ] **Step 6: 运行静态检查并提交任务 5**
+- [x] **Step 6: 运行静态检查并提交任务 5**
 
 ```powershell
 uv run --locked ruff format src/databricks_zh_expert/search src/databricks_zh_expert/rag tests/unit/test_search_markdown.py tests/unit/test_search_hybrid.py
@@ -785,7 +788,7 @@ class TemplateListQuery:
 embedding_model、embedding_dimensions 和 queryable；`ExpertTemplateSyncResult` 使用与完成记录相同的计数字段，
 并增加 run_id、source_hash 与 dry_run。
 
-- [ ] **Step 1: 写原子同步单元测试**
+- [x] **Step 1: 写原子同步单元测试**
 
 使用 Fake Repository 和 Fake EmbeddingClient 固定以下状态机：
 
@@ -814,7 +817,7 @@ async def test_sync_rejects_same_version_with_changed_hash() -> None:
 另测 dry-run 不写库、Embedding 失败不发布、新版本激活旧版本失活、Git 删除立即失活、Chunk 与 Embedding
 顺序不一致直接失败。
 
-- [ ] **Step 2: 写 PostgreSQL Repository 集成测试**
+- [x] **Step 2: 写 PostgreSQL Repository 集成测试**
 
 `tests/integration/test_expert_template_repository.py` 必须验证：
 
@@ -826,7 +829,7 @@ async def test_sync_rejects_same_version_with_changed_hash() -> None:
 6. 发布事务故意抛错后，原 active 集合和最新成功 run 不变。
 7. `get_index_status(current_source_hash)` 只有 Hash、模型、维度和默认模板全部一致时 `queryable=true`。
 
-- [ ] **Step 3: 运行测试并确认实现缺失**
+- [x] **Step 3: 运行测试并确认实现缺失**
 
 ```powershell
 uv run --locked pytest tests/unit/test_expert_template_sync.py tests/unit/test_expert_template_cli.py tests/integration/test_expert_template_repository.py -q
@@ -834,7 +837,7 @@ uv run --locked pytest tests/unit/test_expert_template_sync.py tests/unit/test_e
 
 预期：FAIL，缺少 Repository、SyncService 和 CLI。
 
-- [ ] **Step 4: 实现 Repository 和原子发布 DTO**
+- [x] **Step 4: 实现 Repository 和原子发布 DTO**
 
 核心接口固定为：
 
@@ -851,7 +854,7 @@ class ExpertTemplateRepository:
 `publish_snapshot()` 必须在单个 `session.begin()` 中锁定当前 active 模板，插入新增版本与 Chunk，解析父记录，
 再统一激活、失活。同步服务在打开事务前完成所有 Markdown Chunk 与 Embedding 网络调用。
 
-- [ ] **Step 5: 实现同步服务**
+- [x] **Step 5: 实现同步服务**
 
 同步服务必须按 `registry.templates` 的稳定顺序处理，并使用：
 
@@ -866,7 +869,7 @@ MarkdownSource(
 生成共享 Chunk。Embedding 批次结果必须验证 index、模型和 1536 维；任何失败只完成 failed run，不调用
 `publish_snapshot()`。
 
-- [ ] **Step 6: 实现 CLI 与项目脚本**
+- [x] **Step 6: 实现 CLI 与项目脚本**
 
 在 `pyproject.toml` 增加：
 
@@ -877,7 +880,7 @@ databricks-zh-expert-templates = "databricks_zh_expert.expert_templates.cli:main
 CLI 采用阶段 4 相同的 Windows selector event loop 和 UTF-8 输出。`sync` 成功返回 0、同步失败返回 1、源
 契约无效返回 2；不输出 API Key、正文或绝对路径。
 
-- [ ] **Step 7: 更新锁文件并运行聚焦测试**
+- [x] **Step 7: 更新锁文件并运行聚焦测试**
 
 ```powershell
 uv lock
@@ -887,7 +890,7 @@ uv run --locked pytest tests/unit/test_expert_template_sync.py tests/unit/test_e
 
 预期：全部通过；`uv.lock` 只反映当前项目脚本元数据，不新增第三方包。
 
-- [ ] **Step 8: 运行静态与迁移检查**
+- [x] **Step 8: 运行静态与迁移检查**
 
 ```powershell
 uv run --locked ruff format src/databricks_zh_expert/expert_templates tests/unit/test_expert_template_sync.py tests/unit/test_expert_template_cli.py tests/integration/test_expert_template_repository.py
@@ -898,7 +901,7 @@ uv run --locked alembic check
 
 预期：全部通过。
 
-- [ ] **Step 9: 提交任务 6**
+- [x] **Step 9: 提交任务 6**
 
 ```powershell
 git add pyproject.toml uv.lock src/databricks_zh_expert/expert_templates tests/unit/test_expert_template_sync.py tests/unit/test_expert_template_cli.py tests/integration/test_expert_template_repository.py
@@ -931,7 +934,7 @@ git commit -m "feat: sync expert templates to postgres"
 - Produces: `ExpertTemplateEvaluator.evaluate_file(path) -> ExpertTemplateEvaluationResult`。
 - Consumes: 任务 5 RRF、任务 6 Repository、阶段 4 EmbeddingResult。
 
-- [ ] **Step 1: 写 Profile、Prompt 和 cloud 预过滤测试**
+- [x] **Step 1: 写 Profile、Prompt 和 cloud 预过滤测试**
 
 ```python
 async def test_generic_profile_never_returns_retail_overlay() -> None:
@@ -963,7 +966,7 @@ async def test_retail_overlay_loads_active_core_parent() -> None:
 另测不同 Prompt 排除无关资产、AWS Profile 同时允许 neutral 与 aws、generic 禁止 aws overlay、语义低于阈值
 时使用 `profiles.yml` 默认模板。
 
-- [ ] **Step 2: 写完整模板上下文预算测试**
+- [x] **Step 2: 写完整模板上下文预算测试**
 
 `ExpertTemplateContextBuilder` 测试必须证明：
 
@@ -974,7 +977,7 @@ async def test_retail_overlay_loads_active_core_parent() -> None:
 5. 文本明确写出用户、官方、overlay、core 的优先级。
 6. Context 不包含本地绝对路径和 `official_refs` 伪引用。
 
-- [ ] **Step 3: 写 30 条固定评估数据**
+- [x] **Step 3: 写 30 条固定评估数据**
 
 `tests/evals/expert_templates.yml` 固定以下覆盖组和 expected ID：
 
@@ -990,7 +993,7 @@ async def test_retail_overlay_loads_active_core_parent() -> None:
 总数固定为 30。每条 generic 数据增加 `forbidden_layers: [retail_sales_demo]`；零售继承用例同时列出父模板
 expected ID。
 
-- [ ] **Step 4: 运行新测试并确认实现缺失**
+- [x] **Step 4: 运行新测试并确认实现缺失**
 
 ```powershell
 uv run --locked pytest tests/unit/test_expert_template_retrieval.py tests/unit/test_expert_template_context.py tests/unit/test_expert_template_eval.py tests/integration/test_expert_template_retrieval.py -q
@@ -998,7 +1001,7 @@ uv run --locked pytest tests/unit/test_expert_template_retrieval.py tests/unit/t
 
 预期：FAIL，检索和上下文模块不存在。
 
-- [ ] **Step 5: 实现 Repository 候选查询**
+- [x] **Step 5: 实现 Repository 候选查询**
 
 向量与全文查询必须在 SQL 层应用 active、模型、Profile layer、cloud 和 Prompt JSONB 过滤，然后分别返回
 20 个候选。精确余弦与全文排序使用稳定 tie-break：template ID、version、chunk_index、UUID。
@@ -1024,7 +1027,7 @@ class ExpertTemplateCandidate:
     lexical_score: float | None
 ```
 
-- [ ] **Step 6: 实现检索、完整模板上下文和默认回退**
+- [x] **Step 6: 实现检索、完整模板上下文和默认回退**
 
 `ExpertTemplateRetriever` 不拥有 EmbeddingClient，只接受已经验证的 1536 维向量。使用共享
 `extract_lexical_query()` 与 `reciprocal_rank_fusion_ids()`，按模板最佳 Chunk 聚合，再交给 ContextBuilder。
@@ -1032,7 +1035,7 @@ class ExpertTemplateCandidate:
 如果没有满足阈值的语义与全文候选，从 Registry 的当前 Profile Prompt 默认 ID 构建上下文，并记录
 `reason="default"`；默认模板不存在则抛 `ExpertTemplateContextNotFoundError`。
 
-- [ ] **Step 7: 为官方 Retriever 增加向量复用入口**
+- [x] **Step 7: 为官方 Retriever 增加向量复用入口**
 
 ```python
 class KnowledgeRetriever:
@@ -1050,13 +1053,13 @@ class KnowledgeRetriever:
 
 原 `retrieve()` 行为和阶段 4 测试结果必须保持不变。
 
-- [ ] **Step 8: 实现评估器和 CLI `evaluate`**
+- [x] **Step 8: 实现评估器和 CLI `evaluate`**
 
 评估结果固定包含 query_count、hit_count、recall_at_3、profile_leak_count、inheritance_miss_count、passed。
 `passed` 只在 Recall@3 >= 0.90、Profile 泄漏为 0、继承缺失为 0 时为 true。CLI 失败返回 1，数据集无效
 返回 2。
 
-- [ ] **Step 9: 运行聚焦测试和阶段 4回归**
+- [x] **Step 9: 运行聚焦测试和阶段 4回归**
 
 ```powershell
 uv run --locked pytest tests/unit/test_expert_template_retrieval.py tests/unit/test_expert_template_context.py tests/unit/test_expert_template_eval.py tests/integration/test_expert_template_retrieval.py tests/unit/test_knowledge_retrieval.py tests/unit/test_knowledge_eval.py -q
@@ -1064,7 +1067,7 @@ uv run --locked pytest tests/unit/test_expert_template_retrieval.py tests/unit/t
 
 预期：全部通过。
 
-- [ ] **Step 10: 运行静态检查并提交任务 7**
+- [x] **Step 10: 运行静态检查并提交任务 7**
 
 ```powershell
 uv run --locked ruff format src/databricks_zh_expert/expert_templates src/databricks_zh_expert/rag/retrieval.py tests/unit/test_expert_template_retrieval.py tests/unit/test_expert_template_context.py tests/unit/test_expert_template_eval.py tests/integration/test_expert_template_retrieval.py
@@ -1104,7 +1107,7 @@ git commit -m "feat: retrieve and evaluate expert templates"
 - Produces: readiness 的 `expert_templates` 状态。
 - Consumes: 任务 1 Registry 与任务 6 Repository。
 
-- [ ] **Step 1: 写会话 Profile API 失败测试**
+- [x] **Step 1: 写会话 Profile API 失败测试**
 
 ```python
 async def test_create_session_defaults_to_generic_profile(client: AsyncClient) -> None:
@@ -1126,7 +1129,7 @@ async def test_create_session_rejects_unknown_profile(client: AsyncClient) -> No
 
 另测 Profile 出现在列表与详情，API 中不存在修改 Profile 的路由，历史会话默认 generic。
 
-- [ ] **Step 2: 写只读目录和 readiness 测试**
+- [x] **Step 2: 写只读目录和 readiness 测试**
 
 验证：
 
@@ -1138,7 +1141,7 @@ async def test_create_session_rejects_unknown_profile(client: AsyncClient) -> No
 
 `tests/conftest.py` 增加可复用的测试 Registry 和已就绪专家索引 fixture；不得让普通 API 测试访问 OpenAI。
 
-- [ ] **Step 3: 运行 API 测试并确认字段和路由缺失**
+- [x] **Step 3: 运行 API 测试并确认字段和路由缺失**
 
 ```powershell
 uv run --locked pytest tests/integration/test_sessions_api.py tests/integration/test_expert_templates_api.py tests/integration/test_health_ready.py tests/unit/test_health.py tests/unit/test_errors.py -q
@@ -1146,18 +1149,18 @@ uv run --locked pytest tests/integration/test_sessions_api.py tests/integration/
 
 预期：FAIL，缺少 Profile 字段、API 和 readiness 状态。
 
-- [ ] **Step 4: 在应用启动时加载并校验 Registry**
+- [x] **Step 4: 在应用启动时加载并校验 Registry**
 
 `create_app()` 增加可注入的 `expert_template_registry`，默认调用 `create_default()`，随后执行完整校验并保存到
 `app.state.expert_template_registry`。启动预检不得访问数据库或 OpenAI。
 
-- [ ] **Step 5: 实现不可变会话 Profile**
+- [x] **Step 5: 实现不可变会话 Profile**
 
 `SessionCreate.expert_profile` 是最长 100 的字符串，默认 `generic`。API 在调用
 `ChatRepository.create_session(title, expert_profile)` 前通过 Registry 验证。Repository 不允许更新
 `expert_profile`，SessionResponse 与 SessionDetail 只读返回该值。
 
-- [ ] **Step 6: 实现只读专家 API**
+- [x] **Step 6: 实现只读专家 API**
 
 API 响应模型固定为：
 
@@ -1187,12 +1190,12 @@ class ExpertTemplateMetadataResponse(BaseModel):
 
 列表 API 不提供正文详情端点、同步端点、写入端点或模板选择端点。
 
-- [ ] **Step 7: 扩展 readiness**
+- [x] **Step 7: 扩展 readiness**
 
 `ReadinessResponse` 增加 `expert_templates: Literal["ok"]`。数据库正常但 Registry 当前 Hash 与数据库最近成功
 同步不一致时抛 `expert_template_index_not_ready` 503。`/health` 与 `/health/live` 不查询数据库或模板索引。
 
-- [ ] **Step 8: 运行 API、回归和静态检查**
+- [x] **Step 8: 运行 API、回归和静态检查**
 
 ```powershell
 uv run --locked pytest tests/integration/test_sessions_api.py tests/integration/test_expert_templates_api.py tests/integration/test_health_ready.py tests/unit/test_health.py tests/unit/test_errors.py -q
@@ -1203,7 +1206,7 @@ uv run --locked pyright
 
 预期：全部通过。
 
-- [ ] **Step 9: 提交任务 8**
+- [x] **Step 9: 提交任务 8**
 
 ```powershell
 git add src/databricks_zh_expert/api src/databricks_zh_expert/chat/repository.py src/databricks_zh_expert/chat/schemas.py src/databricks_zh_expert/core/errors.py src/databricks_zh_expert/main.py tests/conftest.py tests/integration/test_expert_templates_api.py tests/integration/test_sessions_api.py tests/integration/test_health_ready.py tests/unit/test_health.py tests/unit/test_errors.py
@@ -1239,7 +1242,7 @@ git commit -m "feat: expose expert profiles and index status"
 - Produces: 每次新 `model_calls` 的 Profile 与专家选择 JSONB。
 - Preserves: 消息 API 请求与成功响应不增加模板字段，官方 citations 结构不变。
 
-- [ ] **Step 1: 写 Prompt 策略矩阵测试**
+- [x] **Step 1: 写 Prompt 策略矩阵测试**
 
 ```python
 EXPECTED_CONTEXT_POLICY = {
@@ -1263,7 +1266,7 @@ def test_prompt_context_policy_is_explicit() -> None:
 
 `PromptSpec` 新字段没有改变 Jinja2 正文，因此现有版本保持不变。
 
-- [ ] **Step 2: 写单次 Embedding 与上下文顺序测试**
+- [x] **Step 2: 写单次 Embedding 与上下文顺序测试**
 
 Fake EmbeddingClient 记录调用次数，Fake 官方与专家 Retriever 记录传入向量：
 
@@ -1284,7 +1287,7 @@ async def test_generation_prompt_reuses_one_embedding_for_two_retrievers() -> No
 ChatService 请求顺序断言为 system、历史、专家上下文、官方上下文、当前 user。knowledge_qa 只出现官方上下文，
 document_summary 两类都不出现。
 
-- [ ] **Step 3: 写错误与持久化边界测试**
+- [x] **Step 3: 写错误与持久化边界测试**
 
 验证：
 
@@ -1296,7 +1299,7 @@ document_summary 两类都不出现。
 6. assistant `source_citations` 只来自官方 RetrievalBundle。
 7. 消息 API 成功响应不出现 `expert_templates` 字段。
 
-- [ ] **Step 4: 写 Trace 1.5 序列化测试**
+- [x] **Step 4: 写 Trace 1.5 序列化测试**
 
 Trace 测试必须断言：
 
@@ -1313,7 +1316,7 @@ assert payload["request"]["messages"][-3]["content"].startswith("以下内容是
 候选必须包含 rank、vector/lexical rank 与 score、fused score、selected；选择必须包含 ID、版本、Hash、layer、
 profile、reason 和 extends。模板本地绝对路径不得出现。
 
-- [ ] **Step 5: 运行新测试并确认集成缺失**
+- [x] **Step 5: 运行新测试并确认集成缺失**
 
 ```powershell
 uv run --locked pytest tests/unit/test_prompt_registry.py tests/unit/test_chat_service.py tests/unit/test_model_trace.py tests/integration/test_messages_api.py tests/integration/test_knowledge_messages_api.py tests/integration/test_expert_template_messages_api.py -q
@@ -1321,7 +1324,7 @@ uv run --locked pytest tests/unit/test_prompt_registry.py tests/unit/test_chat_s
 
 预期：FAIL，缺少策略字段、ContextService 和 Trace 1.5。
 
-- [ ] **Step 6: 实现 `ChatContextService`**
+- [x] **Step 6: 实现 `ChatContextService`**
 
 ```python
 @dataclass(frozen=True, slots=True)
@@ -1343,7 +1346,7 @@ class ChatContextService:
 服务先检查所需索引状态，再只调用一次 `embed_query()`。如果 Prompt 两类都不需要，完全不调用 Embedding。
 它只返回领域 Bundle，不保存消息、model_call 或 Trace。
 
-- [ ] **Step 7: 改造 ChatService 编排**
+- [x] **Step 7: 改造 ChatService 编排**
 
 ChatService 从已读取 Session 获取不可变 Profile，保存 user message 后调用 ContextService。专家和官方上下文使用
 两个独立 `ModelMessage(role="user")` 放在当前 user 前，专家在前、官方在后。模型 fallback 复用同一
@@ -1355,7 +1358,7 @@ OpenAI；新增双检索集成测试显式覆盖真实 Repository 过滤和 Fake
 Artifact 成功后仅把官方 Bundle 转为 `source_citations`。模板选择不写 assistant message，也不进入 API
 成功响应。
 
-- [ ] **Step 8: 扩展 model_calls 与 Trace**
+- [x] **Step 8: 扩展 model_calls 与 Trace**
 
 `ChatRepository.create_model_call()` 增加：
 
@@ -1367,7 +1370,7 @@ expert_template_selections: list[dict[str, object]]
 每个阶段 5 新调用都写值。`build_trace()` 接受 `ExpertTemplateTrace | None`，JsonlModelTraceSink 输出 schema
 1.5；现有 `retrieval` 仍表示官方知识，字段含义不变。
 
-- [ ] **Step 9: 运行聚焦、API 和阶段 4 回归测试**
+- [x] **Step 9: 运行聚焦、API 和阶段 4 回归测试**
 
 ```powershell
 uv run --locked pytest tests/unit/test_prompt_registry.py tests/unit/test_chat_service.py tests/unit/test_model_trace.py tests/integration/test_messages_api.py tests/integration/test_knowledge_messages_api.py tests/integration/test_expert_template_messages_api.py -q
@@ -1375,7 +1378,7 @@ uv run --locked pytest tests/unit/test_prompt_registry.py tests/unit/test_chat_s
 
 预期：全部通过。
 
-- [ ] **Step 10: 运行静态检查并提交任务 9**
+- [x] **Step 10: 运行静态检查并提交任务 9**
 
 ```powershell
 uv run --locked ruff format src/databricks_zh_expert/chat src/databricks_zh_expert/prompts/registry.py src/databricks_zh_expert/observability/model_trace.py src/databricks_zh_expert/api/dependencies.py tests/unit/test_chat_service.py tests/unit/test_model_trace.py tests/integration/test_expert_template_messages_api.py
@@ -1403,7 +1406,7 @@ git commit -m "feat: apply expert templates to chat"
 - Produces: 真实专家索引、固定 Recall@3 结果、两次 DeepSeek Artifact、Trace 1.5 验收证据。
 - Produces: README 中一条必要同步步骤和总计划阶段 5 完成状态。
 
-- [ ] **Step 1: 从当前 head 执行完整自动验证**
+- [x] **Step 1: 从当前 head 执行完整自动验证**
 
 ```powershell
 git diff --check
@@ -1418,7 +1421,7 @@ uv run --locked alembic check
 预期：无 whitespace 错误；Ruff、Pyright、pytest 和 Alembic 全部通过；覆盖率不低于 80%。失败必须先
 定位根因并补回归测试，不能降低覆盖率门禁或删除既有测试。
 
-- [ ] **Step 2: 升级真实开发数据库并同步模板**
+- [x] **Step 2: 升级真实开发数据库并同步模板**
 
 ```powershell
 uv run --locked alembic upgrade head
@@ -1430,7 +1433,7 @@ uv run --locked databricks-zh-expert-templates status
 预期：dry-run 不写库；真实同步成功；active 模板 37、Chunk 大于等于 37、Profile 默认模板完整、当前源 Hash
 一致、queryable 为 true。不要删除阶段 4 知识表或重建已有官方索引。
 
-- [ ] **Step 3: 运行固定专家检索评估**
+- [x] **Step 3: 运行固定专家检索评估**
 
 ```powershell
 uv run --locked databricks-zh-expert-templates evaluate
@@ -1439,7 +1442,7 @@ uv run --locked databricks-zh-expert-templates evaluate
 预期：query_count=30、Recall@3 >= 0.90、profile_leak_count=0、inheritance_miss_count=0、passed=true。
 若未通过，保留失败数据，修改检索或模板内容并补测试；不得放宽 expected ID 来掩盖错误。
 
-- [ ] **Step 4: 启动服务并创建两个真实零售会话**
+- [x] **Step 4: 启动服务并创建两个真实零售会话**
 
 在单独终端执行精确启动命令：
 
@@ -1462,7 +1465,7 @@ $proposalResult = Invoke-RestMethod -Method Post -Uri ("http://127.0.0.1:8000/ap
 预期：两个请求均返回 201，Artifact 分别为 workflow_design 与 proposal；不要在验收脚本中删除这两个
 session。
 
-- [ ] **Step 5: 人工核对数据库与 Trace 1.5**
+- [x] **Step 5: 人工核对数据库与 Trace 1.5**
 
 按两个精确 session ID 核对：
 
@@ -1476,7 +1479,7 @@ session。
 
 **禁止执行任何 DELETE、TRUNCATE、按标题通配清理或 Trace 文件清理。**
 
-- [ ] **Step 6: 只更新必要启动步骤和总计划**
+- [x] **Step 6: 只更新必要启动步骤和总计划**
 
 README 只增加：
 
@@ -1487,7 +1490,7 @@ uv run databricks-zh-expert-templates sync
 作为迁移后的专家索引初始化步骤，不加入架构解释和预期输出。总计划将阶段 5 标记为实现与验收完成，并把
 近期下一步改为阶段 6 代码生成模块。
 
-- [ ] **Step 7: 再次执行最终验证**
+- [x] **Step 7: 再次执行最终验证**
 
 ```powershell
 git diff --check
@@ -1502,7 +1505,7 @@ uv run --locked alembic check
 
 预期：全部通过；Alembic current 为 0007；覆盖率不低于 80%；真实模板、会话和 Trace 仍存在。
 
-- [ ] **Step 8: 检查提交范围并提交阶段 5 收尾**
+- [x] **Step 8: 检查提交范围并提交阶段 5 收尾**
 
 ```powershell
 git status --short
@@ -1518,17 +1521,17 @@ git commit -m "docs: complete stage 5 acceptance"
 
 ## 阶段 5 完成定义
 
-- [ ] 37 个左右的模板均通过严格 Registry 校验，没有重复 ID、无效版本、循环继承或 Preview 内容。
-- [ ] generic 和 retail_sales_demo Profile 可创建会话，Profile 创建后不可修改。
-- [ ] 三张专家表与会话、model_calls 新字段完成迁移和回归验证。
-- [ ] 同步是增量、原子和可重建的；同版本不同 Hash 被拒绝，旧版本保留。
-- [ ] 官方知识与专家模板的数据、上下文、引用和审计完全分离。
-- [ ] 八种 Prompt 严格遵循规格中的官方/专家检索矩阵。
-- [ ] 需要双检索时只生成一次查询 Embedding。
-- [ ] model_calls 和 Trace 1.5 可以恢复实际 Profile、模板版本、Hash、排名、理由和继承。
-- [ ] 固定 30 条评估 Recall@3 >= 90%，Profile 泄漏与继承缺失均为 0。
-- [ ] 两次 deepseek-v4-flash 真实冒烟成功，所有验收数据和 Trace 保留。
-- [ ] Ruff、Pyright/Pylance、pytest、覆盖率和 Alembic 全部通过。
+- [x] 37 个左右的模板均通过严格 Registry 校验，没有重复 ID、无效版本、循环继承或 Preview 内容。
+- [x] generic 和 retail_sales_demo Profile 可创建会话，Profile 创建后不可修改。
+- [x] 三张专家表与会话、model_calls 新字段完成迁移和回归验证。
+- [x] 同步是增量、原子和可重建的；同版本不同 Hash 被拒绝，旧版本保留。
+- [x] 官方知识与专家模板的数据、上下文、引用和审计完全分离。
+- [x] 八种 Prompt 严格遵循规格中的官方/专家检索矩阵。
+- [x] 需要双检索时只生成一次查询 Embedding。
+- [x] model_calls 和 Trace 1.5 可以恢复实际 Profile、模板版本、Hash、排名、理由和继承。
+- [x] 固定 30 条评估 Recall@3 >= 90%，Profile 泄漏与继承缺失均为 0。
+- [x] 两次 deepseek-v4-flash 真实冒烟成功，所有验收数据和 Trace 保留。
+- [x] Ruff、Pyright/Pylance、pytest、覆盖率和 Alembic 全部通过。
 
 ## 实施交接
 

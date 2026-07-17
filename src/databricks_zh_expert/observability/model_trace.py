@@ -43,6 +43,41 @@ class RetrievalTrace:
 
 
 @dataclass(frozen=True, slots=True)
+class ExpertTemplateCandidateTrace:
+    template_id: str
+    version: str
+    rank: int
+    vector_rank: int | None
+    vector_score: float | None
+    lexical_rank: int | None
+    lexical_score: float | None
+    fused_score: float
+    selected: bool
+
+
+@dataclass(frozen=True, slots=True)
+class ExpertTemplateSelectionTrace:
+    template_id: str
+    version: str
+    content_hash: str
+    layer: str
+    profile: str | None
+    rank: int
+    reason: str
+    extends: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class ExpertTemplateTrace:
+    status: str
+    embedding_model: str
+    latency_ms: int
+    context_token_count: int
+    candidates: tuple[ExpertTemplateCandidateTrace, ...]
+    selected: tuple[ExpertTemplateSelectionTrace, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class ModelCallTrace:
     model_call_id: UUID
     invocation_id: UUID
@@ -63,6 +98,8 @@ class ModelCallTrace:
     response: JsonObject | None
     error: JsonObject | None
     retrieval: RetrievalTrace | None = None
+    expert_profile: str = "generic"
+    expert_templates: ExpertTemplateTrace | None = None
 
 
 class ModelTraceSink(Protocol):
@@ -99,7 +136,7 @@ class JsonlModelTraceSink:
     @staticmethod
     def _serialize(trace: ModelCallTrace) -> str:
         payload = {
-            "schema_version": "1.4",
+            "schema_version": "1.5",
             "protocol": "openai.chat.completions",
             "trace": {
                 "model_call_id": str(trace.model_call_id),
@@ -124,6 +161,7 @@ class JsonlModelTraceSink:
                     if trace.artifact_validation is not None
                     else None
                 ),
+                "expert_profile": trace.expert_profile,
             },
             "retrieval": (
                 {
@@ -146,6 +184,43 @@ class JsonlModelTraceSink:
                     "selected_urls": list(trace.retrieval.selected_urls),
                 }
                 if trace.retrieval is not None
+                else None
+            ),
+            "expert_templates": (
+                {
+                    "status": trace.expert_templates.status,
+                    "embedding_model": trace.expert_templates.embedding_model,
+                    "latency_ms": trace.expert_templates.latency_ms,
+                    "context_token_count": trace.expert_templates.context_token_count,
+                    "candidates": [
+                        {
+                            "template_id": candidate.template_id,
+                            "version": candidate.version,
+                            "rank": candidate.rank,
+                            "vector_rank": candidate.vector_rank,
+                            "vector_score": candidate.vector_score,
+                            "lexical_rank": candidate.lexical_rank,
+                            "lexical_score": candidate.lexical_score,
+                            "fused_score": candidate.fused_score,
+                            "selected": candidate.selected,
+                        }
+                        for candidate in trace.expert_templates.candidates
+                    ],
+                    "selected": [
+                        {
+                            "template_id": selection.template_id,
+                            "version": selection.version,
+                            "content_hash": selection.content_hash,
+                            "layer": selection.layer,
+                            "profile": selection.profile,
+                            "rank": selection.rank,
+                            "reason": selection.reason,
+                            "extends": selection.extends,
+                        }
+                        for selection in trace.expert_templates.selected
+                    ],
+                }
+                if trace.expert_templates is not None
                 else None
             ),
             "request": trace.request,

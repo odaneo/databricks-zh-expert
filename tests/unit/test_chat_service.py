@@ -8,10 +8,25 @@ import pytest
 
 from databricks_zh_expert.artifacts.markdown import MarkdownArtifactParser
 from databricks_zh_expert.artifacts.types import ArtifactType
+from databricks_zh_expert.chat.context import ChatContextBundle
 from databricks_zh_expert.chat.repository import ChatRepository
 from databricks_zh_expert.chat.service import ChatService
-from databricks_zh_expert.core.errors import AppError
+from databricks_zh_expert.core.errors import (
+    AppError,
+    EmbeddingRequestFailedAppError,
+    KnowledgeContextNotFoundAppError,
+    KnowledgeIndexNotReadyAppError,
+)
 from databricks_zh_expert.db.models import ChatSession, Message, ModelCall
+from databricks_zh_expert.expert_templates.context import (
+    ExpertTemplateRetrievalBundle,
+    ExpertTemplateSelection,
+    RankedExpertTemplateCandidate,
+)
+from databricks_zh_expert.expert_templates.types import (
+    ExpertTemplateCategory,
+    ExpertTemplateKind,
+)
 from databricks_zh_expert.llm.client import ModelMessage
 from databricks_zh_expert.llm.gateway import (
     ModelAttempt,
@@ -51,6 +66,40 @@ VALID_SQL = """```sql
 -- 汇总销售数据
 SELECT 1;
 ```"""
+VALID_WORKFLOW = """# AWS 零售销售工作流
+
+## 需求理解
+整合批处理、CDC 与实时事件。
+
+## 数据源假设
+使用 S3、RDS PostgreSQL 和 Kinesis。
+
+## Bronze 层设计
+保留原始数据与摄取元数据。
+
+## Silver 层设计
+完成清洗、去重和统一口径。
+
+## Gold 层设计
+生成销售主题汇总。
+
+## Notebook 拆分
+按摄取、清洗和聚合拆分。
+
+## Job 依赖关系
+Bronze 完成后执行 Silver，再执行 Gold。
+
+## 调度建议
+批处理每日调度，流处理持续运行。
+
+## 监控点
+监控延迟、失败和数据质量。
+
+## 风险点
+关注 CDC 重放和事件乱序。
+
+## 后续确认事项
+确认 SLA 与保留周期。"""
 VALID_KNOWLEDGE_ANSWER = """# Lakeflow Jobs 重试建议
 
 ## 结论
@@ -77,6 +126,7 @@ def make_session() -> ChatSession:
     return ChatSession(
         id=uuid4(),
         title="测试会话",
+        expert_profile="generic",
         created_at=NOW,
         updated_at=NOW,
     )
@@ -231,6 +281,8 @@ class FakeChatRepository:
         artifact_type: str,
         artifact_valid: bool | None,
         artifact_error_code: str | None,
+        expert_profile: str,
+        expert_template_selections: list[dict[str, object]],
     ) -> ModelCall:
         self.model_call_requests += 1
         if self.model_call_requests == self.fail_model_call_number:
@@ -254,6 +306,8 @@ class FakeChatRepository:
             artifact_type=artifact_type,
             artifact_valid=artifact_valid,
             artifact_error_code=artifact_error_code,
+            expert_profile=expert_profile,
+            expert_template_selections=expert_template_selections,
             error_message=error_message,
             created_at=NOW + timedelta(milliseconds=attempt_number),
         )
@@ -300,6 +354,69 @@ class FakeModelTraceSink:
 
     async def write(self, trace: ModelCallTrace) -> None:
         self.traces.append(trace)
+
+
+class FakeChatContextService:
+    def __init__(
+        self,
+        bundle: ChatContextBundle,
+        *,
+        error: AppError | None = None,
+        events: list[str] | None = None,
+    ) -> None:
+        self.bundle = bundle
+        self.error = error
+        self.events = events
+        self.requests: list[tuple[str, PromptName, str]] = []
+
+    async def build(
+        self,
+        query: str,
+        *,
+        prompt_spec,
+        expert_profile: str,
+    ) -> ChatContextBundle:
+        self.requests.append((query, prompt_spec.name, expert_profile))
+        if self.events is not None:
+            self.events.append("context")
+        if self.error is not None:
+            raise self.error
+        return self.bundle
+
+
+class FakeKnowledgeChatContextService:
+    def __init__(
+        self,
+        retriever: "FakeKnowledgeRetriever",
+        status_provider: "FakeKnowledgeStatusProvider",
+    ) -> None:
+        self.retriever = retriever
+        self.status_provider = status_provider
+
+    async def build(
+        self,
+        query: str,
+        *,
+        prompt_spec,
+        expert_profile: str,
+    ) -> ChatContextBundle:
+        del expert_profile
+        if prompt_spec.name is not PromptName.KNOWLEDGE_QA:
+            return ChatContextBundle(expert=None, official=None)
+        status = await self.status_provider.get_index_status()
+        if not status.queryable:
+            raise KnowledgeIndexNotReadyAppError()
+        try:
+            bundle = await self.retriever.retrieve(query)
+        except KnowledgeContextNotFoundError:
+            raise KnowledgeContextNotFoundAppError() from None
+        except EmbeddingRequestError:
+            raise EmbeddingRequestFailedAppError() from None
+        return ChatContextBundle(
+            expert=None,
+            official=bundle,
+            official_latency_ms=1,
+        )
 
 
 class FakeKnowledgeStatusProvider:
@@ -377,34 +494,189 @@ def make_retrieval_bundle() -> RetrievalBundle:
     return KnowledgeContextBuilder().build("如何配置失败重试？", (chunk,))
 
 
+def make_expert_retrieval_bundle() -> ExpertTemplateRetrievalBundle:
+    record_id = UUID("00000000-0000-0000-0000-000000000301")
+    candidate = RankedExpertTemplateCandidate(
+        chunk_id=UUID("00000000-0000-0000-0000-000000000302"),
+        template_record_id=record_id,
+        template_id="retail.workflow_dag",
+        version="1.0.0",
+        name="零售工作流依赖图",
+        layer="retail_sales_demo",
+        profile_id="retail_sales_demo",
+        kind=ExpertTemplateKind.BLUEPRINT,
+        category=ExpertTemplateCategory.WORKFLOW,
+        content_hash="3" * 64,
+        extends_record_id=UUID("00000000-0000-0000-0000-000000000303"),
+        matched_chunk_content="RDS DMS、S3 和 Kinesis 工作流。",
+        vector_similarity=0.91,
+        lexical_score=0.8,
+        vector_rank=1,
+        lexical_rank=1,
+        fused_score=(1 / 61) + (1 / 61),
+        reason="semantic",
+    )
+    selection = ExpertTemplateSelection(
+        record_id=record_id,
+        template_id="retail.workflow_dag",
+        version="1.0.0",
+        name="零售工作流依赖图",
+        content_hash="3" * 64,
+        layer="retail_sales_demo",
+        profile_id="retail_sales_demo",
+        rank=1,
+        reason="semantic",
+        extends="workflow.lakeflow_jobs@1.0.0",
+    )
+    return ExpertTemplateRetrievalBundle(
+        query="设计零售工作流",
+        profile_id="retail_sales_demo",
+        prompt_name=PromptName.WORKFLOW_DESIGN,
+        ranked_candidates=(candidate,),
+        selected_templates=(selection,),
+        context="以下内容是内部专家模板。\n【内部专家模板开始】\n零售工作流",
+        context_token_count=24,
+    )
+
+
 def build_service(
     repository: FakeChatRepository,
     model_gateway: FakeModelGateway,
     trace_sink: FakeModelTraceSink | None = None,
     *,
+    context_service: FakeChatContextService | None = None,
     knowledge_retriever: FakeKnowledgeRetriever | None = None,
     knowledge_status_provider: FakeKnowledgeStatusProvider | None = None,
 ) -> tuple[ChatService, FakeModelTraceSink]:
     trace_sink = trace_sink or FakeModelTraceSink()
-    if knowledge_retriever is None and knowledge_status_provider is None:
-        service = ChatService(
-            cast(ChatRepository, repository),
-            cast(ModelGateway, model_gateway),
-            cast(ModelTraceSink, trace_sink),
-            PromptRegistry.create_default(),
-            MarkdownArtifactParser(),
-        )
-    else:
-        service = ChatService(
-            cast(ChatRepository, repository),
-            cast(ModelGateway, model_gateway),
-            cast(ModelTraceSink, trace_sink),
-            PromptRegistry.create_default(),
-            MarkdownArtifactParser(),
-            knowledge_retriever=knowledge_retriever,
-            knowledge_status_provider=knowledge_status_provider,
-        )
+    if context_service is None:
+        if knowledge_retriever is not None and knowledge_status_provider is not None:
+            context_service = cast(
+                FakeChatContextService,
+                FakeKnowledgeChatContextService(
+                    knowledge_retriever,
+                    knowledge_status_provider,
+                ),
+            )
+        else:
+            context_service = FakeChatContextService(ChatContextBundle(expert=None, official=None))
+    service = ChatService(
+        cast(ChatRepository, repository),
+        cast(ModelGateway, model_gateway),
+        cast(ModelTraceSink, trace_sink),
+        PromptRegistry.create_default(),
+        MarkdownArtifactParser(),
+        context_service=context_service,
+    )
     return service, trace_sink
+
+
+@pytest.mark.asyncio
+async def test_dual_context_orders_messages_and_persists_same_audit_for_fallback() -> None:
+    session = make_session()
+    session.expert_profile = "retail_sales_demo"
+    historical_messages = [
+        make_message(session.id, "user", "历史问题", 0),
+        make_message(session.id, "assistant", "历史回答", 1),
+    ]
+    repository = FakeChatRepository(session, historical_messages)
+    invocation_id = uuid4()
+    gateway = FakeModelGateway(
+        [
+            make_attempt(
+                invocation_id=invocation_id,
+                model_alias=ModelAlias.GPT_55,
+                attempt_number=1,
+                success=False,
+                retryable=True,
+            ),
+            make_attempt(
+                invocation_id=invocation_id,
+                model_alias=ModelAlias.GPT_54_MINI,
+                attempt_number=2,
+                success=True,
+                content=VALID_WORKFLOW,
+            ),
+        ]
+    )
+    expert_bundle = make_expert_retrieval_bundle()
+    official_bundle = make_retrieval_bundle()
+    context_service = FakeChatContextService(
+        ChatContextBundle(
+            expert=expert_bundle,
+            official=official_bundle,
+            expert_latency_ms=11,
+            official_latency_ms=13,
+        ),
+        events=repository.events,
+    )
+    service, trace_sink = build_service(
+        repository,
+        gateway,
+        context_service=context_service,
+    )
+
+    result = await service.send_message(
+        session.id,
+        "设计零售工作流",
+        requested_prompt=PromptName.WORKFLOW_DESIGN,
+    )
+
+    assert context_service.requests == [
+        ("设计零售工作流", PromptName.WORKFLOW_DESIGN, "retail_sales_demo")
+    ]
+    assert repository.events[:2] == ["message:user", "context"]
+    assert [message.role for message in gateway.received_messages] == [
+        "system",
+        "user",
+        "assistant",
+        "user",
+        "user",
+        "user",
+    ]
+    assert [message.content for message in gateway.received_messages[-3:]] == [
+        expert_bundle.context,
+        official_bundle.context,
+        "设计零售工作流",
+    ]
+    expected_selections = [
+        {
+            "template_id": "retail.workflow_dag",
+            "version": "1.0.0",
+            "content_hash": "3" * 64,
+            "layer": "retail_sales_demo",
+            "profile": "retail_sales_demo",
+            "rank": 1,
+            "reason": "semantic",
+        }
+    ]
+    assert [call.expert_profile for call in repository.model_calls] == [
+        "retail_sales_demo",
+        "retail_sales_demo",
+    ]
+    assert [call.expert_template_selections for call in repository.model_calls] == [
+        expected_selections,
+        expected_selections,
+    ]
+    assert result.assistant_message.source_citations == _citation_payloads_for_test(official_bundle)
+    assert len(trace_sink.traces) == 2
+    assert trace_sink.traces[0].expert_profile == "retail_sales_demo"
+    assert trace_sink.traces[0].expert_templates is trace_sink.traces[1].expert_templates
+
+
+def _citation_payloads_for_test(bundle: RetrievalBundle) -> list[dict[str, object]]:
+    return [
+        {
+            "citation_id": citation.citation_id,
+            "rank": citation.rank,
+            "title": citation.title,
+            "url": citation.url,
+            "heading": citation.heading,
+            "chunk_id": str(citation.chunk_id),
+            "chunk_hash": citation.chunk_hash,
+        }
+        for citation in bundle.citations
+    ]
 
 
 @pytest.mark.asyncio

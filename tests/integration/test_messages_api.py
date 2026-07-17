@@ -1,4 +1,4 @@
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 from uuid import UUID, uuid4
 
 import pytest
@@ -7,7 +7,12 @@ from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from databricks_zh_expert.api.dependencies import get_model_gateway
+from databricks_zh_expert.api.dependencies import (
+    get_chat_context_service,
+    get_model_gateway,
+)
+from databricks_zh_expert.chat.context import ChatContextBundle
+from databricks_zh_expert.core.errors import KnowledgeIndexNotReadyAppError
 from databricks_zh_expert.db.models import ModelCall
 from databricks_zh_expert.llm.client import ModelMessage
 from databricks_zh_expert.llm.gateway import ModelAttempt
@@ -134,6 +139,29 @@ class FakeModelGateway:
             retryable=False,
             error=None,
         )
+
+
+class FakeChatContextService:
+    async def build(
+        self,
+        query: str,
+        *,
+        prompt_spec,
+        expert_profile: str,
+    ) -> ChatContextBundle:
+        del query, expert_profile
+        if prompt_spec.name.value == "knowledge_qa":
+            raise KnowledgeIndexNotReadyAppError()
+        return ChatContextBundle(expert=None, official=None)
+
+
+@pytest.fixture(autouse=True)
+def override_chat_context_service(test_app: FastAPI) -> Iterator[None]:
+    test_app.dependency_overrides[get_chat_context_service] = FakeChatContextService
+    try:
+        yield
+    finally:
+        test_app.dependency_overrides.pop(get_chat_context_service, None)
 
 
 async def test_send_message_supports_requested_model_and_persists_fallback_attempts(

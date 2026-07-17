@@ -8,14 +8,17 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from databricks_zh_expert.api.dependencies import (
+    get_chat_context_service,
     get_knowledge_repository,
     get_knowledge_retriever,
     get_model_gateway,
 )
-from databricks_zh_expert.db.models import Message
+from databricks_zh_expert.chat.context import ChatContextBundle
+from databricks_zh_expert.db.models import Message, ModelCall
 from databricks_zh_expert.llm.client import ModelMessage
 from databricks_zh_expert.llm.gateway import ModelAttempt
 from databricks_zh_expert.llm.model_registry import ModelAlias, ModelProvider
+from databricks_zh_expert.prompts.registry import PromptName
 from databricks_zh_expert.rag.context import (
     RankedKnowledgeChunk,
     RetrievalBundle,
@@ -88,6 +91,34 @@ class FakeKnowledgeRetriever:
     async def retrieve(self, query: str) -> RetrievalBundle:
         self.queries.append(query)
         return self.bundle
+
+
+class FakeChatContextService:
+    def __init__(
+        self,
+        retriever: FakeKnowledgeRetriever,
+        status_provider: FakeKnowledgeStatusProvider,
+    ) -> None:
+        self.retriever = retriever
+        self.status_provider = status_provider
+
+    async def build(
+        self,
+        query: str,
+        *,
+        prompt_spec,
+        expert_profile: str,
+    ) -> ChatContextBundle:
+        del expert_profile
+        if prompt_spec.name is not PromptName.KNOWLEDGE_QA:
+            return ChatContextBundle(expert=None, official=None)
+        status = await self.status_provider.get_index_status()
+        assert status.queryable is True
+        return ChatContextBundle(
+            expert=None,
+            official=await self.retriever.retrieve(query),
+            official_latency_ms=1,
+        )
 
 
 class FakeModelGateway:
@@ -197,6 +228,10 @@ async def test_knowledge_message_response_and_history_share_persisted_citations(
     gateway = FakeModelGateway()
     test_app.dependency_overrides[get_knowledge_retriever] = lambda: retriever
     test_app.dependency_overrides[get_knowledge_repository] = lambda: status_provider
+    test_app.dependency_overrides[get_chat_context_service] = lambda: FakeChatContextService(
+        retriever,
+        status_provider,
+    )
     test_app.dependency_overrides[get_model_gateway] = lambda: gateway
     create_response = await client.post(
         "/api/chat/sessions",
@@ -249,6 +284,12 @@ async def test_knowledge_message_response_and_history_share_persisted_citations(
     )
     assert stored_messages[0].source_citations is None
     assert stored_messages[1].source_citations == payload["assistant_message"]["source_citations"]
+    model_call = await test_db_session.scalar(
+        select(ModelCall).where(ModelCall.session_id == session_id)
+    )
+    assert model_call is not None
+    assert model_call.expert_profile == "generic"
+    assert model_call.expert_template_selections == []
 
 
 async def test_standard_message_history_keeps_null_citations(
@@ -260,6 +301,10 @@ async def test_standard_message_history_keeps_null_citations(
     gateway = FakeModelGateway()
     test_app.dependency_overrides[get_knowledge_retriever] = lambda: retriever
     test_app.dependency_overrides[get_knowledge_repository] = lambda: status_provider
+    test_app.dependency_overrides[get_chat_context_service] = lambda: FakeChatContextService(
+        retriever,
+        status_provider,
+    )
     test_app.dependency_overrides[get_model_gateway] = lambda: gateway
     create_response = await client.post(
         "/api/chat/sessions",

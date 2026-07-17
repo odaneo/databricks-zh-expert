@@ -1,6 +1,5 @@
 import logging
 from dataclasses import dataclass
-from time import perf_counter
 from typing import Protocol, cast
 from uuid import UUID
 
@@ -9,15 +8,13 @@ from databricks_zh_expert.artifacts.types import (
     ArtifactValidationError,
     MarkdownArtifact,
 )
+from databricks_zh_expert.chat.context import ChatContextBundle
 from databricks_zh_expert.chat.repository import ChatRepository
-from databricks_zh_expert.core.errors import (
-    AppError,
-    EmbeddingNotConfiguredAppError,
-    EmbeddingRequestFailedAppError,
-    KnowledgeContextNotFoundAppError,
-    KnowledgeIndexNotReadyAppError,
-)
+from databricks_zh_expert.core.errors import AppError
 from databricks_zh_expert.db.models import Message, ModelCall
+from databricks_zh_expert.expert_templates.context import (
+    ExpertTemplateRetrievalBundle,
+)
 from databricks_zh_expert.llm.client import ModelMessage, ModelRole
 from databricks_zh_expert.llm.gateway import (
     ModelAttempt,
@@ -27,6 +24,9 @@ from databricks_zh_expert.llm.gateway import (
 from databricks_zh_expert.llm.model_registry import ModelAlias
 from databricks_zh_expert.observability.model_trace import (
     ArtifactValidationTrace,
+    ExpertTemplateCandidateTrace,
+    ExpertTemplateSelectionTrace,
+    ExpertTemplateTrace,
     ModelCallTrace,
     ModelTraceSink,
     RetrievalCandidateTrace,
@@ -35,30 +35,24 @@ from databricks_zh_expert.observability.model_trace import (
 from databricks_zh_expert.prompts.registry import (
     PromptName,
     PromptRegistry,
+    PromptSpec,
     PromptUnavailableError,
     RenderedPrompt,
 )
 from databricks_zh_expert.rag.constants import EMBEDDING_MODEL
-from databricks_zh_expert.rag.context import (
-    KnowledgeContextNotFoundError,
-    RetrievalBundle,
-)
-from databricks_zh_expert.rag.embeddings import (
-    EmbeddingInputError,
-    EmbeddingNotConfiguredError,
-    EmbeddingRequestError,
-)
-from databricks_zh_expert.rag.repository import KnowledgeIndexStatus
+from databricks_zh_expert.rag.context import RetrievalBundle
 
 logger = logging.getLogger(__name__)
 
 
-class KnowledgeRetriever(Protocol):
-    async def retrieve(self, query: str) -> RetrievalBundle: ...
-
-
-class KnowledgeStatusProvider(Protocol):
-    async def get_index_status(self) -> KnowledgeIndexStatus: ...
+class ChatContextBuilder(Protocol):
+    async def build(
+        self,
+        query: str,
+        *,
+        prompt_spec: PromptSpec,
+        expert_profile: str,
+    ) -> ChatContextBundle: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,6 +77,8 @@ def build_trace(
     rendered_prompt: RenderedPrompt,
     artifact_validation: ArtifactValidationTrace | None,
     retrieval: RetrievalTrace | None,
+    expert_profile: str,
+    expert_templates: ExpertTemplateTrace | None,
 ) -> ModelCallTrace:
     return ModelCallTrace(
         model_call_id=model_call.id,
@@ -104,6 +100,8 @@ def build_trace(
         response=attempt.response,
         error=attempt.error,
         retrieval=retrieval,
+        expert_profile=expert_profile,
+        expert_templates=expert_templates,
     )
 
 
@@ -116,16 +114,14 @@ class ChatService:
         prompt_registry: PromptRegistry,
         artifact_parser: MarkdownArtifactParser,
         *,
-        knowledge_retriever: KnowledgeRetriever | None = None,
-        knowledge_status_provider: KnowledgeStatusProvider | None = None,
+        context_service: ChatContextBuilder,
     ) -> None:
         self.repository = repository
         self.model_gateway = model_gateway
         self.trace_sink = trace_sink
         self.prompt_registry = prompt_registry
         self.artifact_parser = artifact_parser
-        self.knowledge_retriever = knowledge_retriever
-        self.knowledge_status_provider = knowledge_status_provider
+        self.context_service = context_service
 
     async def send_message(
         self,
@@ -161,10 +157,28 @@ class ChatService:
             session_id,
             limit=20,
         )
-        retrieval_bundle: RetrievalBundle | None = None
-        retrieval_trace: RetrievalTrace | None = None
-        if rendered_prompt.name is PromptName.KNOWLEDGE_QA:
-            retrieval_bundle, retrieval_trace = await self._retrieve_knowledge(content)
+        context_bundle = await self.context_service.build(
+            content,
+            prompt_spec=prompt_spec,
+            expert_profile=session.expert_profile,
+        )
+        retrieval_trace = (
+            _retrieval_trace(
+                context_bundle.official,
+                latency_ms=context_bundle.official_latency_ms,
+            )
+            if context_bundle.official is not None
+            else None
+        )
+        expert_template_trace = (
+            _expert_template_trace(
+                context_bundle.expert,
+                latency_ms=context_bundle.expert_latency_ms,
+            )
+            if context_bundle.expert is not None
+            else None
+        )
+        expert_template_selections = _expert_template_selection_payloads(context_bundle.expert)
 
         historical_messages = [
             message
@@ -181,11 +195,18 @@ class ChatService:
                 for message in historical_messages
             ],
         ]
-        if retrieval_bundle is not None:
+        if context_bundle.expert is not None:
             model_messages.append(
                 ModelMessage(
                     role="user",
-                    content=retrieval_bundle.context,
+                    content=context_bundle.expert.context,
+                )
+            )
+        if context_bundle.official is not None:
+            model_messages.append(
+                ModelMessage(
+                    role="user",
+                    content=context_bundle.official.context,
                 )
             )
         model_messages.append(ModelMessage(role="user", content=content))
@@ -245,6 +266,8 @@ class ChatService:
                     artifact_error_code=(
                         "artifact_invalid" if artifact_error is not None else None
                     ),
+                    expert_profile=session.expert_profile,
+                    expert_template_selections=expert_template_selections,
                 )
                 await self.trace_sink.write(
                     build_trace(
@@ -254,6 +277,8 @@ class ChatService:
                         rendered_prompt,
                         artifact_validation,
                         retrieval_trace,
+                        session.expert_profile,
+                        expert_template_trace,
                     )
                 )
 
@@ -280,8 +305,8 @@ class ChatService:
                         artifact.content,
                         artifact_type=artifact.artifact_type,
                         source_citations=(
-                            _citation_payloads(retrieval_bundle)
-                            if retrieval_bundle is not None
+                            _citation_payloads(context_bundle.official)
+                            if context_bundle.official is not None
                             else None
                         ),
                     )
@@ -306,29 +331,6 @@ class ChatService:
             ) from None
 
         raise RuntimeError("模型网关未返回成功尝试。")
-
-    async def _retrieve_knowledge(
-        self,
-        query: str,
-    ) -> tuple[RetrievalBundle, RetrievalTrace]:
-        if self.knowledge_retriever is None or self.knowledge_status_provider is None:
-            raise KnowledgeIndexNotReadyAppError()
-
-        status = await self.knowledge_status_provider.get_index_status()
-        if not status.queryable:
-            raise KnowledgeIndexNotReadyAppError()
-
-        started_at = perf_counter()
-        try:
-            bundle = await self.knowledge_retriever.retrieve(query)
-        except KnowledgeContextNotFoundError:
-            raise KnowledgeContextNotFoundAppError() from None
-        except EmbeddingNotConfiguredError:
-            raise EmbeddingNotConfiguredAppError() from None
-        except (EmbeddingInputError, EmbeddingRequestError):
-            raise EmbeddingRequestFailedAppError() from None
-        latency_ms = round((perf_counter() - started_at) * 1000)
-        return bundle, _retrieval_trace(bundle, latency_ms=latency_ms)
 
 
 def _citation_payloads(bundle: RetrievalBundle) -> list[dict[str, object]]:
@@ -367,4 +369,66 @@ def _retrieval_trace(bundle: RetrievalBundle, *, latency_ms: int) -> RetrievalTr
         latency_ms=latency_ms,
         candidates=candidates,
         selected_urls=tuple(citation.url for citation in bundle.citations),
+    )
+
+
+def _expert_template_selection_payloads(
+    bundle: ExpertTemplateRetrievalBundle | None,
+) -> list[dict[str, object]]:
+    if bundle is None:
+        return []
+    return [
+        {
+            "template_id": selection.template_id,
+            "version": selection.version,
+            "content_hash": selection.content_hash,
+            "layer": selection.layer,
+            "profile": selection.profile_id,
+            "rank": selection.rank,
+            "reason": selection.reason,
+        }
+        for selection in bundle.selected_templates
+    ]
+
+
+def _expert_template_trace(
+    bundle: ExpertTemplateRetrievalBundle,
+    *,
+    latency_ms: int,
+) -> ExpertTemplateTrace:
+    selected_ids = {selection.record_id for selection in bundle.selected_templates}
+    candidates = tuple(
+        ExpertTemplateCandidateTrace(
+            template_id=candidate.template_id,
+            version=candidate.version,
+            rank=rank,
+            vector_rank=candidate.vector_rank,
+            vector_score=candidate.vector_similarity,
+            lexical_rank=candidate.lexical_rank,
+            lexical_score=candidate.lexical_score,
+            fused_score=candidate.fused_score,
+            selected=candidate.template_record_id in selected_ids,
+        )
+        for rank, candidate in enumerate(bundle.ranked_candidates, start=1)
+    )
+    selected = tuple(
+        ExpertTemplateSelectionTrace(
+            template_id=selection.template_id,
+            version=selection.version,
+            content_hash=selection.content_hash,
+            layer=selection.layer,
+            profile=selection.profile_id,
+            rank=selection.rank,
+            reason=selection.reason,
+            extends=selection.extends,
+        )
+        for selection in bundle.selected_templates
+    )
+    return ExpertTemplateTrace(
+        status="selected",
+        embedding_model=EMBEDDING_MODEL,
+        latency_ms=latency_ms,
+        context_token_count=bundle.context_token_count,
+        candidates=candidates,
+        selected=selected,
     )

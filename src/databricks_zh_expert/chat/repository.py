@@ -100,6 +100,8 @@ class ChatRepository:
         artifact_type: str,
         artifact_valid: bool | None,
         artifact_error_code: str | None,
+        expert_profile: str,
+        expert_template_selections: list[dict[str, object]],
     ) -> ModelCall:
         model_call = ModelCall(
             session_id=session_id,
@@ -119,6 +121,8 @@ class ChatRepository:
             artifact_type=artifact_type,
             artifact_valid=artifact_valid,
             artifact_error_code=artifact_error_code,
+            expert_profile=expert_profile,
+            expert_template_selections=expert_template_selections,
             error_message=error_message,
         )
         self.db.add(model_call)

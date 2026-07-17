@@ -27,6 +27,8 @@ class PromptSpec:
     artifact_type: ArtifactType
     required_sections: tuple[str, ...]
     code_fence_language: str | None
+    use_official_knowledge: bool
+    use_expert_templates: bool
     available: bool
     unavailable_reason: str | None
 
@@ -59,6 +61,8 @@ PROMPT_SPECS: Final[tuple[PromptSpec, ...]] = (
         artifact_type=ArtifactType.ANSWER,
         required_sections=_ANSWER_SECTIONS,
         code_fence_language=None,
+        use_official_knowledge=False,
+        use_expert_templates=True,
         available=True,
         unavailable_reason=None,
     ),
@@ -71,6 +75,8 @@ PROMPT_SPECS: Final[tuple[PromptSpec, ...]] = (
         artifact_type=ArtifactType.SQL,
         required_sections=(),
         code_fence_language="sql",
+        use_official_knowledge=True,
+        use_expert_templates=True,
         available=True,
         unavailable_reason=None,
     ),
@@ -83,6 +89,8 @@ PROMPT_SPECS: Final[tuple[PromptSpec, ...]] = (
         artifact_type=ArtifactType.PYSPARK,
         required_sections=(),
         code_fence_language="python",
+        use_official_knowledge=True,
+        use_expert_templates=True,
         available=True,
         unavailable_reason=None,
     ),
@@ -107,6 +115,8 @@ PROMPT_SPECS: Final[tuple[PromptSpec, ...]] = (
             "后续确认事项",
         ),
         code_fence_language=None,
+        use_official_knowledge=True,
+        use_expert_templates=True,
         available=True,
         unavailable_reason=None,
     ),
@@ -125,6 +135,8 @@ PROMPT_SPECS: Final[tuple[PromptSpec, ...]] = (
             "待确认事项",
         ),
         code_fence_language=None,
+        use_official_knowledge=False,
+        use_expert_templates=False,
         available=True,
         unavailable_reason=None,
     ),
@@ -137,6 +149,8 @@ PROMPT_SPECS: Final[tuple[PromptSpec, ...]] = (
         artifact_type=ArtifactType.ANSWER,
         required_sections=(*_ANSWER_SECTIONS, "引用来源"),
         code_fence_language=None,
+        use_official_knowledge=True,
+        use_expert_templates=False,
         available=True,
         unavailable_reason=None,
     ),
@@ -157,6 +171,8 @@ PROMPT_SPECS: Final[tuple[PromptSpec, ...]] = (
             "待确认事项",
         ),
         code_fence_language=None,
+        use_official_knowledge=True,
+        use_expert_templates=True,
         available=True,
         unavailable_reason=None,
     ),
@@ -175,6 +191,8 @@ PROMPT_SPECS: Final[tuple[PromptSpec, ...]] = (
             "人工确认事项",
         ),
         code_fence_language=None,
+        use_official_knowledge=False,
+        use_expert_templates=True,
         available=True,
         unavailable_reason=None,
     ),
