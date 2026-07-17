@@ -3,6 +3,7 @@ from collections.abc import Iterable
 import pytest
 
 from databricks_zh_expert.artifacts.markdown import (
+    MAPPING_CSV_HEADER,
     MAX_ARTIFACT_CHARS,
     MarkdownArtifactParser,
 )
@@ -38,9 +39,18 @@ def test_parser_accepts_every_available_artifact(prompt_name: PromptName) -> Non
     if prompt_name is PromptName.SQL_GENERATION:
         content = "```sql\n-- 用途：测试\nSELECT 1;\n```"
         expected_title = "Databricks SQL"
+    elif prompt_name is PromptName.DDL_GENERATION:
+        content = "```sql\nCREATE TABLE catalog.schema.proposed_table (id STRING);\n```"
+        expected_title = "Databricks DDL 提案"
+    elif prompt_name is PromptName.MAPPING_GENERATION:
+        content = f"```csv\n{MAPPING_CSV_HEADER}\nmap_1,source.a,id,target.a,id,,,,,\n```"
+        expected_title = "源到目标 Mapping 提案"
     elif prompt_name is PromptName.PYSPARK_GENERATION:
         content = "```python\n# 用途：测试\nprint(1)\n```"
         expected_title = "PySpark"
+    elif prompt_name is PromptName.NOTEBOOK_GENERATION:
+        content = "```python\n# Databricks notebook source\nprint(1)\n```"
+        expected_title = "Databricks Notebook 提案"
     else:
         content = build_document(spec)
         expected_title = "测试交付物"
@@ -156,6 +166,20 @@ def test_pyspark_requires_a_python_fence() -> None:
         "code_fence_not_first",
         "missing_python_fence",
     )
+
+
+def test_mapping_requires_one_csv_fence_with_the_fixed_header() -> None:
+    spec = SPECS[PromptName.MAPPING_GENERATION]
+
+    assert get_violations(spec, "```sql\nSELECT 1;\n```") == (
+        "code_fence_not_first",
+        "missing_csv_fence",
+    )
+    assert get_violations(spec, "```csv\na,b,c\n1,2,3\n```") == ("csv_header_invalid",)
+    assert get_violations(
+        spec,
+        f"```csv\n{MAPPING_CSV_HEADER}\n```\n\n```csv\n{MAPPING_CSV_HEADER}\n```",
+    ) == ("multiple_csv_fences",)
 
 
 def test_code_artifact_allows_more_than_three_trailing_notes() -> None:

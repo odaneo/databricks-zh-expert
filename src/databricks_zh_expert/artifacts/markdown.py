@@ -1,4 +1,6 @@
+import csv
 from collections.abc import Iterator, Sequence
+from io import StringIO
 
 from markdown_it import MarkdownIt
 from markdown_it.token import Token
@@ -10,6 +12,19 @@ from databricks_zh_expert.artifacts.types import (
 from databricks_zh_expert.prompts.registry import PromptSpec
 
 MAX_ARTIFACT_CHARS = 100_000
+MAPPING_CSV_COLUMNS = (
+    "mapping_id",
+    "source_table",
+    "source_column",
+    "target_table",
+    "target_column",
+    "transformation",
+    "join_condition",
+    "filter_condition",
+    "aggregation",
+    "notes",
+)
+MAPPING_CSV_HEADER = ",".join(MAPPING_CSV_COLUMNS)
 
 
 def normalize_markdown(content: str) -> str:
@@ -66,7 +81,9 @@ class MarkdownArtifactParser:
         if any(token.type in {"html_block", "html_inline"} for token in _walk_tokens(tokens)):
             violations.append("raw_html_not_allowed")
 
-        if spec.code_fence_language is not None:
+        if spec.artifact_type.value == "csv":
+            title = self._validate_csv_artifact(spec, tokens, violations)
+        elif spec.code_fence_language is not None:
             title = self._validate_code_artifact(spec, tokens, violations)
         else:
             title = self._validate_document_artifact(spec, tokens, violations)
@@ -95,9 +112,33 @@ class MarkdownArtifactParser:
 
         has_required_fence = any(_fence_language(token) == required_language for token in tokens)
         if not has_required_fence:
-            violations.append(
-                "missing_sql_fence" if required_language == "sql" else "missing_python_fence"
-            )
+            violations.append(_missing_fence_violation(required_language))
+        return spec.display_name
+
+    @staticmethod
+    def _validate_csv_artifact(
+        spec: PromptSpec,
+        tokens: Sequence[Token],
+        violations: list[str],
+    ) -> str:
+        first_language = _fence_language(tokens[0]) if tokens else None
+        if first_language != "csv":
+            violations.append("code_fence_not_first")
+
+        csv_fences = [token for token in tokens if _fence_language(token) == "csv"]
+        if not csv_fences:
+            violations.append("missing_csv_fence")
+            return spec.display_name
+        if len(csv_fences) > 1:
+            violations.append("multiple_csv_fences")
+
+        try:
+            rows = list(csv.reader(StringIO(csv_fences[0].content)))
+        except csv.Error:
+            violations.append("csv_header_invalid")
+            return spec.display_name
+        if not rows or tuple(rows[0]) != MAPPING_CSV_COLUMNS:
+            violations.append("csv_header_invalid")
         return spec.display_name
 
     @staticmethod
@@ -127,3 +168,11 @@ class MarkdownArtifactParser:
             if positions != sorted(positions):
                 violations.append("section_order_invalid")
         return title
+
+
+def _missing_fence_violation(language: str) -> str:
+    if language == "sql":
+        return "missing_sql_fence"
+    if language == "csv":
+        return "missing_csv_fence"
+    return "missing_python_fence"

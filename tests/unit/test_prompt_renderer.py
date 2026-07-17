@@ -45,6 +45,8 @@ def test_sql_prompt_uses_a_compact_code_contract() -> None:
     assert "简短代码注释" in rendered.system_message
     assert "必要时可在代码块后简短补充" in rendered.system_message
     assert "## 使用场景" not in rendered.system_message
+    assert "Workspace Context 只包含用户事实" in rendered.system_message
+    assert "project_fact_status=proposal" in rendered.system_message
 
 
 def test_pyspark_prompt_uses_a_compact_code_contract() -> None:
@@ -54,6 +56,35 @@ def test_pyspark_prompt_uses_a_compact_code_contract() -> None:
     assert "语言标识为 `python`" in rendered.system_message
     assert "不输出一级标题或固定文档章节" in rendered.system_message
     assert "## PySpark 代码" not in rendered.system_message
+    assert "目标表和目标字段是待确认提案" in rendered.system_message
+
+
+def test_ddl_prompt_generates_compact_databricks_schema_proposals() -> None:
+    rendered = PromptRegistry.create_default().render(PromptName.DDL_GENERATION)
+
+    assert rendered.artifact_type is ArtifactType.SQL
+    assert "Bronze、Silver、Gold DDL 提案" in rendered.system_message
+    assert "源 DDL 中真实存在的源表和源字段" in rendered.system_message
+    assert "语言标识为 `sql`" in rendered.system_message
+
+
+def test_mapping_prompt_requires_the_fixed_csv_header() -> None:
+    rendered = PromptRegistry.create_default().render(PromptName.MAPPING_GENERATION)
+
+    assert rendered.artifact_type is ArtifactType.CSV
+    assert "mapping_id,source_table,source_column,target_table,target_column" in (
+        rendered.system_message
+    )
+    assert "语言标识为 `csv`" in rendered.system_message
+
+
+def test_notebook_prompt_requires_python_source_notebook_format() -> None:
+    rendered = PromptRegistry.create_default().render(PromptName.NOTEBOOK_GENERATION)
+
+    assert rendered.artifact_type is ArtifactType.NOTEBOOK
+    assert "# Databricks notebook source" in rendered.system_message
+    assert "# COMMAND ----------" in rendered.system_message
+    assert "语言标识为 `python`" in rendered.system_message
 
 
 def test_workflow_prompt_contains_its_document_sections() -> None:

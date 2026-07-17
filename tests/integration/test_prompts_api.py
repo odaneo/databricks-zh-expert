@@ -14,8 +14,11 @@ async def test_list_prompts_exposes_catalog_without_template_text(
     assert payload["default_prompt"] == "databricks_qa"
     assert [prompt["name"] for prompt in payload["prompts"]] == [
         "databricks_qa",
+        "ddl_generation",
+        "mapping_generation",
         "sql_generation",
         "pyspark_generation",
+        "notebook_generation",
         "workflow_design",
         "document_summary",
         "knowledge_qa",

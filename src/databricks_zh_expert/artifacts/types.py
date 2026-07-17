@@ -5,7 +5,9 @@ from enum import StrEnum
 class ArtifactType(StrEnum):
     ANSWER = "answer"
     SQL = "sql"
+    CSV = "csv"
     PYSPARK = "pyspark"
+    NOTEBOOK = "notebook"
     WORKFLOW_DESIGN = "workflow_design"
     DOCUMENT_SUMMARY = "document_summary"
     PROPOSAL = "proposal"

@@ -1,0 +1,6 @@
+{% extends "base_system.jinja2" %}
+{% block task_instructions %}
+任务：根据 Workspace Context 生成源字段到提议目标字段的 Mapping CSV。源表和源字段必须真实存在；目标表、目标字段和转换逻辑均为待确认提案。第一行必须严格等于：
+mapping_id,source_table,source_column,target_table,target_column,transformation,join_condition,filter_condition,aggregation,notes
+只输出一个 CSV 代码块，不增加 Markdown 表格或长篇解释。
+{% endblock %}

@@ -8,8 +8,11 @@ from databricks_zh_expert.prompts.registry import (
 EXPECTED_CONTEXT_POLICY = {
     PromptName.DATABRICKS_QA: (False, True),
     PromptName.KNOWLEDGE_QA: (True, False),
+    PromptName.DDL_GENERATION: (True, True),
+    PromptName.MAPPING_GENERATION: (True, True),
     PromptName.SQL_GENERATION: (True, True),
     PromptName.PYSPARK_GENERATION: (True, True),
+    PromptName.NOTEBOOK_GENERATION: (True, True),
     PromptName.WORKFLOW_DESIGN: (True, True),
     PromptName.PROPOSAL_GENERATION: (True, True),
     PromptName.SELF_CHECK: (False, True),
@@ -20,8 +23,11 @@ EXPECTED_CONTEXT_POLICY = {
 def test_prompt_names_are_fixed() -> None:
     assert tuple(PromptName) == (
         PromptName.DATABRICKS_QA,
+        PromptName.DDL_GENERATION,
+        PromptName.MAPPING_GENERATION,
         PromptName.SQL_GENERATION,
         PromptName.PYSPARK_GENERATION,
+        PromptName.NOTEBOOK_GENERATION,
         PromptName.WORKFLOW_DESIGN,
         PromptName.DOCUMENT_SUMMARY,
         PromptName.KNOWLEDGE_QA,
@@ -34,7 +40,9 @@ def test_artifact_types_are_fixed() -> None:
     assert tuple(ArtifactType) == (
         ArtifactType.ANSWER,
         ArtifactType.SQL,
+        ArtifactType.CSV,
         ArtifactType.PYSPARK,
+        ArtifactType.NOTEBOOK,
         ArtifactType.WORKFLOW_DESIGN,
         ArtifactType.DOCUMENT_SUMMARY,
         ArtifactType.PROPOSAL,
@@ -66,11 +74,21 @@ def test_code_prompts_declare_their_fence_languages() -> None:
     by_name = {spec.name: spec for spec in PROMPT_SPECS}
 
     assert by_name[PromptName.SQL_GENERATION].code_fence_language == "sql"
+    assert by_name[PromptName.DDL_GENERATION].code_fence_language == "sql"
+    assert by_name[PromptName.MAPPING_GENERATION].code_fence_language == "csv"
     assert by_name[PromptName.PYSPARK_GENERATION].code_fence_language == "python"
+    assert by_name[PromptName.NOTEBOOK_GENERATION].code_fence_language == "python"
     assert all(
         spec.code_fence_language is None
         for spec in PROMPT_SPECS
-        if spec.name not in {PromptName.SQL_GENERATION, PromptName.PYSPARK_GENERATION}
+        if spec.name
+        not in {
+            PromptName.DDL_GENERATION,
+            PromptName.MAPPING_GENERATION,
+            PromptName.SQL_GENERATION,
+            PromptName.PYSPARK_GENERATION,
+            PromptName.NOTEBOOK_GENERATION,
+        }
     )
 
 
@@ -78,17 +96,20 @@ def test_every_prompt_has_a_semantic_version() -> None:
     versions = {spec.name: spec.version for spec in PROMPT_SPECS}
 
     assert versions[PromptName.KNOWLEDGE_QA] == "1.2.0"
-    assert all(
-        version == "1.0.1"
-        for name, version in versions.items()
-        if name is not PromptName.KNOWLEDGE_QA
-    )
+    assert versions[PromptName.DDL_GENERATION] == "1.0.0"
+    assert versions[PromptName.MAPPING_GENERATION] == "1.0.0"
+    assert versions[PromptName.NOTEBOOK_GENERATION] == "1.0.0"
+    assert versions[PromptName.SQL_GENERATION] == "1.1.0"
+    assert versions[PromptName.PYSPARK_GENERATION] == "1.1.0"
 
 
 def test_code_prompts_do_not_require_document_sections() -> None:
     code_prompt_names = {
         PromptName.SQL_GENERATION,
         PromptName.PYSPARK_GENERATION,
+        PromptName.DDL_GENERATION,
+        PromptName.MAPPING_GENERATION,
+        PromptName.NOTEBOOK_GENERATION,
     }
 
     assert all(
@@ -103,3 +124,18 @@ def test_prompt_context_policy_is_explicit() -> None:
     assert {
         spec.name: (spec.use_official_knowledge, spec.use_expert_templates) for spec in PROMPT_SPECS
     } == EXPECTED_CONTEXT_POLICY
+
+
+def test_only_five_generation_prompts_use_workspace_context_and_create_proposals() -> None:
+    workspace_prompts = {
+        PromptName.DDL_GENERATION,
+        PromptName.MAPPING_GENERATION,
+        PromptName.SQL_GENERATION,
+        PromptName.PYSPARK_GENERATION,
+        PromptName.NOTEBOOK_GENERATION,
+    }
+
+    assert {spec.name for spec in PROMPT_SPECS if spec.use_workspace_context} == workspace_prompts
+    assert {
+        spec.name for spec in PROMPT_SPECS if spec.project_fact_status == "proposal"
+    } == workspace_prompts

@@ -1,0 +1,4 @@
+{% extends "base_system.jinja2" %}
+{% block task_instructions %}
+任务：根据 Workspace Context 生成简洁的 Databricks Bronze、Silver、Gold DDL 提案。源端引用必须来自源 DDL 中真实存在的源表和源字段；目标结构均为待确认提案。只输出一个 SQL 代码块，使用简短注释标识层级、关键假设和待确认项，不写长篇设计说明。
+{% endblock %}

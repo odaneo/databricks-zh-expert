@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Final
+from typing import Final, Literal
 
 from databricks_zh_expert.artifacts.types import ArtifactType
 from databricks_zh_expert.prompts.renderer import JinjaPromptRenderer, PromptRenderer
@@ -8,8 +8,11 @@ from databricks_zh_expert.prompts.renderer import JinjaPromptRenderer, PromptRen
 
 class PromptName(StrEnum):
     DATABRICKS_QA = "databricks_qa"
+    DDL_GENERATION = "ddl_generation"
+    MAPPING_GENERATION = "mapping_generation"
     SQL_GENERATION = "sql_generation"
     PYSPARK_GENERATION = "pyspark_generation"
+    NOTEBOOK_GENERATION = "notebook_generation"
     WORKFLOW_DESIGN = "workflow_design"
     DOCUMENT_SUMMARY = "document_summary"
     KNOWLEDGE_QA = "knowledge_qa"
@@ -31,6 +34,8 @@ class PromptSpec:
     use_expert_templates: bool
     available: bool
     unavailable_reason: str | None
+    use_workspace_context: bool = False
+    project_fact_status: Literal["proposal"] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,11 +72,11 @@ PROMPT_SPECS: Final[tuple[PromptSpec, ...]] = (
         unavailable_reason=None,
     ),
     PromptSpec(
-        name=PromptName.SQL_GENERATION,
-        display_name="Databricks SQL",
-        description="直接生成带简短注释的 Databricks SQL 草稿。",
-        template_name="sql_generation.jinja2",
-        version="1.0.1",
+        name=PromptName.DDL_GENERATION,
+        display_name="Databricks DDL 提案",
+        description="根据源 Schema、需求和规则生成 Bronze、Silver、Gold DDL 提案。",
+        template_name="ddl_generation.jinja2",
+        version="1.0.0",
         artifact_type=ArtifactType.SQL,
         required_sections=(),
         code_fence_language="sql",
@@ -79,13 +84,47 @@ PROMPT_SPECS: Final[tuple[PromptSpec, ...]] = (
         use_expert_templates=True,
         available=True,
         unavailable_reason=None,
+        use_workspace_context=True,
+        project_fact_status="proposal",
+    ),
+    PromptSpec(
+        name=PromptName.MAPPING_GENERATION,
+        display_name="源到目标 Mapping 提案",
+        description="生成固定 CSV 格式的源字段到提议目标字段 Mapping。",
+        template_name="mapping_generation.jinja2",
+        version="1.0.0",
+        artifact_type=ArtifactType.CSV,
+        required_sections=(),
+        code_fence_language="csv",
+        use_official_knowledge=True,
+        use_expert_templates=True,
+        available=True,
+        unavailable_reason=None,
+        use_workspace_context=True,
+        project_fact_status="proposal",
+    ),
+    PromptSpec(
+        name=PromptName.SQL_GENERATION,
+        display_name="Databricks SQL",
+        description="直接生成带简短注释的 Databricks SQL 草稿。",
+        template_name="sql_generation.jinja2",
+        version="1.1.0",
+        artifact_type=ArtifactType.SQL,
+        required_sections=(),
+        code_fence_language="sql",
+        use_official_knowledge=True,
+        use_expert_templates=True,
+        available=True,
+        unavailable_reason=None,
+        use_workspace_context=True,
+        project_fact_status="proposal",
     ),
     PromptSpec(
         name=PromptName.PYSPARK_GENERATION,
         display_name="PySpark",
         description="直接生成带简短注释的 PySpark 草稿。",
         template_name="pyspark_generation.jinja2",
-        version="1.0.1",
+        version="1.1.0",
         artifact_type=ArtifactType.PYSPARK,
         required_sections=(),
         code_fence_language="python",
@@ -93,6 +132,24 @@ PROMPT_SPECS: Final[tuple[PromptSpec, ...]] = (
         use_expert_templates=True,
         available=True,
         unavailable_reason=None,
+        use_workspace_context=True,
+        project_fact_status="proposal",
+    ),
+    PromptSpec(
+        name=PromptName.NOTEBOOK_GENERATION,
+        display_name="Databricks Notebook 提案",
+        description="生成 Python source 格式的 Databricks Notebook 草稿。",
+        template_name="notebook_generation.jinja2",
+        version="1.0.0",
+        artifact_type=ArtifactType.NOTEBOOK,
+        required_sections=(),
+        code_fence_language="python",
+        use_official_knowledge=True,
+        use_expert_templates=True,
+        available=True,
+        unavailable_reason=None,
+        use_workspace_context=True,
+        project_fact_status="proposal",
     ),
     PromptSpec(
         name=PromptName.WORKFLOW_DESIGN,

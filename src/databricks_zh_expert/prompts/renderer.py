@@ -30,4 +30,6 @@ class JinjaPromptRenderer:
         return template.render(
             required_sections=spec.required_sections,
             code_fence_language=spec.code_fence_language,
+            use_workspace_context=spec.use_workspace_context,
+            project_fact_status=spec.project_fact_status,
         )

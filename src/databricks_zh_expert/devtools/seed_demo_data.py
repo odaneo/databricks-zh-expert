@@ -8,6 +8,7 @@ from uuid import uuid4
 from sqlalchemy import delete
 from sqlalchemy.engine import make_url
 
+from databricks_zh_expert.artifacts.markdown import MAPPING_CSV_HEADER
 from databricks_zh_expert.artifacts.types import ArtifactType
 from databricks_zh_expert.core.config import Settings, get_settings
 from databricks_zh_expert.core.runtime import selector_event_loop_factory
@@ -76,6 +77,24 @@ def build_demo_artifact(
             f"# 用途：为“{title}”提供第 {round_number} 轮演示处理。\n"
             "# 前置条件：请确认 catalog、schema、表名和输出位置。\n"
             'source_df = spark.table("catalog.schema.source_table")\n'
+            "display(source_df.limit(100))\n"
+            "```"
+        )
+    if artifact_type is ArtifactType.CSV:
+        return (
+            "```csv\n"
+            f"{MAPPING_CSV_HEADER}\n"
+            f"map_{round_number},source.sales,order_id,proposed.sales,order_id,"
+            ",,,,待人工确认\n"
+            "```"
+        )
+    if artifact_type is ArtifactType.NOTEBOOK:
+        return (
+            "```python\n"
+            "# Databricks notebook source\n"
+            f"# 用途：为“{title}”提供第 {round_number} 轮 Notebook 提案。\n"
+            "# COMMAND ----------\n"
+            'source_df = spark.table("source.proposed_table")\n'
             "display(source_df.limit(100))\n"
             "```"
         )

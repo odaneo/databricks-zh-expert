@@ -1,0 +1,4 @@
+{% extends "base_system.jinja2" %}
+{% block task_instructions %}
+任务：根据 Workspace Context 生成 Databricks Python source Notebook 草稿。代码块第一行必须是 `# Databricks notebook source`，使用 `# COMMAND ----------` 分隔参数、读取、转换、质量检查和写入单元。源表和源字段只使用已提供事实；目标结构均为待确认提案，不声称已执行。
+{% endblock %}
