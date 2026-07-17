@@ -24,12 +24,14 @@ async def test_create_and_get_session(
     assert create_response.status_code == 201
     session_id = create_response.json()["id"]
     assert create_response.json()["expert_profile"] == "generic"
+    assert create_response.json()["workspace_id"] is None
 
     get_response = await client.get(f"/api/chat/sessions/{session_id}")
 
     assert get_response.status_code == 200
     assert get_response.json()["title"] == "每日销售分析"
     assert get_response.json()["expert_profile"] == "generic"
+    assert get_response.json()["workspace_id"] is None
     assert get_response.json()["messages"] == []
     stored_profile = await test_db_session.scalar(
         select(ChatSession.expert_profile).where(ChatSession.id == UUID(session_id))
@@ -59,6 +61,52 @@ async def test_create_session_persists_profile_in_list_and_detail(
     assert list_response.json()[0]["expert_profile"] == "retail_sales_demo"
     assert detail_response.status_code == 200
     assert detail_response.json()["expert_profile"] == "retail_sales_demo"
+
+
+async def test_create_session_persists_immutable_workspace_in_list_and_detail(
+    client: AsyncClient,
+    test_db_session: AsyncSession,
+) -> None:
+    create_response = await client.post(
+        "/api/chat/sessions",
+        json={
+            "title": "零售 Greenfield 设计",
+            "workspace_id": "retail_sales_demo",
+        },
+    )
+
+    assert create_response.status_code == 201
+    assert create_response.json()["workspace_id"] == "retail_sales_demo"
+    session_id = UUID(create_response.json()["id"])
+    stored_workspace = await test_db_session.scalar(
+        select(ChatSession.workspace_id).where(ChatSession.id == session_id)
+    )
+    assert stored_workspace == "retail_sales_demo"
+
+    list_response = await client.get("/api/chat/sessions")
+    detail_response = await client.get(f"/api/chat/sessions/{session_id}")
+
+    assert list_response.json()[0]["workspace_id"] == "retail_sales_demo"
+    assert detail_response.json()["workspace_id"] == "retail_sales_demo"
+    update_response = await client.patch(
+        f"/api/chat/sessions/{session_id}",
+        json={"workspace_id": None},
+    )
+    assert update_response.status_code == 405
+
+
+async def test_create_session_rejects_unknown_workspace(client: AsyncClient) -> None:
+    response = await client.post(
+        "/api/chat/sessions",
+        json={"title": "错误工作区", "workspace_id": "unknown"},
+    )
+
+    assert response.status_code == 422
+    assert response.json() == {
+        "code": "workspace_not_found",
+        "message": "项目工作区不存在。",
+        "details": None,
+    }
 
 
 async def test_create_session_rejects_unknown_expert_profile(

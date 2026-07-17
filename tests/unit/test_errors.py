@@ -24,6 +24,12 @@ from databricks_zh_expert.main import create_app
             "专家模板索引尚未就绪。",
             503,
         ),
+        (
+            "WorkspaceNotFoundAppError",
+            "workspace_not_found",
+            "项目工作区不存在。",
+            422,
+        ),
     ),
 )
 def test_expert_template_errors_have_stable_contract(

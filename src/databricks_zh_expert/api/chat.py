@@ -7,6 +7,7 @@ from databricks_zh_expert.api.dependencies import (
     get_chat_repository,
     get_chat_service,
     get_expert_template_registry,
+    get_workspace_registry,
 )
 from databricks_zh_expert.chat.repository import ChatRepository
 from databricks_zh_expert.chat.schemas import (
@@ -19,10 +20,18 @@ from databricks_zh_expert.chat.schemas import (
     SessionResponse,
 )
 from databricks_zh_expert.chat.service import ChatService
-from databricks_zh_expert.core.errors import AppError, ExpertProfileNotFoundAppError
+from databricks_zh_expert.core.errors import (
+    AppError,
+    ExpertProfileNotFoundAppError,
+    WorkspaceNotFoundAppError,
+)
 from databricks_zh_expert.expert_templates.registry import (
     ExpertTemplateRegistry,
     ExpertTemplateRegistryError,
+)
+from databricks_zh_expert.workspace.registry import (
+    WorkspaceRegistry,
+    WorkspaceRegistryError,
 )
 
 router = APIRouter(prefix="/api/chat", tags=["会话"])
@@ -40,12 +49,25 @@ async def create_session(
         ExpertTemplateRegistry,
         Depends(get_expert_template_registry),
     ],
+    workspace_registry: Annotated[
+        WorkspaceRegistry,
+        Depends(get_workspace_registry),
+    ],
 ) -> SessionResponse:
     try:
         expert_registry.get_profile(payload.expert_profile)
     except ExpertTemplateRegistryError:
         raise ExpertProfileNotFoundAppError() from None
-    session = await repository.create_session(payload.title, payload.expert_profile)
+    if payload.workspace_id is not None:
+        try:
+            workspace_registry.get(payload.workspace_id)
+        except WorkspaceRegistryError:
+            raise WorkspaceNotFoundAppError() from None
+    session = await repository.create_session(
+        payload.title,
+        payload.expert_profile,
+        payload.workspace_id,
+    )
     return SessionResponse.model_validate(session)
 
 
@@ -77,6 +99,7 @@ async def get_session(
         id=session.id,
         title=session.title,
         expert_profile=session.expert_profile,
+        workspace_id=session.workspace_id,
         created_at=session.created_at,
         updated_at=session.updated_at,
         messages=[MessageResponse.model_validate(message) for message in messages],

@@ -12,6 +12,7 @@ from databricks_zh_expert.api.health import router as health_router
 from databricks_zh_expert.api.knowledge import router as knowledge_router
 from databricks_zh_expert.api.models import router as models_router
 from databricks_zh_expert.api.prompts import router as prompts_router
+from databricks_zh_expert.api.workspaces import router as workspaces_router
 from databricks_zh_expert.artifacts.markdown import MarkdownArtifactParser
 from databricks_zh_expert.core.config import Settings, get_settings
 from databricks_zh_expert.core.errors import register_exception_handlers
@@ -29,6 +30,7 @@ from databricks_zh_expert.observability.model_trace import (
     NullModelTraceSink,
 )
 from databricks_zh_expert.prompts.registry import PromptRegistry
+from databricks_zh_expert.workspace.registry import WorkspaceRegistry
 
 ServerRunner = Callable[..., Any]
 
@@ -65,11 +67,13 @@ def create_app(
     prompt_registry: PromptRegistry | None = None,
     artifact_parser: MarkdownArtifactParser | None = None,
     expert_template_registry: ExpertTemplateRegistry | None = None,
+    workspace_registry: WorkspaceRegistry | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
     prompt_registry = prompt_registry or PromptRegistry.create_default()
     artifact_parser = artifact_parser or MarkdownArtifactParser()
     expert_template_registry = expert_template_registry or ExpertTemplateRegistry.create_default()
+    workspace_registry = workspace_registry or WorkspaceRegistry.create_default()
     prompt_registry.validate_all()
     database = database or Database(settings.database_url)
     expert_template_repository = ExpertTemplateRepository(
@@ -96,6 +100,7 @@ def create_app(
     app.state.artifact_parser = artifact_parser
     app.state.expert_template_registry = expert_template_registry
     app.state.expert_template_repository = expert_template_repository
+    app.state.workspace_registry = workspace_registry
     register_exception_handlers(app)
     app.include_router(health_router)
     app.include_router(chat_router)
@@ -103,4 +108,5 @@ def create_app(
     app.include_router(knowledge_router)
     app.include_router(models_router)
     app.include_router(prompts_router)
+    app.include_router(workspaces_router)
     return app

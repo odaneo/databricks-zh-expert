@@ -66,6 +66,15 @@ class ExpertTemplateContextNotFoundAppError(AppError):
         )
 
 
+class WorkspaceNotFoundAppError(AppError):
+    def __init__(self, *, status_code: int = 422) -> None:
+        super().__init__(
+            code="workspace_not_found",
+            message="项目工作区不存在。",
+            status_code=status_code,
+        )
+
+
 class EmbeddingNotConfiguredAppError(AppError):
     def __init__(self) -> None:
         super().__init__(

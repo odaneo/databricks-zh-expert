@@ -35,6 +35,7 @@ class ChatSession(Base):
         server_default=text("'generic'"),
         nullable=False,
     )
+    workspace_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
@@ -56,7 +57,7 @@ class Message(Base):
         ),
         CheckConstraint(
             "artifact_type IS NULL OR artifact_type IN "
-            "('answer', 'sql', 'pyspark', 'workflow_design', "
+            "('answer', 'sql', 'csv', 'pyspark', 'notebook', 'workflow_design', "
             "'document_summary', 'proposal', 'checklist')",
             name="ck_messages_artifact_type",
         ),
@@ -87,6 +88,14 @@ class ModelCall(Base):
     __tablename__ = "model_calls"
     __table_args__ = (
         CheckConstraint("attempt_number >= 1", name="ck_model_calls_attempt_number"),
+        CheckConstraint(
+            "workspace_mode IS NULL OR workspace_mode = 'greenfield'",
+            name="ck_model_calls_workspace_mode",
+        ),
+        CheckConstraint(
+            "project_fact_status IS NULL OR project_fact_status = 'proposal'",
+            name="ck_model_calls_project_fact_status",
+        ),
         UniqueConstraint(
             "invocation_id",
             "attempt_number",
@@ -122,6 +131,15 @@ class ModelCall(Base):
         JSONB,
         nullable=True,
     )
+    workspace_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    workspace_version: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    workspace_mode: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    workspace_source_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    workspace_context: Mapped[list[dict[str, Any]] | None] = mapped_column(
+        JSONB,
+        nullable=True,
+    )
+    project_fact_status: Mapped[str | None] = mapped_column(String(30), nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

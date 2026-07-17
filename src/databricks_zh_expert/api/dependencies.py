@@ -25,6 +25,7 @@ from databricks_zh_expert.prompts.registry import PromptRegistry
 from databricks_zh_expert.rag.embeddings import OpenAIEmbeddingClient
 from databricks_zh_expert.rag.repository import KnowledgeRepository
 from databricks_zh_expert.rag.retrieval import KnowledgeRetriever
+from databricks_zh_expert.workspace.registry import WorkspaceRegistry
 
 
 def get_app_settings(request: Request) -> Settings:
@@ -78,6 +79,10 @@ def get_prompt_registry(request: Request) -> PromptRegistry:
 
 def get_artifact_parser(request: Request) -> MarkdownArtifactParser:
     return cast(MarkdownArtifactParser, request.app.state.artifact_parser)
+
+
+def get_workspace_registry(request: Request) -> WorkspaceRegistry:
+    return cast(WorkspaceRegistry, request.app.state.workspace_registry)
 
 
 def get_expert_template_registry(request: Request) -> ExpertTemplateRegistry:

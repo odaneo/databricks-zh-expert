@@ -11,8 +11,17 @@ class ChatRepository:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
 
-    async def create_session(self, title: str, expert_profile: str) -> ChatSession:
-        session = ChatSession(title=title, expert_profile=expert_profile)
+    async def create_session(
+        self,
+        title: str,
+        expert_profile: str,
+        workspace_id: str | None = None,
+    ) -> ChatSession:
+        session = ChatSession(
+            title=title,
+            expert_profile=expert_profile,
+            workspace_id=workspace_id,
+        )
         self.db.add(session)
         await self.db.commit()
         await self.db.refresh(session)
@@ -102,6 +111,12 @@ class ChatRepository:
         artifact_error_code: str | None,
         expert_profile: str,
         expert_template_selections: list[dict[str, object]],
+        workspace_id: str | None = None,
+        workspace_version: str | None = None,
+        workspace_mode: str | None = None,
+        workspace_source_hash: str | None = None,
+        workspace_context: list[dict[str, object]] | None = None,
+        project_fact_status: str | None = None,
     ) -> ModelCall:
         model_call = ModelCall(
             session_id=session_id,
@@ -123,6 +138,12 @@ class ChatRepository:
             artifact_error_code=artifact_error_code,
             expert_profile=expert_profile,
             expert_template_selections=expert_template_selections,
+            workspace_id=workspace_id,
+            workspace_version=workspace_version,
+            workspace_mode=workspace_mode,
+            workspace_source_hash=workspace_source_hash,
+            workspace_context=workspace_context,
+            project_fact_status=project_fact_status,
             error_message=error_message,
         )
         self.db.add(model_call)

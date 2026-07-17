@@ -70,6 +70,7 @@ async def test_initial_migration_creates_expected_tables(
     assert EXPECTED_TABLES <= table_names
     assert public_table_names == set()
     assert session_columns["expert_profile"]["nullable"] is False
+    assert session_columns["workspace_id"]["nullable"] is True
     assert model_call_columns["invocation_id"]["nullable"] is False
     assert model_call_columns["model_alias"]["nullable"] is False
     assert model_call_columns["attempt_number"]["nullable"] is False
@@ -82,8 +83,16 @@ async def test_initial_migration_creates_expected_tables(
     assert model_call_columns["artifact_error_code"]["nullable"] is True
     assert model_call_columns["expert_profile"]["nullable"] is True
     assert model_call_columns["expert_template_selections"]["nullable"] is True
+    assert model_call_columns["workspace_id"]["nullable"] is True
+    assert model_call_columns["workspace_version"]["nullable"] is True
+    assert model_call_columns["workspace_mode"]["nullable"] is True
+    assert model_call_columns["workspace_source_hash"]["nullable"] is True
+    assert model_call_columns["workspace_context"]["nullable"] is True
+    assert model_call_columns["project_fact_status"]["nullable"] is True
     assert "uq_model_calls_invocation_attempt" in unique_constraints
     assert "ck_model_calls_attempt_number" in check_constraints
+    assert "ck_model_calls_workspace_mode" in check_constraints
+    assert "ck_model_calls_project_fact_status" in check_constraints
     assert "ck_messages_artifact_type" in message_check_constraints
 
 

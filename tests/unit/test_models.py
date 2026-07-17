@@ -66,6 +66,7 @@ def test_models_register_expected_tables_and_columns() -> None:
         "id",
         "title",
         "expert_profile",
+        "workspace_id",
         "created_at",
         "updated_at",
     }
@@ -99,6 +100,12 @@ def test_models_register_expected_tables_and_columns() -> None:
         "artifact_error_code",
         "expert_profile",
         "expert_template_selections",
+        "workspace_id",
+        "workspace_version",
+        "workspace_mode",
+        "workspace_source_hash",
+        "workspace_context",
+        "project_fact_status",
         "error_message",
         "created_at",
     }
@@ -219,11 +226,15 @@ def test_expert_template_models_enforce_storage_contract() -> None:
     run_table = cast(Table, ExpertTemplateSyncRun.__table__)
 
     assert ChatSession.__table__.c.expert_profile.nullable is False
+    assert ChatSession.__table__.c.workspace_id.nullable is True
     session_profile_default = ChatSession.__table__.c.expert_profile.server_default
     assert isinstance(session_profile_default, DefaultClause)
     assert str(session_profile_default.arg) == "'generic'"
     assert ModelCall.__table__.c.expert_profile.nullable is True
     assert ModelCall.__table__.c.expert_template_selections.nullable is True
+    assert ModelCall.__table__.c.workspace_id.nullable is True
+    assert ModelCall.__table__.c.workspace_context.nullable is True
+    assert ModelCall.__table__.c.project_fact_status.nullable is True
     embedding_type = cast(Vector, ExpertTemplateChunkRecord.__table__.c.embedding.type)
     assert embedding_type.dim == 1536
     assert ExpertTemplateChunkRecord.__table__.c.search_vector.computed is not None
@@ -305,7 +316,7 @@ def test_message_model_enforces_roles_and_session_ordering() -> None:
     )
     assert str(check_constraints["ck_messages_artifact_type"].sqltext) == (
         "artifact_type IS NULL OR artifact_type IN "
-        "('answer', 'sql', 'pyspark', 'workflow_design', "
+        "('answer', 'sql', 'csv', 'pyspark', 'notebook', 'workflow_design', "
         "'document_summary', 'proposal', 'checklist')"
     )
     assert session_foreign_key.ondelete == "CASCADE"
@@ -324,6 +335,8 @@ def test_model_call_model_cascades_and_indexes_by_session_time() -> None:
     constraint_names = {constraint.name for constraint in model_call_table.constraints}
     assert "uq_model_calls_invocation_attempt" in constraint_names
     assert "ck_model_calls_attempt_number" in constraint_names
+    assert "ck_model_calls_workspace_mode" in constraint_names
+    assert "ck_model_calls_project_fact_status" in constraint_names
     attempt_constraint = next(
         constraint
         for constraint in model_call_table.constraints

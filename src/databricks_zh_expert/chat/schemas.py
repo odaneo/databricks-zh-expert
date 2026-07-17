@@ -12,6 +12,7 @@ from databricks_zh_expert.prompts.registry import PromptName
 class SessionCreate(BaseModel):
     title: str = Field(default="新会话", min_length=1, max_length=200)
     expert_profile: str = Field(default="generic", min_length=1, max_length=100)
+    workspace_id: str | None = Field(default=None, min_length=1, max_length=100)
 
 
 class SourceCitationResponse(BaseModel):
@@ -44,6 +45,7 @@ class SessionResponse(BaseModel):
     id: UUID
     title: str
     expert_profile: str
+    workspace_id: str | None
     created_at: datetime
     updated_at: datetime
 
