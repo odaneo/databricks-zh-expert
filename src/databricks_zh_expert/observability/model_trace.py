@@ -78,6 +78,36 @@ class ExpertTemplateTrace:
 
 
 @dataclass(frozen=True, slots=True)
+class WorkspaceCandidateTrace:
+    unit_id: str
+    source_id: str
+    kind: str
+    source_path: str
+    content_hash: str
+    rank: int
+    score: float
+    selected: bool
+
+
+@dataclass(frozen=True, slots=True)
+class WorkspaceSelectionTrace:
+    unit_id: str
+    source_id: str
+    kind: str
+    source_path: str
+    content_hash: str
+    rank: int
+    reason: str
+
+
+@dataclass(frozen=True, slots=True)
+class WorkspaceTrace:
+    context_token_count: int
+    candidates: tuple[WorkspaceCandidateTrace, ...]
+    selected: tuple[WorkspaceSelectionTrace, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class ModelCallTrace:
     model_call_id: UUID
     invocation_id: UUID
@@ -100,6 +130,12 @@ class ModelCallTrace:
     retrieval: RetrievalTrace | None = None
     expert_profile: str = "generic"
     expert_templates: ExpertTemplateTrace | None = None
+    workspace_id: str | None = None
+    workspace_version: str | None = None
+    workspace_mode: str | None = None
+    workspace_source_hash: str | None = None
+    project_fact_status: str | None = None
+    workspace: WorkspaceTrace | None = None
 
 
 class ModelTraceSink(Protocol):
@@ -136,7 +172,7 @@ class JsonlModelTraceSink:
     @staticmethod
     def _serialize(trace: ModelCallTrace) -> str:
         payload = {
-            "schema_version": "1.5",
+            "schema_version": "1.6",
             "protocol": "openai.chat.completions",
             "trace": {
                 "model_call_id": str(trace.model_call_id),
@@ -162,6 +198,11 @@ class JsonlModelTraceSink:
                     else None
                 ),
                 "expert_profile": trace.expert_profile,
+                "workspace_id": trace.workspace_id,
+                "workspace_version": trace.workspace_version,
+                "workspace_mode": trace.workspace_mode,
+                "workspace_source_hash": trace.workspace_source_hash,
+                "project_fact_status": trace.project_fact_status,
             },
             "retrieval": (
                 {
@@ -223,6 +264,40 @@ class JsonlModelTraceSink:
                 if trace.expert_templates is not None
                 else None
             ),
+            "context": {
+                "workspace": (
+                    {
+                        "context_token_count": trace.workspace.context_token_count,
+                        "candidates": [
+                            {
+                                "unit_id": candidate.unit_id,
+                                "source_id": candidate.source_id,
+                                "kind": candidate.kind,
+                                "source_path": candidate.source_path,
+                                "content_hash": candidate.content_hash,
+                                "rank": candidate.rank,
+                                "score": candidate.score,
+                                "selected": candidate.selected,
+                            }
+                            for candidate in trace.workspace.candidates
+                        ],
+                        "selected": [
+                            {
+                                "unit_id": selection.unit_id,
+                                "source_id": selection.source_id,
+                                "kind": selection.kind,
+                                "source_path": selection.source_path,
+                                "content_hash": selection.content_hash,
+                                "rank": selection.rank,
+                                "reason": selection.reason,
+                            }
+                            for selection in trace.workspace.selected
+                        ],
+                    }
+                    if trace.workspace is not None
+                    else None
+                )
+            },
             "request": trace.request,
             "response": trace.response,
             "error": trace.error,

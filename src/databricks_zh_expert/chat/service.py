@@ -1,6 +1,6 @@
 import logging
 from dataclasses import dataclass
-from typing import Protocol, cast
+from typing import Literal, Protocol, cast
 from uuid import UUID
 
 from databricks_zh_expert.artifacts.markdown import MarkdownArtifactParser
@@ -10,7 +10,7 @@ from databricks_zh_expert.artifacts.types import (
 )
 from databricks_zh_expert.chat.context import ChatContextBundle
 from databricks_zh_expert.chat.repository import ChatRepository
-from databricks_zh_expert.core.errors import AppError
+from databricks_zh_expert.core.errors import AppError, WorkspaceNotFoundAppError
 from databricks_zh_expert.db.models import Message, ModelCall
 from databricks_zh_expert.expert_templates.context import (
     ExpertTemplateRetrievalBundle,
@@ -31,6 +31,9 @@ from databricks_zh_expert.observability.model_trace import (
     ModelTraceSink,
     RetrievalCandidateTrace,
     RetrievalTrace,
+    WorkspaceCandidateTrace,
+    WorkspaceSelectionTrace,
+    WorkspaceTrace,
 )
 from databricks_zh_expert.prompts.registry import (
     PromptName,
@@ -41,6 +44,11 @@ from databricks_zh_expert.prompts.registry import (
 )
 from databricks_zh_expert.rag.constants import EMBEDDING_MODEL
 from databricks_zh_expert.rag.context import RetrievalBundle
+from databricks_zh_expert.workspace.registry import WorkspaceRegistry, WorkspaceRegistryError
+from databricks_zh_expert.workspace.types import (
+    WorkspaceContextBundle,
+    WorkspaceDefinition,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +60,7 @@ class ChatContextBuilder(Protocol):
         *,
         prompt_spec: PromptSpec,
         expert_profile: str,
+        workspace: WorkspaceDefinition | None = None,
     ) -> ChatContextBundle: ...
 
 
@@ -68,6 +77,7 @@ class SendMessageResult:
     prompt_name: PromptName
     prompt_version: str
     artifact: MarkdownArtifact
+    project_fact_status: Literal["proposal"] | None
 
 
 def build_trace(
@@ -79,6 +89,7 @@ def build_trace(
     retrieval: RetrievalTrace | None,
     expert_profile: str,
     expert_templates: ExpertTemplateTrace | None,
+    workspace: WorkspaceTrace | None,
 ) -> ModelCallTrace:
     return ModelCallTrace(
         model_call_id=model_call.id,
@@ -102,6 +113,12 @@ def build_trace(
         retrieval=retrieval,
         expert_profile=expert_profile,
         expert_templates=expert_templates,
+        workspace_id=model_call.workspace_id,
+        workspace_version=model_call.workspace_version,
+        workspace_mode=model_call.workspace_mode,
+        workspace_source_hash=model_call.workspace_source_hash,
+        project_fact_status=model_call.project_fact_status,
+        workspace=workspace,
     )
 
 
@@ -115,6 +132,7 @@ class ChatService:
         artifact_parser: MarkdownArtifactParser,
         *,
         context_service: ChatContextBuilder,
+        workspace_registry: WorkspaceRegistry,
     ) -> None:
         self.repository = repository
         self.model_gateway = model_gateway
@@ -122,6 +140,7 @@ class ChatService:
         self.prompt_registry = prompt_registry
         self.artifact_parser = artifact_parser
         self.context_service = context_service
+        self.workspace_registry = workspace_registry
 
     async def send_message(
         self,
@@ -147,6 +166,12 @@ class ChatService:
                 status_code=409,
             ) from None
         prompt_spec = self.prompt_registry.get(rendered_prompt.name)
+        workspace: WorkspaceDefinition | None = None
+        if session.workspace_id is not None:
+            try:
+                workspace = self.workspace_registry.get(session.workspace_id)
+            except WorkspaceRegistryError:
+                raise WorkspaceNotFoundAppError(status_code=409) from None
 
         user_message = await self.repository.create_message(
             session_id=session_id,
@@ -161,6 +186,7 @@ class ChatService:
             content,
             prompt_spec=prompt_spec,
             expert_profile=session.expert_profile,
+            workspace=workspace,
         )
         retrieval_trace = (
             _retrieval_trace(
@@ -179,6 +205,8 @@ class ChatService:
             else None
         )
         expert_template_selections = _expert_template_selection_payloads(context_bundle.expert)
+        workspace_trace = _workspace_trace(context_bundle.workspace)
+        workspace_selections = _workspace_selection_payloads(context_bundle.workspace)
 
         historical_messages = [
             message
@@ -187,21 +215,7 @@ class ChatService:
         ]
         model_messages = [
             ModelMessage(role="system", content=rendered_prompt.system_message),
-            *[
-                ModelMessage(
-                    role=cast(ModelRole, message.role),
-                    content=message.content,
-                )
-                for message in historical_messages
-            ],
         ]
-        if context_bundle.expert is not None:
-            model_messages.append(
-                ModelMessage(
-                    role="user",
-                    content=context_bundle.expert.context,
-                )
-            )
         if context_bundle.official is not None:
             model_messages.append(
                 ModelMessage(
@@ -209,6 +223,24 @@ class ChatService:
                     content=context_bundle.official.context,
                 )
             )
+        if context_bundle.expert is not None:
+            model_messages.append(
+                ModelMessage(
+                    role="user",
+                    content=context_bundle.expert.context,
+                )
+            )
+        if context_bundle.workspace is not None:
+            model_messages.append(
+                ModelMessage(role="user", content=context_bundle.workspace.context)
+            )
+        model_messages.extend(
+            ModelMessage(
+                role=cast(ModelRole, message.role),
+                content=_historical_message_content(message),
+            )
+            for message in historical_messages
+        )
         model_messages.append(ModelMessage(role="user", content=content))
 
         try:
@@ -268,6 +300,16 @@ class ChatService:
                     ),
                     expert_profile=session.expert_profile,
                     expert_template_selections=expert_template_selections,
+                    workspace_id=workspace.workspace_id if workspace is not None else None,
+                    workspace_version=workspace.version if workspace is not None else None,
+                    workspace_mode=(
+                        workspace.workspace_mode.value if workspace is not None else None
+                    ),
+                    workspace_source_hash=(
+                        workspace.source_hash if workspace is not None else None
+                    ),
+                    workspace_context=(workspace_selections if workspace is not None else None),
+                    project_fact_status=prompt_spec.project_fact_status,
                 )
                 await self.trace_sink.write(
                     build_trace(
@@ -279,6 +321,7 @@ class ChatService:
                         retrieval_trace,
                         session.expert_profile,
                         expert_template_trace,
+                        workspace_trace,
                     )
                 )
 
@@ -322,6 +365,7 @@ class ChatService:
                         prompt_name=rendered_prompt.name,
                         prompt_version=rendered_prompt.version,
                         artifact=artifact,
+                        project_fact_status=prompt_spec.project_fact_status,
                     )
         except ModelGatewayFailure as error:
             raise AppError(
@@ -346,6 +390,67 @@ def _citation_payloads(bundle: RetrievalBundle) -> list[dict[str, object]]:
         }
         for citation in bundle.citations
     ]
+
+
+def _historical_message_content(message: Message) -> str:
+    if message.role == "assistant" and message.artifact_type is not None:
+        return (
+            "以下是历史 Assistant 交付物，仅作为未确认提案参考，不是项目事实：\n\n"
+            f"{message.content}"
+        )
+    return message.content
+
+
+def _workspace_selection_payloads(
+    bundle: WorkspaceContextBundle | None,
+) -> list[dict[str, object]]:
+    if bundle is None:
+        return []
+    return [
+        {
+            "unit_id": selection.unit_id,
+            "source_id": selection.source_id,
+            "kind": selection.kind.value,
+            "source_path": selection.source_path,
+            "content_hash": selection.content_hash,
+            "rank": selection.rank,
+            "reason": selection.reason,
+        }
+        for selection in bundle.selected_units
+    ]
+
+
+def _workspace_trace(bundle: WorkspaceContextBundle | None) -> WorkspaceTrace | None:
+    if bundle is None:
+        return None
+    return WorkspaceTrace(
+        context_token_count=bundle.context_token_count,
+        candidates=tuple(
+            WorkspaceCandidateTrace(
+                unit_id=candidate.unit_id,
+                source_id=candidate.source_id,
+                kind=candidate.kind.value,
+                source_path=candidate.source_path,
+                content_hash=candidate.content_hash,
+                rank=candidate.rank,
+                score=candidate.score,
+                selected=candidate.selected,
+            )
+            for candidate in bundle.ranked_candidates
+        ),
+        selected=tuple(
+            WorkspaceSelectionTrace(
+                unit_id=selection.unit_id,
+                source_id=selection.source_id,
+                kind=selection.kind.value,
+                source_path=selection.source_path,
+                content_hash=selection.content_hash,
+                rank=selection.rank,
+                reason=selection.reason,
+            )
+            for selection in bundle.selected_units
+        ),
+    )
 
 
 def _retrieval_trace(bundle: RetrievalBundle, *, latency_ms: int) -> RetrievalTrace:

@@ -64,6 +64,7 @@ class ArtifactMetadataResponse(BaseModel):
     type: ArtifactType
     format: Literal["markdown"] = "markdown"
     title: str
+    project_fact_status: Literal["proposal"] | None = None
 
 
 class SendMessageResponse(BaseModel):

@@ -17,6 +17,7 @@ from databricks_zh_expert.db.models import ModelCall
 from databricks_zh_expert.llm.client import ModelMessage
 from databricks_zh_expert.llm.gateway import ModelAttempt
 from databricks_zh_expert.llm.model_registry import ModelAlias, ModelProvider
+from databricks_zh_expert.workspace.types import WorkspaceDefinition
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
@@ -148,8 +149,9 @@ class FakeChatContextService:
         *,
         prompt_spec,
         expert_profile: str,
+        workspace: WorkspaceDefinition | None = None,
     ) -> ChatContextBundle:
-        del query, expert_profile
+        del query, expert_profile, workspace
         if prompt_spec.name.value == "knowledge_qa":
             raise KnowledgeIndexNotReadyAppError()
         return ChatContextBundle(expert=None, official=None)
@@ -251,11 +253,12 @@ async def test_send_message_accepts_sql_prompt_and_returns_artifact_metadata(
     assert response.status_code == 201
     payload = response.json()
     assert payload["prompt_name"] == "sql_generation"
-    assert payload["prompt_version"] == "1.0.1"
+    assert payload["prompt_version"] == "1.1.0"
     assert payload["artifact"] == {
         "type": "sql",
         "format": "markdown",
         "title": "Databricks SQL",
+        "project_fact_status": "proposal",
     }
     assert payload["assistant_message"]["content"] == VALID_SQL
     assert payload["assistant_message"]["artifact_type"] == "sql"
@@ -292,6 +295,7 @@ async def test_send_message_passes_none_when_model_is_omitted(
         "type": "answer",
         "format": "markdown",
         "title": "Databricks 工作流建议",
+        "project_fact_status": None,
     }
 
 

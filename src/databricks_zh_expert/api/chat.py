@@ -137,5 +137,6 @@ async def send_message(
         artifact=ArtifactMetadataResponse(
             type=result.artifact.artifact_type,
             title=result.artifact.title,
+            project_fact_status=result.project_fact_status,
         ),
     )

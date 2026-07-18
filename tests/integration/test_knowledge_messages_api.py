@@ -25,6 +25,7 @@ from databricks_zh_expert.rag.context import (
     SourceCitation,
 )
 from databricks_zh_expert.rag.repository import KnowledgeIndexStatus
+from databricks_zh_expert.workspace.types import WorkspaceDefinition
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
@@ -108,8 +109,9 @@ class FakeChatContextService:
         *,
         prompt_spec,
         expert_profile: str,
+        workspace: WorkspaceDefinition | None = None,
     ) -> ChatContextBundle:
-        del expert_profile
+        del expert_profile, workspace
         if prompt_spec.name is not PromptName.KNOWLEDGE_QA:
             return ChatContextBundle(expert=None, official=None)
         status = await self.status_provider.get_index_status()

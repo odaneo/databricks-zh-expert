@@ -16,6 +16,7 @@ from databricks_zh_expert.rag.embeddings import (
     EmbeddingResult,
 )
 from databricks_zh_expert.rag.repository import KnowledgeIndexStatus
+from databricks_zh_expert.workspace.registry import WorkspaceRegistry
 
 
 class FakeEmbeddingClient:
@@ -210,6 +211,38 @@ async def test_document_summary_skips_indexes_embedding_and_retrievers() -> None
     assert expert_status.source_hashes == []
     assert knowledge.query_embeddings == []
     assert expert.query_embeddings == []
+
+
+@pytest.mark.asyncio
+async def test_only_proposal_prompt_builds_workspace_context() -> None:
+    service = make_service(
+        embedding_client=FakeEmbeddingClient(),
+        knowledge_status=FakeKnowledgeStatusProvider(),
+        expert_status=FakeExpertStatusProvider(),
+        knowledge_retriever=FakeKnowledgeRetriever(make_knowledge_bundle()),
+        expert_retriever=FakeExpertRetriever(make_expert_bundle()),
+    )
+    registry = WorkspaceRegistry.create_default()
+    workspace = registry.get("retail_sales_demo")
+    prompt_registry = PromptRegistry.create_default()
+
+    proposal_bundle = await service.build(
+        "根据 public.customers 生成客户 CDC DDL",
+        prompt_spec=prompt_registry.get(PromptName.DDL_GENERATION),
+        expert_profile="generic",
+        workspace=workspace,
+    )
+    normal_bundle = await service.build(
+        "解释 Delta Lake",
+        prompt_spec=prompt_registry.get(PromptName.DOCUMENT_SUMMARY),
+        expert_profile="generic",
+        workspace=workspace,
+    )
+
+    assert proposal_bundle.workspace is not None
+    assert proposal_bundle.workspace.workspace_id == "retail_sales_demo"
+    assert proposal_bundle.workspace.selected_units
+    assert normal_bundle.workspace is None
 
 
 @pytest.mark.asyncio

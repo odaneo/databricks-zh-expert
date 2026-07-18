@@ -28,6 +28,11 @@ from databricks_zh_expert.rag.embeddings import (
     EmbeddingResult,
 )
 from databricks_zh_expert.rag.repository import KnowledgeIndexStatus
+from databricks_zh_expert.workspace.context import WorkspaceContextBuilder
+from databricks_zh_expert.workspace.types import (
+    WorkspaceContextBundle,
+    WorkspaceDefinition,
+)
 
 
 class QueryEmbeddingClient(Protocol):
@@ -68,6 +73,7 @@ class ExpertTemplateContextRetriever(Protocol):
 class ChatContextBundle:
     expert: ExpertTemplateRetrievalBundle | None
     official: RetrievalBundle | None
+    workspace: WorkspaceContextBundle | None = None
     expert_latency_ms: int = 0
     official_latency_ms: int = 0
 
@@ -82,6 +88,7 @@ class ChatContextService:
         knowledge_retriever: KnowledgeContextRetriever | None,
         expert_retriever: ExpertTemplateContextRetriever | None,
         expert_source_hash: str,
+        workspace_context_builder: WorkspaceContextBuilder | None = None,
     ) -> None:
         self._embedding_client = embedding_client
         self._knowledge_status_provider = knowledge_status_provider
@@ -89,6 +96,7 @@ class ChatContextService:
         self._knowledge_retriever = knowledge_retriever
         self._expert_retriever = expert_retriever
         self._expert_source_hash = expert_source_hash
+        self._workspace_context_builder = workspace_context_builder or WorkspaceContextBuilder()
 
     async def build(
         self,
@@ -96,9 +104,23 @@ class ChatContextService:
         *,
         prompt_spec: PromptSpec,
         expert_profile: str,
+        workspace: WorkspaceDefinition | None = None,
     ) -> ChatContextBundle:
+        workspace_context = (
+            self._workspace_context_builder.build_for_prompt(
+                query,
+                workspace=workspace,
+                prompt_name=prompt_spec.name.value,
+            )
+            if prompt_spec.use_workspace_context and workspace is not None
+            else None
+        )
         if not prompt_spec.use_official_knowledge and not prompt_spec.use_expert_templates:
-            return ChatContextBundle(expert=None, official=None)
+            return ChatContextBundle(
+                expert=None,
+                official=None,
+                workspace=workspace_context,
+            )
 
         await self._ensure_required_indexes(prompt_spec)
         query_embedding = await self._embed_query(query)
@@ -138,6 +160,7 @@ class ChatContextService:
         return ChatContextBundle(
             expert=expert,
             official=official,
+            workspace=workspace_context,
             expert_latency_ms=expert_latency_ms,
             official_latency_ms=official_latency_ms,
         )

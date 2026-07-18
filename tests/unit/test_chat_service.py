@@ -44,6 +44,9 @@ from databricks_zh_expert.rag.context import (
 )
 from databricks_zh_expert.rag.embeddings import EmbeddingRequestError
 from databricks_zh_expert.rag.repository import KnowledgeIndexStatus
+from databricks_zh_expert.workspace.context import WorkspaceContextBuilder
+from databricks_zh_expert.workspace.registry import WorkspaceRegistry
+from databricks_zh_expert.workspace.types import WorkspaceDefinition
 
 NOW = datetime(2026, 1, 1, tzinfo=UTC)
 VALID_ANSWER = """# Databricks 分析建议
@@ -283,6 +286,12 @@ class FakeChatRepository:
         artifact_error_code: str | None,
         expert_profile: str,
         expert_template_selections: list[dict[str, object]],
+        workspace_id: str | None = None,
+        workspace_version: str | None = None,
+        workspace_mode: str | None = None,
+        workspace_source_hash: str | None = None,
+        workspace_context: list[dict[str, object]] | None = None,
+        project_fact_status: str | None = None,
     ) -> ModelCall:
         self.model_call_requests += 1
         if self.model_call_requests == self.fail_model_call_number:
@@ -308,6 +317,12 @@ class FakeChatRepository:
             artifact_error_code=artifact_error_code,
             expert_profile=expert_profile,
             expert_template_selections=expert_template_selections,
+            workspace_id=workspace_id,
+            workspace_version=workspace_version,
+            workspace_mode=workspace_mode,
+            workspace_source_hash=workspace_source_hash,
+            workspace_context=workspace_context,
+            project_fact_status=project_fact_status,
             error_message=error_message,
             created_at=NOW + timedelta(milliseconds=attempt_number),
         )
@@ -368,6 +383,7 @@ class FakeChatContextService:
         self.error = error
         self.events = events
         self.requests: list[tuple[str, PromptName, str]] = []
+        self.workspaces: list[WorkspaceDefinition | None] = []
 
     async def build(
         self,
@@ -375,8 +391,10 @@ class FakeChatContextService:
         *,
         prompt_spec,
         expert_profile: str,
+        workspace: WorkspaceDefinition | None = None,
     ) -> ChatContextBundle:
         self.requests.append((query, prompt_spec.name, expert_profile))
+        self.workspaces.append(workspace)
         if self.events is not None:
             self.events.append("context")
         if self.error is not None:
@@ -399,8 +417,9 @@ class FakeKnowledgeChatContextService:
         *,
         prompt_spec,
         expert_profile: str,
+        workspace: WorkspaceDefinition | None = None,
     ) -> ChatContextBundle:
-        del expert_profile
+        del expert_profile, workspace
         if prompt_spec.name is not PromptName.KNOWLEDGE_QA:
             return ChatContextBundle(expert=None, official=None)
         status = await self.status_provider.get_index_status()
@@ -567,8 +586,94 @@ def build_service(
         PromptRegistry.create_default(),
         MarkdownArtifactParser(),
         context_service=context_service,
+        workspace_registry=WorkspaceRegistry.create_default(),
     )
     return service, trace_sink
+
+
+@pytest.mark.asyncio
+async def test_workspace_proposal_orders_context_and_audits_every_attempt() -> None:
+    session = make_session()
+    session.workspace_id = "retail_sales_demo"
+    historical_user = make_message(session.id, "user", "历史需求", 0)
+    historical_artifact = make_message(session.id, "assistant", VALID_SQL, 1)
+    historical_artifact.artifact_type = "sql"
+    repository = FakeChatRepository(session, [historical_user, historical_artifact])
+    invocation_id = uuid4()
+    gateway = FakeModelGateway(
+        [
+            make_attempt(
+                invocation_id=invocation_id,
+                model_alias=ModelAlias.GPT_55,
+                attempt_number=1,
+                success=False,
+                retryable=True,
+            ),
+            make_attempt(
+                invocation_id=invocation_id,
+                model_alias=ModelAlias.GPT_54_MINI,
+                attempt_number=2,
+                success=True,
+                content=VALID_SQL,
+            ),
+        ]
+    )
+    registry = WorkspaceRegistry.create_default()
+    workspace = registry.get("retail_sales_demo")
+    workspace_bundle = WorkspaceContextBuilder().build_for_prompt(
+        "根据 public.customers 生成客户 CDC DDL",
+        workspace=workspace,
+        prompt_name=PromptName.DDL_GENERATION.value,
+    )
+    assert workspace_bundle is not None
+    context_service = FakeChatContextService(
+        ChatContextBundle(
+            expert=make_expert_retrieval_bundle(),
+            official=make_retrieval_bundle(),
+            workspace=workspace_bundle,
+        )
+    )
+    service, trace_sink = build_service(
+        repository,
+        gateway,
+        context_service=context_service,
+    )
+
+    result = await service.send_message(
+        session.id,
+        "根据 public.customers 生成客户 CDC DDL",
+        requested_prompt=PromptName.DDL_GENERATION,
+    )
+
+    assert context_service.workspaces == [workspace]
+    assert [message.content for message in gateway.received_messages[1:4]] == [
+        make_retrieval_bundle().context,
+        make_expert_retrieval_bundle().context,
+        workspace_bundle.context,
+    ]
+    assert gateway.received_messages[4].content == "历史需求"
+    assert "未确认提案" in gateway.received_messages[5].content
+    assert VALID_SQL in gateway.received_messages[5].content
+    assert gateway.received_messages[6].content == "根据 public.customers 生成客户 CDC DDL"
+    assert result.project_fact_status == "proposal"
+    assert [call.project_fact_status for call in repository.model_calls] == [
+        "proposal",
+        "proposal",
+    ]
+    assert [call.workspace_id for call in repository.model_calls] == [
+        "retail_sales_demo",
+        "retail_sales_demo",
+    ]
+    assert repository.model_calls[0].workspace_context == (
+        repository.model_calls[1].workspace_context
+    )
+    assert repository.model_calls[0].workspace_context
+    assert all(
+        not str(selection["source_path"]).startswith(("C:\\", "/"))
+        for selection in repository.model_calls[0].workspace_context or []
+    )
+    assert trace_sink.traces[0].workspace is trace_sink.traces[1].workspace
+    assert trace_sink.traces[0].project_fact_status == "proposal"
 
 
 @pytest.mark.asyncio
@@ -629,14 +734,16 @@ async def test_dual_context_orders_messages_and_persists_same_audit_for_fallback
     assert [message.role for message in gateway.received_messages] == [
         "system",
         "user",
+        "user",
+        "user",
         "assistant",
         "user",
-        "user",
-        "user",
     ]
-    assert [message.content for message in gateway.received_messages[-3:]] == [
-        expert_bundle.context,
+    assert [message.content for message in gateway.received_messages[1:]] == [
         official_bundle.context,
+        expert_bundle.context,
+        "历史问题",
+        "历史回答",
         "设计零售工作流",
     ]
     expected_selections = [
@@ -788,12 +895,12 @@ async def test_explicit_sql_prompt_persists_sql_artifact_audit() -> None:
     assert gateway.received_messages[0].role == "system"
     assert "语言标识为 `sql`" in gateway.received_messages[0].content
     assert result.prompt_name is PromptName.SQL_GENERATION
-    assert result.prompt_version == "1.0.1"
+    assert result.prompt_version == "1.1.0"
     assert result.artifact.artifact_type is ArtifactType.SQL
     assert result.artifact.content == VALID_SQL
     assert result.assistant_message.artifact_type == "sql"
     assert repository.model_calls[0].prompt_name == "sql_generation"
-    assert repository.model_calls[0].prompt_version == "1.0.1"
+    assert repository.model_calls[0].prompt_version == "1.1.0"
     assert repository.model_calls[0].artifact_type == "sql"
     assert repository.model_calls[0].artifact_valid is True
     assert repository.model_calls[0].artifact_error_code is None
@@ -912,14 +1019,14 @@ async def test_knowledge_prompt_retrieves_once_after_user_and_orders_messages() 
     assert [message.role for message in gateway.received_messages] == [
         "system",
         "user",
-        "assistant",
         "user",
+        "assistant",
         "user",
     ]
     assert [message.content for message in gateway.received_messages[1:]] == [
+        bundle.context,
         "历史问题",
         "历史回答",
-        bundle.context,
         "如何配置失败重试？",
     ]
     assert bundle.selected_chunks[0].content not in gateway.received_messages[0].content

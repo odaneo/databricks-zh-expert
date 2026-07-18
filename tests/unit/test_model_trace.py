@@ -20,6 +20,9 @@ from databricks_zh_expert.observability.model_trace import (
     ModelCallTrace,
     RetrievalCandidateTrace,
     RetrievalTrace,
+    WorkspaceCandidateTrace,
+    WorkspaceSelectionTrace,
+    WorkspaceTrace,
 )
 from databricks_zh_expert.prompts.registry import PromptName
 
@@ -84,7 +87,7 @@ async def test_jsonl_trace_sink_writes_complete_utf8_input_and_output(tmp_path) 
 
     payload = json.loads(trace_path.read_text(encoding="utf-8"))
     assert payload == {
-        "schema_version": "1.5",
+        "schema_version": "1.6",
         "protocol": "openai.chat.completions",
         "trace": {
             "model_call_id": str(trace.model_call_id),
@@ -106,9 +109,15 @@ async def test_jsonl_trace_sink_writes_complete_utf8_input_and_output(tmp_path) 
                 "violations": [],
             },
             "expert_profile": "generic",
+            "workspace_id": None,
+            "workspace_version": None,
+            "workspace_mode": None,
+            "workspace_source_hash": None,
+            "project_fact_status": None,
         },
         "retrieval": None,
         "expert_templates": None,
+        "context": {"workspace": None},
         "request": trace.request,
         "response": trace.response,
         "error": None,
@@ -165,7 +174,7 @@ def test_trace_15_serializes_rag_scores_sources_and_actual_context() -> None:
 
     payload = json.loads(JsonlModelTraceSink._serialize(trace))
 
-    assert payload["schema_version"] == "1.5"
+    assert payload["schema_version"] == "1.6"
     assert payload["retrieval"] == {
         "embedding_model": "text-embedding-3-small",
         "latency_ms": 37,
@@ -238,7 +247,7 @@ def test_trace_15_serializes_expert_candidates_selections_and_actual_context() -
 
     payload = json.loads(JsonlModelTraceSink._serialize(trace))
 
-    assert payload["schema_version"] == "1.5"
+    assert payload["schema_version"] == "1.6"
     assert payload["trace"]["expert_profile"] == "retail_sales_demo"
     assert payload["expert_templates"] == {
         "status": "selected",
@@ -274,6 +283,54 @@ def test_trace_15_serializes_expert_candidates_selections_and_actual_context() -
     assert payload["request"]["messages"][-3]["content"] == expert_context
     assert "source_path" not in json.dumps(payload["expert_templates"])
     assert "C:\\" not in json.dumps(payload["expert_templates"])
+
+
+def test_trace_16_serializes_workspace_candidates_selections_and_proposal_status() -> None:
+    workspace = WorkspaceTrace(
+        context_token_count=640,
+        candidates=(
+            WorkspaceCandidateTrace(
+                unit_id="source-rds-customer:1",
+                source_id="source-rds-customer",
+                kind="source_ddl",
+                source_path="source-schema/rds-customer.sql",
+                content_hash="b" * 64,
+                rank=1,
+                score=212.0,
+                selected=True,
+            ),
+        ),
+        selected=(
+            WorkspaceSelectionTrace(
+                unit_id="source-rds-customer:1",
+                source_id="source-rds-customer",
+                kind="source_ddl",
+                source_path="source-schema/rds-customer.sql",
+                content_hash="b" * 64,
+                rank=1,
+                reason="lexical",
+            ),
+        ),
+    )
+    trace = replace(
+        make_trace(),
+        workspace_id="retail_sales_demo",
+        workspace_version="1.0.0",
+        workspace_mode="greenfield",
+        workspace_source_hash="c" * 64,
+        project_fact_status="proposal",
+        workspace=workspace,
+    )
+
+    payload = json.loads(JsonlModelTraceSink._serialize(trace))
+
+    assert payload["schema_version"] == "1.6"
+    assert payload["trace"]["workspace_mode"] == "greenfield"
+    assert payload["trace"]["project_fact_status"] == "proposal"
+    assert payload["context"]["workspace"]["selected"][0]["source_path"] == (
+        "source-schema/rds-customer.sql"
+    )
+    assert "C:\\" not in json.dumps(payload["context"]["workspace"])
 
 
 def test_rag_trace_does_not_contain_credentials_raw_html_or_embedding_arrays() -> None:

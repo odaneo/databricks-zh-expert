@@ -176,6 +176,7 @@ def get_chat_service(
     prompt_registry: Annotated[PromptRegistry, Depends(get_prompt_registry)],
     artifact_parser: Annotated[MarkdownArtifactParser, Depends(get_artifact_parser)],
     context_service: Annotated[ChatContextService, Depends(get_chat_context_service)],
+    workspace_registry: Annotated[WorkspaceRegistry, Depends(get_workspace_registry)],
 ) -> ChatService:
     return ChatService(
         repository=repository,
@@ -184,4 +185,5 @@ def get_chat_service(
         prompt_registry=prompt_registry,
         artifact_parser=artifact_parser,
         context_service=context_service,
+        workspace_registry=workspace_registry,
     )
