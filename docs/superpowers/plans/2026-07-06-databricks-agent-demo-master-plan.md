@@ -685,6 +685,10 @@ Git Markdown / YAML
 
 输入“设计一个每日销售分析 Workflow”这类需求后，系统可以输出一份结构完整、能继续修改成设计书的 Markdown 草案。
 
+详细计划见：
+
+`docs/superpowers/plans/2026-07-18-stage-7-workflow-design-plan.md`。
+
 ---
 
 ## 阶段 8：Markdown 文档生成
@@ -978,3 +982,4 @@ Agent 生成的 SQL 和 PySpark 可能存在环境差异，不能默认可执行
 10. `docs/superpowers/plans/2026-07-16-stage-5-databricks-expert-template-library-plan.md`。
 11. `docs/superpowers/specs/2026-07-17-stage-6-project-aware-code-generation-design.md`。
 12. `docs/superpowers/plans/2026-07-17-stage-6-project-aware-code-generation-plan.md`。
+13. `docs/superpowers/plans/2026-07-18-stage-7-workflow-design-plan.md`。
