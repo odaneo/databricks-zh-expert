@@ -236,8 +236,8 @@ async def test_retail_workflow_uses_real_expert_repository_and_keeps_api_private
     assert embedding.queries == ["设计包含 S3、RDS DMS CDC 和 Kinesis 的零售工作流"]
     assert official.query_embeddings == [embedding.embedding]
     assert [message.role for message in gateway.messages[-3:]] == ["user", "user", "user"]
-    assert gateway.messages[-3].content.startswith("以下内容是内部专家模板")
-    assert gateway.messages[-2].content.startswith("【不可信资料开始】")
+    assert gateway.messages[-3].content.startswith("【不可信资料开始】")
+    assert gateway.messages[-2].content.startswith("以下内容是内部专家模板")
 
     model_call = await test_db_session.scalar(
         select(ModelCall).where(ModelCall.session_id == session_id)

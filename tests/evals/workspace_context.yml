@@ -1,0 +1,39 @@
+version: 1
+workspace_id: retail_sales_demo
+cases:
+  - id: ddl_customer
+    prompt: ddl_generation
+    query: 根据 RDS PostgreSQL public.customer Schema 生成客户 CDC Databricks DDL
+    expected_unit_ids:
+      - source_ddl.rds_postgresql.rds-postgresql:1
+    forbidden_context_terms: []
+
+  - id: ddl_sales
+    prompt: ddl_generation
+    query: 根据 POS Parquet source.pos_sales_line Schema 生成销售事实和每日销售 Gold DDL
+    expected_unit_ids:
+      - source_ddl.pos_parquet.pos-parquet:1
+    forbidden_context_terms: []
+
+  - id: source_mapping
+    prompt: mapping_generation
+    query: 根据 public.customer 和 source.pos_sales_line Schema 生成源到目标 Mapping CSV
+    expected_unit_ids:
+      - source_ddl.rds_postgresql.rds-postgresql:1
+      - source_ddl.pos_parquet.pos-parquet:1
+    forbidden_context_terms: []
+
+  - id: kinesis_notebook
+    prompt: notebook_generation
+    query: 根据 Kinesis source.order_event Schema 生成 Bronze PySpark 与 Notebook
+    expected_unit_ids:
+      - source_ddl.kinesis_events.kinesis-events:1
+    forbidden_context_terms: []
+
+  - id: missing_source_field
+    prompt: ddl_generation
+    query: 使用 public.customer.source_system_priority 字段生成客户去重 DDL；如果源 Schema 不存在该字段，明确说明缺失
+    expected_unit_ids:
+      - source_ddl.rds_postgresql.rds-postgresql:1
+    forbidden_context_terms:
+      - source_system_priority
