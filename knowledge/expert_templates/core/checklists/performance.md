@@ -2,7 +2,7 @@
 id: checklist.performance
 name: Databricks 性能检查清单
 summary: 从扫描、数据布局、Shuffle、倾斜、并发和计算配置定位性能问题。
-version: 1.0.0
+version: 1.1.0
 kind: checklist
 category: performance
 layer: core
@@ -20,7 +20,6 @@ tags:
   - shuffle
   - query-profile
 extends: null
-is_mock: false
 official_refs:
   - https://docs.databricks.com/aws/en/optimizations/
   - https://docs.databricks.com/aws/en/delta/optimize

@@ -2,7 +2,7 @@
 id: ingestion.dms_s3_cdc
 name: AWS DMS 到 S3 CDC 摄取蓝图
 summary: 设计 AWS DMS full load 与 CDC 文件进入 S3 后的 Bronze 接入和顺序控制。
-version: 1.0.0
+version: 1.1.0
 kind: blueprint
 category: ingestion
 layer: core
@@ -19,7 +19,6 @@ tags:
   - s3
   - parquet
 extends: null
-is_mock: false
 official_refs:
   - https://docs.aws.amazon.com/dms/latest/userguide/CHAP_Target.S3.html
   - https://docs.databricks.com/aws/en/ingestion/cloud-object-storage/auto-loader

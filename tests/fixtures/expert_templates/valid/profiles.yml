@@ -5,7 +5,6 @@ profiles:
     description: 只使用通用核心专家模板。
     cloud: neutral
     layers: [core]
-    is_mock: false
     default: true
     prompt_defaults:
       databricks_qa: [medallion.standard]
@@ -19,10 +18,9 @@ profiles:
       self_check: [medallion.standard]
   - id: retail_sales_demo
     display_name: AWS 零售销售 Demo
-    description: 使用通用核心层和 AWS 零售销售模拟覆盖层。
+    description: 使用通用核心层和 AWS 零售销售项目覆盖层。
     cloud: aws
     layers: [core, retail_sales_demo]
-    is_mock: true
     default: false
     prompt_defaults:
       databricks_qa: [medallion.standard]

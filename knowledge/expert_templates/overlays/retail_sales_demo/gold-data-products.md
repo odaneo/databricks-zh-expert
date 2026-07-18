@@ -1,8 +1,8 @@
 ---
 id: retail.gold_data_products
-name: 零售 Gold 数据产品模拟定义
+name: 零售 Gold 数据产品定义
 summary: 定义每日销售、商品表现、库存健康、客户与渠道四个 Gold 产品的粒度和质量契约。
-version: 1.0.0
+version: 1.1.0
 kind: deliverable
 category: medallion
 layer: retail_sales_demo
@@ -20,21 +20,20 @@ tags:
   - data-product
   - metrics
 extends: medallion.standard
-is_mock: true
 official_refs:
   - https://docs.databricks.com/aws/en/lakehouse/medallion
   - https://docs.databricks.com/aws/en/data-governance/unity-catalog/
 ---
 
-# 零售 Gold 数据产品模拟定义
+# 零售 Gold 数据产品定义
 
 ## 适用场景
 
-本资产为 `retail_sales_demo` 模拟项目提供 Gold 交付契约，扩展通用 Medallion 边界。指标、维度和刷新目标必须由业务 owner 确认后才能成为正式口径。
+本资产为 `retail_sales_demo` 项目提供 Gold 交付契约，扩展通用 Medallion 边界。指标、维度和刷新目标必须由业务 owner 确认后才能成为正式口径。
 
 ## 数据产品交付定义
 
-| 数据产品 | 建议表与粒度 | 核心字段或指标 | 模拟消费者 |
+| 数据产品 | 建议表与粒度 | 核心字段或指标 | 预期消费者 |
 | --- | --- | --- | --- |
 | 每日销售分析 | `gold.daily_sales`，日期 × 门店 × 渠道 × 商品 | 净销售额、订单量、销售件数、客单价、退款额 | `analyst`、`finance` |
 | 商品表现分析 | `gold.product_performance`，日期 × 商品 × 渠道 | 销量、退货率、折扣影响、品类排名 | `analyst`、`marketing` |

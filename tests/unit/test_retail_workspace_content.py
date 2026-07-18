@@ -49,7 +49,8 @@ def test_demo_registry_contains_only_user_fact_sources() -> None:
 
     assert workspace.version == "1.0.0"
     assert workspace.cloud == "aws"
-    assert workspace.is_mock is True
+    assert not hasattr(workspace, "workspace_mode")
+    assert not hasattr(workspace, "is_mock")
     assert [source.source_id for source in workspace.sources] == [
         "requirements",
         "rules",

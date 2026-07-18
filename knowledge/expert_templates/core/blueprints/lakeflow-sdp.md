@@ -2,7 +2,7 @@
 id: pipeline.lakeflow_sdp
 name: Lakeflow 声明式管道蓝图
 summary: 使用 Lakeflow Spark Declarative Pipelines 组织稳定的流表、物化视图和质量规则。
-version: 1.0.0
+version: 1.1.0
 kind: blueprint
 category: pipeline
 layer: core
@@ -20,7 +20,6 @@ tags:
   - streaming-table
   - materialized-view
 extends: null
-is_mock: false
 official_refs:
   - https://docs.databricks.com/aws/en/ldp/concepts
   - https://docs.databricks.com/aws/en/ldp/best-practices

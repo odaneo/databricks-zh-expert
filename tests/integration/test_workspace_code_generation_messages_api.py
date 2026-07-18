@@ -181,7 +181,7 @@ async def test_workspace_ddl_request_persists_proposal_context_and_relative_path
     )
     assert model_call is not None
     assert model_call.workspace_id == "retail_sales_demo"
-    assert model_call.workspace_mode == "greenfield"
+    assert not hasattr(model_call, "workspace_mode")
     assert model_call.project_fact_status == "proposal"
     assert model_call.workspace_context
     assert all(

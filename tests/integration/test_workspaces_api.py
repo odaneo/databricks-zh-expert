@@ -12,11 +12,9 @@ async def test_list_workspaces_returns_safe_greenfield_metadata(client: AsyncCli
         {
             "id": "retail_sales_demo",
             "display_name": "AWS 零售销售分析 Demo",
-            "description": "从源系统 Schema 开始设计 Databricks Lakehouse 的 Mock 项目。",
+            "description": "从源系统 Schema 开始设计 Databricks Lakehouse 的零售销售项目。",
             "version": "1.0.0",
-            "workspace_mode": "greenfield",
             "cloud": "aws",
-            "is_mock": True,
             "source_count": 5,
             "source_hash": response.json()[0]["source_hash"],
             "source_paths": [
@@ -39,7 +37,8 @@ async def test_get_workspace_returns_detail_without_source_content(client: Async
 
     assert response.status_code == 200
     assert response.json()["id"] == "retail_sales_demo"
-    assert response.json()["workspace_mode"] == "greenfield"
+    assert "workspace_mode" not in response.json()
+    assert "is_mock" not in response.json()
     assert response.json()["source_count"] == 5
     assert "content" not in response.text
 

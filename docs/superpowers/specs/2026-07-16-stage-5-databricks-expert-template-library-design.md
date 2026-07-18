@@ -10,9 +10,9 @@ Artifact，以及 Databricks 官方 Docs 与 API 文档的全量 RAG。系统现
 检查清单和代码模式选择。仅依赖官方 RAG 时，模型仍然容易输出正确但泛化的说明，缺少真实项目交付所需的
 决策上下文。
 
-阶段 5 建设一套受 Git 管理、可版本化、可检索、可审计的 Databricks 专家模板库。第一版没有真实客户
-资料，因此采用“通用核心层 + AWS 零售销售 Mock 覆盖层”。Mock 内容必须明确标识为模拟假设，不得冒充
-真实客户案例、官方结论或已经验证的性能数据。
+阶段 5 建设一套受 Git 管理、可版本化、可检索、可审计的 Databricks 专家模板库。第一版采用
+“通用核心层 + AWS 零售销售项目覆盖层”。项目覆盖层提供内部设计基线，不得冒充真实客户案例、官方结论或
+已经验证的性能数据。
 
 本阶段仍然是顾问型 Agent，不连接或操作 Databricks 与 AWS，不执行 SQL、PySpark、Notebook、Job、
 Pipeline 或基础设施命令。
@@ -35,15 +35,15 @@ Pipeline 或基础设施命令。
 以下决策已由用户于 2026-07-16 确认，实施时不再作为开放问题：
 
 1. 模板库采用“通用核心层 + 项目经验覆盖层”。
-2. 第一版项目经验来自明确标记的 Mock，不声称具有真实客户来源。
-3. Mock 使用一个贯穿所有相关阶段的 AWS 零售销售项目，不创建多个互不关联的小案例。
+2. 第一版项目经验来自内部零售销售项目基线，不声称具有真实客户来源。
+3. 项目覆盖层使用一个贯穿所有相关阶段的 AWS 零售销售项目，不创建多个互不关联的小案例。
 4. 数据源同时包含 S3 日批、RDS PostgreSQL CDC 和 Kinesis 实时事件流。
 5. RDS CDC 基准架构固定为 `RDS PostgreSQL -> AWS DMS -> S3 Parquet -> Auto Loader`。
 6. 不采用处于 Preview 或 Experimental 状态的 Databricks 或 AWS 功能。
 7. Medallion 转换主框架使用 Lakeflow Spark Declarative Pipelines 的稳定能力。
-8. 模拟项目采用平衡型 SLA，不追求秒级实时。
+8. 零售销售项目采用平衡型 SLA，不追求秒级实时。
 9. Gold 层覆盖每日销售、商品表现、库存健康、客户与渠道四个数据产品。
-10. 模拟项目包含虚构 PII 字段和 Unity Catalog 权限治理场景。
+10. 零售销售项目包含示例 PII 字段和 Unity Catalog 权限治理场景。
 11. 用户不选择具体模板；系统自动检索，模板选择必须进入日志和数据库审计。
 12. 会话创建时选择可选 `expert_profile`，默认值为 `generic`，会话创建后不可修改。
 13. 同一 Git 仓库、同一 PostgreSQL 实例和当前非 `public` Schema 中增加独立专家模板表。
@@ -52,7 +52,7 @@ Pipeline 或基础设施命令。
 16. 专家资产分为 `blueprint`、`decision_guide`、`code_pattern`、`checklist`、`deliverable` 五类。
 17. 第一版建设约 35 个高质量资产；数量不是验收 KPI，不为凑数保留重复内容。
 18. Git 文件是模板唯一真源；数据库只是可重建的检索和审计派生数据。
-19. `messages.source_citations` 继续只代表官方来源，Mock 模板不进入官方引用。
+19. `messages.source_citations` 继续只代表官方来源，项目模板不进入官方引用。
 20. 聊天响应不返回模板选择详情；开发者通过数据库和本地 Trace 查看。
 21. Profile 由仓库内 YAML 注册，不写成 Python 枚举或环境变量。
 22. 不新增模型调用进行意图分类、模板选择或 rerank。
@@ -60,7 +60,7 @@ Pipeline 或基础设施命令。
 24. Agent Skills 不进入阶段 5 第一版。
 25. 不清理已有会话、消息、模型调用、真实验收 Trace 或知识库数据。
 
-## 4. Mock 项目定义
+## 4. 零售销售项目定义
 
 ### 4.1 项目标识
 
@@ -68,12 +68,12 @@ Pipeline 或基础设施命令。
 Profile ID: retail_sales_demo
 项目名称：AWS 零售销售分析平台
 数据平台：Databricks on AWS
-性质：完全模拟，不包含真实企业、客户、个人或商业数据
+性质：内部项目基线，不包含真实企业、客户、个人或商业数据
 ```
 
 ### 4.2 数据源
 
-| 来源 | 模拟内容 | 到达方式 | 主要用途 |
+| 来源 | 项目假设 | 到达方式 | 主要用途 |
 | --- | --- | --- | --- |
 | Amazon S3 | 门店 POS 日销售文件、供应商商品文件 | 每日批处理 | 门店销售与商品主数据补充 |
 | Amazon RDS for PostgreSQL | 客户、商品、门店、库存主数据 | AWS DMS CDC 写入 S3 Parquet | 主数据增量与库存状态 |
@@ -97,7 +97,7 @@ Kinesis Data Streams --------------> Structured Streaming --+         |
 所有目标表使用 Delta 表并由 Unity Catalog 管理。模板可以给出代码、表结构和配置草稿，但不得声称已经创建
 Catalog、Schema、Table、Pipeline 或 Job。
 
-### 4.4 Mock SLA
+### 4.4 基线 SLA
 
 | 工作负载 | 目标 |
 | --- | --- |
@@ -105,9 +105,9 @@ Catalog、Schema、Table、Pipeline 或 Job。
 | RDS CDC | 进入 Bronze 层不超过 15 分钟 |
 | 门店日批 | 每日 05:00 到达，07:00 前完成 Gold 更新 |
 | Gold 报表 | 每日 07:30 前可查询 |
-| 核心任务 | 模拟月度成功率目标 99.5% |
+| 核心任务 | 基线月度成功率目标 99.5% |
 
-这些数字只属于 `retail_sales_demo` 的 Mock 假设。通用模板不得把它们描述为 Databricks 推荐值，用户在
+这些数字只属于 `retail_sales_demo` 的项目假设。通用模板不得把它们描述为 Databricks 推荐值，用户在
 本轮请求中给出的 SLA 可以覆盖这些默认值。
 
 ### 4.5 Gold 数据产品
@@ -121,7 +121,7 @@ Catalog、Schema、Table、Pipeline 或 Job。
 
 ### 4.6 PII 与权限
 
-Mock 客户数据可以包含虚构姓名、邮箱、手机号和会员等级。治理边界固定为：
+示例客户数据可以包含虚构姓名、邮箱、手机号和会员等级。治理边界固定为：
 
 1. Bronze 原始客户数据只允许数据工程角色访问。
 2. Silver 对联系方式进行标准化和脱敏，只保留受控关联标识。
@@ -170,16 +170,15 @@ class ExpertProfile:
     cloud: str
     layers: tuple[str, ...]
     prompt_defaults: Mapping[PromptName, tuple[str, ...]]
-    is_mock: bool
     is_default: bool
 ```
 
 第一版固定两个文件配置的 Profile：
 
-| ID | 层 | Cloud | Mock | 默认 |
-| --- | --- | --- | --- | --- |
-| `generic` | `core` | `neutral` | 否 | 是 |
-| `retail_sales_demo` | `core`, `retail_sales_demo` | `aws` | 是 | 否 |
+| ID | 层 | Cloud | 默认 |
+| --- | --- | --- | --- |
+| `generic` | `core` | `neutral` | 是 |
+| `retail_sales_demo` | `core`, `retail_sales_demo` | `aws` | 否 |
 
 Profile ID 是动态注册的受控字符串，不创建 Python `StrEnum`。`generic` 是跨环境一致的产品默认值，不进入
 `.env`。
@@ -276,7 +275,6 @@ tags:
   - silver
   - gold
 extends: null
-is_mock: false
 official_refs:
   - https://docs.databricks.com/aws/en/lakehouse/medallion
 ---
@@ -304,7 +302,6 @@ official_refs:
 | `prompt_names` | 至少一个已注册且可用的 `PromptName` |
 | `tags` | 1 至 20 个规范化标签，单项最长 50 字符 |
 | `extends` | 可空；只能引用 core 模板 ID，禁止循环和多级覆盖层继承 |
-| `is_mock` | core 必须为 false，零售覆盖层必须为 true |
 | `official_refs` | 可空 HTTPS URL 列表，只作为维护线索，不进入消息官方引用 |
 
 未知字段直接报错。YAML 使用 `yaml.safe_load()`，不执行自定义标签、对象构造或模板表达式。
@@ -339,17 +336,15 @@ profiles:
     description: 只使用通用核心专家模板。
     cloud: neutral
     layers: [core]
-    is_mock: false
     default: true
     prompt_defaults:
       databricks_qa: [medallion.standard]
       sql_generation: [code.delta_merge_sql]
   - id: retail_sales_demo
     display_name: AWS 零售销售 Demo
-    description: 使用通用核心层和 AWS 零售销售模拟覆盖层。
+    description: 使用通用核心层和 AWS 零售销售项目覆盖层。
     cloud: aws
     layers: [core, retail_sales_demo]
-    is_mock: true
     default: false
     prompt_defaults:
       workflow_design: [retail.end_to_end_architecture]
@@ -468,7 +463,6 @@ expert_template_selections JSONB NULL
 | `prompt_names` | JSONB | Prompt 名称数组 |
 | `tags` | JSONB | 规范化标签数组 |
 | `extends_id` | UUID NULL FK | 已解析的父模板记录 |
-| `is_mock` | BOOLEAN | Mock 标识 |
 | `official_refs` | JSONB | 维护参考 URL |
 | `source_path` | TEXT | 仓库相对 POSIX 路径 |
 | `content` | TEXT | 规范化 Markdown 正文 |
@@ -706,9 +700,8 @@ Session 列表、详情和创建响应增加 `expert_profile`。不提供修改 
     {
       "id": "retail_sales_demo",
       "display_name": "AWS 零售销售 Demo",
-      "description": "通用核心层与 AWS 零售销售模拟覆盖层。",
-      "cloud": "aws",
-      "is_mock": true
+      "description": "通用核心层与 AWS 零售销售项目覆盖层。",
+      "cloud": "aws"
     }
   ]
 }
@@ -800,7 +793,7 @@ Front Matter 的本地绝对路径写入 Trace。
 1. 模板来自受版本控制的可信本地文件，但仍只作为参考数据，不作为可执行代码。
 2. 禁止在模板中保存 API Key、密码、连接字符串、真实姓名、真实邮箱和客户标识。
 3. Front Matter 使用安全 YAML 解析，Markdown 不执行 HTML、Jinja、SQL、Python 或 shell。
-4. Mock 数值必须标注为项目假设，不可描述为 Databricks 官方推荐或真实基准。
+4. 项目基线数值必须标注为项目假设，不可描述为 Databricks 官方推荐或真实基准。
 5. 官方事实与模板冲突时，模型必须采用当前官方检索上下文并指出模板需要人工复核。
 6. 站外 AWS 链接可以作为模板维护参考，但不自动抓取或转为 Databricks 官方引用。
 7. 模板正文不通过 API 暴露，避免未来把内部项目经验当作公共内容服务。

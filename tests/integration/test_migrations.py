@@ -85,13 +85,13 @@ async def test_initial_migration_creates_expected_tables(
     assert model_call_columns["expert_template_selections"]["nullable"] is True
     assert model_call_columns["workspace_id"]["nullable"] is True
     assert model_call_columns["workspace_version"]["nullable"] is True
-    assert model_call_columns["workspace_mode"]["nullable"] is True
+    assert "workspace_mode" not in model_call_columns
     assert model_call_columns["workspace_source_hash"]["nullable"] is True
     assert model_call_columns["workspace_context"]["nullable"] is True
     assert model_call_columns["project_fact_status"]["nullable"] is True
     assert "uq_model_calls_invocation_attempt" in unique_constraints
     assert "ck_model_calls_attempt_number" in check_constraints
-    assert "ck_model_calls_workspace_mode" in check_constraints
+    assert "ck_model_calls_workspace_mode" not in check_constraints
     assert "ck_model_calls_project_fact_status" in check_constraints
     assert "ck_messages_artifact_type" in message_check_constraints
 
@@ -171,6 +171,7 @@ async def test_expert_template_schema_contract(test_engine: AsyncEngine) -> None
     assert template_columns["profile_id"]["nullable"] is True
     assert template_columns["extends_id"]["nullable"] is True
     assert template_columns["inactivated_at"]["nullable"] is True
+    assert "is_mock" not in template_columns
     assert str(template_columns["prompt_names"]["type"]).upper() == "JSONB"
     assert str(chunk_columns["embedding"]["type"]).upper() == "VECTOR(1536)"
     assert str(chunk_columns["search_vector"]["type"]).upper() == "TSVECTOR"
@@ -350,6 +351,120 @@ def test_expert_template_migration_preserves_history_and_round_trips(
         with psycopg.connect(sync_database_url) as connection:
             with connection.cursor() as cursor:
                 cursor.execute("DELETE FROM sessions WHERE id = %s", (session_id,))
+        get_settings.cache_clear()
+
+
+@pytest.mark.integration
+def test_classification_field_removal_preserves_rows_and_round_trips(
+    test_database_url: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DATABASE_URL", test_database_url)
+    get_settings.cache_clear()
+    config = Config("alembic.ini")
+    sync_database_url = (
+        make_url(test_database_url)
+        .set(drivername="postgresql")
+        .render_as_string(hide_password=False)
+    )
+    session_id = uuid4()
+    model_call_id = uuid4()
+    template_record_id = uuid4()
+    template_id = f"migration.removal.{template_record_id.hex}"
+
+    try:
+        command.downgrade(config, "0008_workspace_code_generation")
+        with psycopg.connect(sync_database_url) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    INSERT INTO sessions (id, title, workspace_id)
+                    VALUES (%s, %s, 'retail_sales_demo')
+                    """,
+                    (session_id, "分类字段移除迁移保护测试"),
+                )
+                cursor.execute(
+                    """
+                    INSERT INTO model_calls (
+                        id, session_id, invocation_id, provider, model, model_alias,
+                        attempt_number, latency_ms, success, retryable,
+                        workspace_id, workspace_mode
+                    )
+                    VALUES (
+                        %s, %s, %s, 'deepseek', 'deepseek/deepseek-v4-flash',
+                        'deepseek-v4-flash', 1, 42, true, false,
+                        'retail_sales_demo', 'greenfield'
+                    )
+                    """,
+                    (model_call_id, session_id, model_call_id),
+                )
+                cursor.execute(
+                    """
+                    INSERT INTO expert_templates (
+                        id, template_id, version, name, summary, kind, category,
+                        layer, profile_id, cloud, prompt_names, tags, is_mock,
+                        official_refs, source_path, content, content_hash, status,
+                        chunk_count
+                    )
+                    VALUES (
+                        %s, %s, '1.0.0', '迁移保护模板', '验证删除分类列时保留模板。',
+                        'blueprint', 'delivery', 'retail_sales_demo',
+                        'retail_sales_demo', 'aws', '["databricks_qa"]'::jsonb,
+                        '["migration"]'::jsonb, true, '[]'::jsonb,
+                        'migration/removal.md', '# 迁移保护模板', %s, 'active', 0
+                    )
+                    """,
+                    (template_record_id, template_id, "a" * 64),
+                )
+
+        command.upgrade(config, "head")
+        with psycopg.connect(sync_database_url) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT table_name, column_name
+                    FROM information_schema.columns
+                    WHERE table_schema = current_schema()
+                      AND (
+                        (table_name = 'model_calls' AND column_name = 'workspace_mode')
+                        OR (table_name = 'expert_templates' AND column_name = 'is_mock')
+                      )
+                    """
+                )
+                assert cursor.fetchall() == []
+                cursor.execute(
+                    "SELECT workspace_id FROM model_calls WHERE id = %s",
+                    (model_call_id,),
+                )
+                assert cursor.fetchone() == ("retail_sales_demo",)
+                cursor.execute(
+                    "SELECT template_id, layer FROM expert_templates WHERE id = %s",
+                    (template_record_id,),
+                )
+                assert cursor.fetchone() == (template_id, "retail_sales_demo")
+
+        command.downgrade(config, "0008_workspace_code_generation")
+        with psycopg.connect(sync_database_url) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT workspace_mode FROM model_calls WHERE id = %s",
+                    (model_call_id,),
+                )
+                assert cursor.fetchone() == ("greenfield",)
+                cursor.execute(
+                    "SELECT is_mock FROM expert_templates WHERE id = %s",
+                    (template_record_id,),
+                )
+                assert cursor.fetchone() == (True,)
+    finally:
+        command.upgrade(config, "head")
+        with psycopg.connect(sync_database_url) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("DELETE FROM sessions WHERE id = %s", (session_id,))
+                cursor.execute(
+                    "DELETE FROM expert_templates WHERE id = %s",
+                    (template_record_id,),
+                )
         get_settings.cache_clear()
 
 

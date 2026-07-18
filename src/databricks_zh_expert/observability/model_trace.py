@@ -132,7 +132,6 @@ class ModelCallTrace:
     expert_templates: ExpertTemplateTrace | None = None
     workspace_id: str | None = None
     workspace_version: str | None = None
-    workspace_mode: str | None = None
     workspace_source_hash: str | None = None
     project_fact_status: str | None = None
     workspace: WorkspaceTrace | None = None
@@ -172,7 +171,7 @@ class JsonlModelTraceSink:
     @staticmethod
     def _serialize(trace: ModelCallTrace) -> str:
         payload = {
-            "schema_version": "1.6",
+            "schema_version": "1.7",
             "protocol": "openai.chat.completions",
             "trace": {
                 "model_call_id": str(trace.model_call_id),
@@ -200,7 +199,6 @@ class JsonlModelTraceSink:
                 "expert_profile": trace.expert_profile,
                 "workspace_id": trace.workspace_id,
                 "workspace_version": trace.workspace_version,
-                "workspace_mode": trace.workspace_mode,
                 "workspace_source_hash": trace.workspace_source_hash,
                 "project_fact_status": trace.project_fact_status,
             },

@@ -18,7 +18,6 @@ from databricks_zh_expert.workspace.constants import (
 )
 from databricks_zh_expert.workspace.types import (
     WorkspaceDefinition,
-    WorkspaceMode,
     WorkspaceSource,
     WorkspaceSourceKind,
 )
@@ -94,13 +93,11 @@ class _SourceSchemaModel(_StrictModel):
 
 class _ManifestModel(_StrictModel):
     schema_version: Literal[1]
-    workspace_mode: Literal["greenfield"]
     workspace_id: WorkspaceId = Field(alias="id")
     display_name: str = Field(min_length=1, max_length=200)
     description: str = Field(min_length=1, max_length=500)
     version: str = Field(pattern=_SEMVER_PATTERN)
     cloud: Literal["aws"]
-    is_mock: bool
     documents: _DocumentsModel
     source_schemas: tuple[_SourceSchemaModel, ...] = Field(min_length=1)
 
@@ -181,12 +178,10 @@ def _load_workspace(workspace_directory: Path, registry_root: Path) -> Workspace
     sources = _load_sources(package_root, manifest)
     return WorkspaceDefinition(
         workspace_id=manifest.workspace_id,
-        workspace_mode=WorkspaceMode.GREENFIELD,
         display_name=manifest.display_name,
         description=manifest.description,
         version=manifest.version,
         cloud=manifest.cloud,
-        is_mock=manifest.is_mock,
         source_hash=_source_hash(manifest, sources),
         sources=sources,
     )
@@ -243,8 +238,6 @@ def _validation_message(error: ValidationError) -> str:
         return "项目工作区清单包含未知字段。"
     for issue in issues:
         location = tuple(str(part) for part in issue["loc"])
-        if location and location[-1] == "workspace_mode":
-            return "项目工作区模式必须为 greenfield。"
         if location and location[-1] == "version":
             return "项目工作区版本必须使用 MAJOR.MINOR.PATCH。"
         if location and location[-1] == "source_schemas" and issue["type"] == "too_short":

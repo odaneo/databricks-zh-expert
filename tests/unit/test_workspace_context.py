@@ -14,7 +14,6 @@ from databricks_zh_expert.workspace.registry import WorkspaceRegistry
 from databricks_zh_expert.workspace.types import (
     WorkspaceContextPurpose,
     WorkspaceDefinition,
-    WorkspaceMode,
     WorkspaceSource,
     WorkspaceSourceKind,
 )
@@ -45,12 +44,10 @@ def _source(
 def _custom_workspace(sources: tuple[WorkspaceSource, ...]) -> WorkspaceDefinition:
     return WorkspaceDefinition(
         workspace_id="test_workspace",
-        workspace_mode=WorkspaceMode.GREENFIELD,
         display_name="测试工作区",
         description="Workspace Context 单元测试工作区。",
         version="1.0.0",
         cloud="aws",
-        is_mock=True,
         source_hash="a" * 64,
         sources=sources,
     )

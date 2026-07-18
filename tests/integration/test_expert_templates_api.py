@@ -21,9 +21,9 @@ async def test_list_expert_profiles_returns_registered_profiles_and_default(
         "generic",
         "retail_sales_demo",
     ]
-    assert payload["profiles"][0]["is_mock"] is False
+    assert "is_mock" not in payload["profiles"][0]
     assert payload["profiles"][1]["cloud"] == "aws"
-    assert payload["profiles"][1]["is_mock"] is True
+    assert "is_mock" not in payload["profiles"][1]
 
 
 async def test_list_expert_templates_filters_and_paginates_active_metadata(
@@ -58,7 +58,6 @@ async def test_list_expert_templates_filters_and_paginates_active_metadata(
         "cloud",
         "prompt_names",
         "tags",
-        "is_mock",
     }
     assert {
         "content",

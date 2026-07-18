@@ -17,7 +17,7 @@ from databricks_zh_expert.workspace.registry import (
     WorkspaceRegistry,
     WorkspaceRegistryError,
 )
-from databricks_zh_expert.workspace.types import WorkspaceMode, WorkspaceSourceKind
+from databricks_zh_expert.workspace.types import WorkspaceSourceKind
 
 FIXTURE_ROOT = Path(__file__).parents[1] / "fixtures" / "workspaces"
 
@@ -60,8 +60,10 @@ def build_workspace_fixture(root: Path, *, mutation: str | None = None) -> Path:
         payload["id"] = "Retail-Sales"
     elif mutation == "invalid_semver":
         payload["version"] = "1.0"
-    elif mutation == "invalid_workspace_mode":
-        payload["workspace_mode"] = "existing"
+    elif mutation == "legacy_workspace_mode":
+        payload["workspace_mode"] = "greenfield"
+    elif mutation == "legacy_is_mock":
+        payload["is_mock"] = True
     elif mutation == "missing_requirements":
         cast(dict[str, str], payload["documents"]).pop("requirements")
     elif mutation == "missing_source_schemas":
@@ -120,7 +122,6 @@ def test_fixed_workspace_constants_and_source_kinds() -> None:
     assert WORKSPACE_CONTEXT_TOP_K == 8
     assert WORKSPACE_CONTEXT_MAX_TOKENS == 8_000
     assert WORKSPACE_ALLOWED_SUFFIXES == frozenset({".md", ".sql"})
-    assert tuple(WorkspaceMode) == (WorkspaceMode.GREENFIELD,)
     assert tuple(WorkspaceSourceKind) == (
         WorkspaceSourceKind.REQUIREMENT,
         WorkspaceSourceKind.SOURCE_DDL,
@@ -132,10 +133,10 @@ def test_registry_loads_greenfield_workspace_sources() -> None:
     registry = WorkspaceRegistry.load(FIXTURE_ROOT / "valid")
 
     workspace = registry.get("retail_sales_demo")
-    assert workspace.workspace_mode is WorkspaceMode.GREENFIELD
+    assert not hasattr(workspace, "workspace_mode")
     assert workspace.version == "1.0.0"
     assert workspace.cloud == "aws"
-    assert workspace.is_mock is True
+    assert not hasattr(workspace, "is_mock")
     assert [source.source_id for source in workspace.sources] == [
         "requirements",
         "rules",
@@ -154,15 +155,6 @@ def test_registry_loads_greenfield_workspace_sources() -> None:
     assert all(len(source.content_hash) == 64 for source in workspace.sources)
     assert all("\\" not in source.source_path for source in workspace.sources)
     assert all("\r" not in source.content for source in workspace.sources)
-
-
-def test_registry_accepts_real_project_is_mock_false(tmp_path: Path) -> None:
-    root = build_workspace_fixture(tmp_path / "registry")
-    payload = _load_manifest(root)
-    payload["is_mock"] = False
-    _write_manifest(root, payload)
-
-    assert WorkspaceRegistry.load(root).get("retail_sales_demo").is_mock is False
 
 
 def test_registry_hash_is_stable_across_newline_styles(tmp_path: Path) -> None:
@@ -185,7 +177,8 @@ def test_registry_hash_is_stable_across_newline_styles(tmp_path: Path) -> None:
         ("legacy_manifest", "包含未知字段"),
         ("invalid_workspace_id", "工作区 ID"),
         ("invalid_semver", "版本必须使用 MAJOR.MINOR.PATCH"),
-        ("invalid_workspace_mode", "模式必须为 greenfield"),
+        ("legacy_workspace_mode", "包含未知字段"),
+        ("legacy_is_mock", "包含未知字段"),
         ("missing_requirements", "documents"),
         ("missing_source_schemas", "至少登记一个源 Schema"),
         ("duplicate_source_id", "源 Schema ID 不能重复"),

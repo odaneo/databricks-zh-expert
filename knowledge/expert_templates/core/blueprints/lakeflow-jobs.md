@@ -2,7 +2,7 @@
 id: workflow.lakeflow_jobs
 name: Lakeflow Jobs 工作流蓝图
 summary: 设计任务 DAG、参数、重试、调度、通知和人工恢复边界。
-version: 1.0.0
+version: 1.1.0
 kind: blueprint
 category: workflow
 layer: core
@@ -19,7 +19,6 @@ tags:
   - scheduling
   - monitoring
 extends: null
-is_mock: false
 official_refs:
   - https://docs.databricks.com/aws/en/jobs
   - https://docs.databricks.com/aws/en/jobs/notifications

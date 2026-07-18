@@ -13,7 +13,6 @@ from databricks_zh_expert.workspace.types import (
     WorkspaceContextSelection,
     WorkspaceContextUnit,
     WorkspaceDefinition,
-    WorkspaceMode,
     WorkspaceSource,
     WorkspaceSourceKind,
 )
@@ -27,7 +26,6 @@ __all__ = [
     "WorkspaceContextSelection",
     "WorkspaceContextUnit",
     "WorkspaceDefinition",
-    "WorkspaceMode",
     "WorkspaceRegistry",
     "WorkspaceRegistryError",
     "WorkspaceSource",

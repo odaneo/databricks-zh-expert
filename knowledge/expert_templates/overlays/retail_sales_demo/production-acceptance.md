@@ -1,8 +1,8 @@
 ---
 id: retail.production_acceptance
-name: AWS 零售平台模拟生产验收清单
+name: AWS 零售平台生产验收清单
 summary: 按零售数据源、SLA、恢复、质量、治理和交付责任检查生产就绪状态。
-version: 1.0.0
+version: 1.1.0
 kind: checklist
 category: delivery
 layer: retail_sales_demo
@@ -16,19 +16,18 @@ tags:
   - retail
   - acceptance
   - production-readiness
-  - mock
+  - project
 extends: checklist.production_readiness
-is_mock: true
 official_refs:
   - https://docs.databricks.com/aws/en/data-engineering/observability-best-practices
   - https://docs.databricks.com/aws/en/jobs
 ---
 
-# AWS 零售平台模拟生产验收清单
+# AWS 零售平台生产验收清单
 
 ## 适用场景
 
-本资产用于 `retail_sales_demo` 模拟项目上线评审，扩展通用生产就绪清单。勾选项只表示需要收集的证据，不能预填为通过，也不能据此声称 AWS 或 Databricks 资源已经运行。
+本资产用于 `retail_sales_demo` 项目上线评审，扩展通用生产就绪清单。勾选项只表示需要收集的证据，不能预填为通过，也不能据此声称 AWS 或 Databricks 资源已经运行。
 
 ## 验收检查项
 
@@ -43,7 +42,7 @@ official_refs:
 
 - [ ] 每日销售分析、商品表现分析、库存健康分析、客户与渠道分析均有 owner、粒度和口径版本。
 - [ ] POS 05:00 到达、Gold 07:00 更新、07:30 可查询的测量证据和失败升级路径已准备。
-- [ ] 核心任务 99.5% 模拟月度成功率的统计窗口、排除项和维护窗口已确认。
+- [ ] 核心任务 99.5% 基线月度成功率的统计窗口、排除项和维护窗口已确认。
 - [ ] 销售、支付、库存与客户指标具有源到 Gold 的对账证据，失败时阻止发布。
 
 ### 治理与交付
@@ -55,4 +54,4 @@ official_refs:
 
 ## 人工确认项
 
-任何未通过项都必须记录影响、临时措施、接受人和截止日期。模拟 SLA 不能替代项目签字，生产发布必须由业务、数据工程、平台、治理和运维责任人共同确认。
+任何未通过项都必须记录影响、临时措施、接受人和截止日期。基线 SLA 不能替代项目签字，生产发布必须由业务、数据工程、平台、治理和运维责任人共同确认。

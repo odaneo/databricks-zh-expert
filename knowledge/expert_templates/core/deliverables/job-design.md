@@ -2,7 +2,7 @@
 id: deliverable.job_design
 name: Lakeflow Job 设计书结构
 summary: 提供 Job 触发、任务 DAG、参数、计算、重试、监控和恢复的交付骨架。
-version: 1.0.0
+version: 1.1.0
 kind: deliverable
 category: delivery
 layer: core
@@ -19,7 +19,6 @@ tags:
   - runbook
   - delivery
 extends: null
-is_mock: false
 official_refs:
   - https://docs.databricks.com/aws/en/jobs
   - https://docs.databricks.com/aws/en/jobs/notifications

@@ -92,7 +92,7 @@ FastAPI Backend
         |
         +-- Local File Storage
               +-- 预置知识库原始 Markdown / YAML
-              +-- 内置 Mock 项目工作区
+              +-- 内置示例项目工作区
               +-- 生成的 Markdown 文件
 ```
 
@@ -110,7 +110,7 @@ FastAPI Backend
 10. 如果未来 pgvector 成为明确瓶颈，可以引入 Qdrant 作为可重建的检索索引，但 PostgreSQL 仍保留权威元数据。
 11. 每次修改 Python 代码后，完成当前任务前必须运行 Ruff 格式检查、Ruff lint、Pyright 和 pytest；仅修改 Markdown 等文档时不强制运行 Pyright 和 pytest。
 12. 具体项目的源代码、DDL 和配置始终以用户本地工作区文件为准；数据库只保存可重建索引和调用审计。
-13. Demo 阶段先使用 Git 内置 Mock 工作区；最终桌面端再实现本地文件夹选择、增量扫描和 SQLite 工作区索引。
+13. Demo 阶段先使用 Git 内置示例工作区；最终桌面端再实现本地文件夹选择、增量扫描和 SQLite 工作区索引。
 
 ---
 
@@ -536,15 +536,15 @@ HNSW 或 IVFFlat。
 
 ### 已确认边界
 
-1. 使用“通用核心层 + AWS 零售销售 Mock 覆盖层”。
+1. 使用“通用核心层 + AWS 零售销售项目覆盖层”。
 2. 同一 Git 仓库、同一 PostgreSQL、独立专家模板表，不混入 `kb_*` 官方知识表。
 3. 模板使用 Markdown + YAML Front Matter，Profile 使用 YAML 清单。
 4. 会话级 `expert_profile` 默认为 `generic`；具体模板由系统自动选择。
-5. Mock 架构覆盖 S3 日批、RDS PostgreSQL、AWS DMS、S3 Parquet、Auto Loader 和 Kinesis。
+5. 项目架构覆盖 S3 日批、RDS PostgreSQL、AWS DMS、S3 Parquet、Auto Loader 和 Kinesis。
 6. Medallion 转换使用 Lakeflow Spark Declarative Pipelines 的稳定能力，不采用 Preview 功能。
 7. 模板分为 blueprint、decision guide、code pattern、checklist、deliverable 五类。
 8. 第一版约 37 个短而具体的专家资产。
-9. 官方事实与 Mock 经验分别检索，官方引用只来自阶段 4 数据。
+9. 官方事实与项目经验分别检索，官方引用只来自阶段 4 数据。
 10. 模板候选、最终选择、版本、Profile 和继承关系写入 `model_calls` 与 Trace 1.5。
 
 ### 数据流
@@ -598,7 +598,7 @@ Git Markdown / YAML
 
 ### 已确认边界
 
-1. 创建一个真实目录结构的 `retail_sales_demo` Mock 工作区。
+1. 创建一个真实目录结构的 `retail_sales_demo` 示例工作区。
 2. `expert_profile` 表示方法论，`workspace_id` 表示具体项目，两者保持独立。
 3. 阶段 6 只读取清单显式列出的内置文件，不支持任意目录和上传。
 4. Workspace 文件是项目事实来源；PostgreSQL 只保存 ID、版本、Hash 和选择审计。
@@ -608,7 +608,7 @@ Git Markdown / YAML
 8. 不执行、编译、部署或验证任何生成代码。
 9. 完整本地扫描、文件监听和 SQLite 索引放到后续桌面工作区阶段。
 
-### Mock 项目内容
+### 示例项目内容
 
 1. S3 POS 日批。
 2. RDS PostgreSQL 经 AWS DMS 写入 S3 Parquet。
@@ -642,7 +642,7 @@ Git Markdown / YAML
 
 1. DDL、Mapping、SQL、PySpark 和 Notebook 五类 Prompt 可以使用内置零售项目上下文。
 2. 固定 Workspace Context 评估达到 `Recall@5 = 100%`，高于 90% 门禁。
-3. `model_calls` 和 Trace 1.6 可以恢复实际工作区版本、Hash、相对文件选择和 proposal 状态。
+3. `model_calls` 和 Trace 1.7 可以恢复实际工作区版本、Hash、相对文件选择和 proposal 状态。
 4. 四类真实生成冒烟均成功并保留验收数据；一次 DeepSeek 超时及其 OpenAI fallback 也完整保留。
 5. 没有引入 SQLite、任意目录扫描、代码执行或 Databricks 连接。
 
@@ -955,7 +955,7 @@ Agent 生成的 SQL 和 PySpark 可能存在环境差异，不能默认可执行
 任意目录扫描、忽略规则、文件监听、代码解析、SQLite 和向量索引会把代码生成阶段扩展成另一个大型 RAG
 项目。
 
-当前取舍：阶段 6 只固定 Workspace 契约并读取一个 Git 内置 Mock 工作区；最终桌面端使用本地 SQLite 保存
+当前取舍：阶段 6 只固定 Workspace 契约并读取一个 Git 内置示例工作区；最终桌面端使用本地 SQLite 保存
 文件 Hash、解析结果、Chunk 和 FTS5 等可重建派生索引，项目源码仍保留在用户选择的文件夹。
 
 ---

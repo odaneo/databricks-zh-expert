@@ -115,7 +115,6 @@ def build_trace(
         expert_templates=expert_templates,
         workspace_id=model_call.workspace_id,
         workspace_version=model_call.workspace_version,
-        workspace_mode=model_call.workspace_mode,
         workspace_source_hash=model_call.workspace_source_hash,
         project_fact_status=model_call.project_fact_status,
         workspace=workspace,
@@ -302,9 +301,6 @@ class ChatService:
                     expert_template_selections=expert_template_selections,
                     workspace_id=workspace.workspace_id if workspace is not None else None,
                     workspace_version=workspace.version if workspace is not None else None,
-                    workspace_mode=(
-                        workspace.workspace_mode.value if workspace is not None else None
-                    ),
                     workspace_source_hash=(
                         workspace.source_hash if workspace is not None else None
                     ),

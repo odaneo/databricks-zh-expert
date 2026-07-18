@@ -2,7 +2,7 @@
 id: code.dms_cdc_apply_pyspark
 name: DMS CDC 应用 PySpark 模式
 summary: 对标准化后的 DMS CDC 批次按业务键去重，并幂等应用插入、更新和删除。
-version: 1.1.0
+version: 1.2.0
 kind: code_pattern
 category: pyspark
 layer: core
@@ -20,7 +20,6 @@ tags:
   - merge
   - pyspark
 extends: null
-is_mock: false
 official_refs:
   - https://docs.aws.amazon.com/dms/latest/userguide/CHAP_Target.S3.html
   - https://docs.databricks.com/aws/en/delta/merge

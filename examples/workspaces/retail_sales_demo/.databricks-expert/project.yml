@@ -1,11 +1,9 @@
 schema_version: 1
-workspace_mode: greenfield
 id: retail_sales_demo
 display_name: AWS 零售销售分析 Demo
-description: 从源系统 Schema 开始设计 Databricks Lakehouse 的 Mock 项目。
+description: 从源系统 Schema 开始设计 Databricks Lakehouse 的零售销售项目。
 version: 1.0.0
 cloud: aws
-is_mock: true
 documents:
   requirements: requirements.md
   business_rules: business-rules.md

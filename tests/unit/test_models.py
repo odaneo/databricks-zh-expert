@@ -102,7 +102,6 @@ def test_models_register_expected_tables_and_columns() -> None:
         "expert_template_selections",
         "workspace_id",
         "workspace_version",
-        "workspace_mode",
         "workspace_source_hash",
         "workspace_context",
         "project_fact_status",
@@ -177,7 +176,6 @@ def test_models_register_expected_tables_and_columns() -> None:
         "prompt_names",
         "tags",
         "extends_id",
-        "is_mock",
         "official_refs",
         "source_path",
         "content",
@@ -335,7 +333,7 @@ def test_model_call_model_cascades_and_indexes_by_session_time() -> None:
     constraint_names = {constraint.name for constraint in model_call_table.constraints}
     assert "uq_model_calls_invocation_attempt" in constraint_names
     assert "ck_model_calls_attempt_number" in constraint_names
-    assert "ck_model_calls_workspace_mode" in constraint_names
+    assert "ck_model_calls_workspace_mode" not in constraint_names
     assert "ck_model_calls_project_fact_status" in constraint_names
     attempt_constraint = next(
         constraint

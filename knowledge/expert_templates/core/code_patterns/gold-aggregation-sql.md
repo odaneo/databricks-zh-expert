@@ -2,7 +2,7 @@
 id: code.gold_aggregation_sql
 name: Gold 聚合 SQL 模式
 summary: 以明确粒度、口径和维度键生成可审计的每日指标表草稿。
-version: 1.0.0
+version: 1.1.0
 kind: code_pattern
 category: sql
 layer: core
@@ -19,7 +19,6 @@ tags:
   - sql
   - metrics
 extends: null
-is_mock: false
 official_refs:
   - https://docs.databricks.com/aws/en/sql/language-manual/sql-ref-syntax-qry-select
   - https://docs.databricks.com/aws/en/lakehouse/medallion

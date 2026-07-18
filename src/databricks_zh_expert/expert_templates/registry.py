@@ -69,7 +69,6 @@ class _ProfileModel(_StrictModel):
     description: str = Field(min_length=1, max_length=500)
     cloud: Literal["neutral", "aws"]
     layers: tuple[ProfileId, ...] = Field(min_length=1)
-    is_mock: bool
     is_default: bool = Field(alias="default")
     prompt_defaults: dict[PromptName, tuple[TemplateId, ...]]
 
@@ -103,7 +102,6 @@ class _TemplateModel(_StrictModel):
     prompt_names: tuple[PromptName, ...] = Field(min_length=1)
     tags: tuple[Tag, ...] = Field(min_length=1, max_length=20)
     extends: TemplateId | None
-    is_mock: bool
     official_refs: tuple[str, ...]
 
     @field_validator("prompt_names")
@@ -464,10 +462,8 @@ def _validate_profiles(profiles: tuple[_ProfileModel, ...]) -> Mapping[str, _Pro
     defaults = tuple(profile for profile in profiles if profile.is_default)
     if len(defaults) != 1 or defaults[0].id != "generic":
         raise ExpertTemplateRegistryError("generic 必须是唯一默认 Profile。")
-    if generic.layers != ("core",) or generic.cloud != "neutral" or generic.is_mock:
-        raise ExpertTemplateRegistryError(
-            "generic Profile 必须使用 neutral core 且不能标记为 Mock。"
-        )
+    if generic.layers != ("core",) or generic.cloud != "neutral":
+        raise ExpertTemplateRegistryError("generic Profile 必须使用 neutral core。")
 
     required_prompts = frozenset(_EXPERT_ENABLED_PROMPTS)
     for profile in profiles:
@@ -494,8 +490,8 @@ def _validate_template_ownership(
     for template in templates:
         model = template.model
         if model.layer == "core":
-            if model.profile is not None or model.is_mock:
-                raise ExpertTemplateRegistryError("core 模板不能绑定 Profile 或标记为 Mock。")
+            if model.profile is not None:
+                raise ExpertTemplateRegistryError("core 模板不能绑定 Profile。")
             if not template.source_path.startswith("core/"):
                 raise ExpertTemplateRegistryError("core 模板必须位于 core 目录。")
             continue
@@ -505,8 +501,6 @@ def _validate_template_ownership(
             raise ExpertTemplateRegistryError("覆盖层模板引用了未注册的 Profile。")
         if model.profile != model.layer:
             raise ExpertTemplateRegistryError("覆盖层模板的 profile 必须等于 layer。")
-        if model.is_mock != profile.is_mock:
-            raise ExpertTemplateRegistryError("覆盖层模板的 Mock 标识必须与 Profile 一致。")
         if model.cloud != profile.cloud:
             raise ExpertTemplateRegistryError("覆盖层模板的 cloud 必须与 Profile 一致。")
         expected_prefix = f"overlays/{model.layer}/"
@@ -580,7 +574,6 @@ def _to_profile(model: _ProfileModel) -> ExpertProfile:
         cloud=model.cloud,
         layers=tuple(model.layers),
         prompt_defaults=defaults,
-        is_mock=model.is_mock,
         is_default=model.is_default,
     )
 
@@ -592,7 +585,6 @@ def _to_template(parsed: _ParsedTemplate) -> ExpertTemplateSource:
         "cloud": model.cloud,
         "extends": model.extends,
         "id": model.id,
-        "is_mock": model.is_mock,
         "kind": model.kind.value,
         "layer": model.layer,
         "name": model.name,
@@ -623,7 +615,6 @@ def _to_template(parsed: _ParsedTemplate) -> ExpertTemplateSource:
         prompt_names=tuple(model.prompt_names),
         tags=tuple(model.tags),
         extends_template_id=model.extends,
-        is_mock=model.is_mock,
         official_refs=tuple(model.official_refs),
         source_path=parsed.source_path,
         content=parsed.content,

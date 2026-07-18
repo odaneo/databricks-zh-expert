@@ -2,7 +2,7 @@
 id: checklist.unity_catalog_pii
 name: Unity Catalog 与 PII 检查清单
 summary: 在数据发布前核对对象所有权、最小权限、敏感字段和下游暴露范围。
-version: 1.0.0
+version: 1.1.0
 kind: checklist
 category: governance
 layer: core
@@ -19,7 +19,6 @@ tags:
   - privileges
   - checklist
 extends: null
-is_mock: false
 official_refs:
   - https://docs.databricks.com/aws/en/data-governance/unity-catalog/manage-privileges/
   - https://docs.databricks.com/aws/en/data-governance/unity-catalog/filters-and-masks

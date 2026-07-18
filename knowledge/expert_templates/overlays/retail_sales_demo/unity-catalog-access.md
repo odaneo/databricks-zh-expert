@@ -1,8 +1,8 @@
 ---
 id: retail.unity_catalog_access
-name: 零售 Unity Catalog 模拟权限矩阵
+name: 零售 Unity Catalog 权限矩阵
 summary: 固定零售开发、测试、生产环境以及五类角色的最小权限和 PII 边界。
-version: 1.0.0
+version: 1.1.0
 kind: blueprint
 category: governance
 layer: retail_sales_demo
@@ -19,17 +19,16 @@ tags:
   - access-control
   - pii
 extends: governance.unity_catalog
-is_mock: true
 official_refs:
   - https://docs.databricks.com/aws/en/data-governance/unity-catalog/access-control/
   - https://docs.databricks.com/aws/en/data-governance/unity-catalog/filters-and-masks
 ---
 
-# 零售 Unity Catalog 模拟权限矩阵
+# 零售 Unity Catalog 权限矩阵
 
 ## 适用场景
 
-本资产为 `retail_sales_demo` 模拟项目提供 Unity Catalog 权限草案，扩展通用治理蓝图。角色名表示职责，不对应任何实际用户、组或已创建的授权。
+本资产为 `retail_sales_demo` 项目提供 Unity Catalog 权限草案，扩展通用治理蓝图。角色名表示职责，不对应任何实际用户、组或已创建的授权。
 
 ## 环境与对象边界
 

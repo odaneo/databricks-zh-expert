@@ -40,7 +40,6 @@ class ExpertProfile:
     cloud: str
     layers: tuple[str, ...]
     prompt_defaults: Mapping[PromptName, tuple[str, ...]]
-    is_mock: bool
     is_default: bool
 
 
@@ -58,7 +57,6 @@ class ExpertTemplateSource:
     prompt_names: tuple[PromptName, ...]
     tags: tuple[str, ...]
     extends_template_id: str | None
-    is_mock: bool
     official_refs: tuple[str, ...]
     source_path: str
     content: str

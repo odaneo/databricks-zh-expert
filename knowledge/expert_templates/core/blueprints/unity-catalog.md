@@ -2,7 +2,7 @@
 id: governance.unity_catalog
 name: Unity Catalog 治理蓝图
 summary: 设计 Catalog、Schema、对象所有权、最小权限和环境隔离边界。
-version: 1.0.0
+version: 1.1.0
 kind: blueprint
 category: governance
 layer: core
@@ -19,7 +19,6 @@ tags:
   - ownership
   - governance
 extends: null
-is_mock: false
 official_refs:
   - https://docs.databricks.com/aws/en/data-governance/unity-catalog/
   - https://docs.databricks.com/aws/en/data-governance/unity-catalog/manage-privileges/

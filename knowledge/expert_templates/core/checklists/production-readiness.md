@@ -2,7 +2,7 @@
 id: checklist.production_readiness
 name: 生产就绪检查清单
 summary: 在 Databricks 数据产品上线前统一检查契约、恢复、治理、监控和交付责任。
-version: 1.0.0
+version: 1.1.0
 kind: checklist
 category: delivery
 layer: core
@@ -19,7 +19,6 @@ tags:
   - acceptance
   - checklist
 extends: null
-is_mock: false
 official_refs:
   - https://docs.databricks.com/aws/en/data-engineering/observability-best-practices
   - https://docs.databricks.com/aws/en/jobs

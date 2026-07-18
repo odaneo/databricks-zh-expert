@@ -2,7 +2,7 @@
 id: checklist.workflow_monitoring
 name: 工作流监控检查清单
 summary: 核对 Lakeflow Jobs 与 Pipelines 的状态、延迟、重试、通知和恢复入口。
-version: 1.0.0
+version: 1.1.0
 kind: checklist
 category: workflow
 layer: core
@@ -19,7 +19,6 @@ tags:
   - alerts
   - runbook
 extends: null
-is_mock: false
 official_refs:
   - https://docs.databricks.com/aws/en/jobs
   - https://docs.databricks.com/aws/en/jobs/notifications

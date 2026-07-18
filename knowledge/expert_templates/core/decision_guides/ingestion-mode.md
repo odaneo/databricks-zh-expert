@@ -2,7 +2,7 @@
 id: decision.ingestion_mode
 name: 数据摄取模式选择指南
 summary: 在批处理、文件增量、CDC 和事件流之间按业务语义选择摄取模式。
-version: 1.0.0
+version: 1.1.0
 kind: decision_guide
 category: ingestion
 layer: core
@@ -19,7 +19,6 @@ tags:
   - streaming
   - decision
 extends: null
-is_mock: false
 official_refs:
   - https://docs.databricks.com/aws/en/ingestion/
   - https://docs.databricks.com/aws/en/structured-streaming/concepts

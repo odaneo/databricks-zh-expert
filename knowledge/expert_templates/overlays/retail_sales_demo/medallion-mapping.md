@@ -1,8 +1,8 @@
 ---
 id: retail.medallion_mapping
-name: 零售 Medallion 模拟映射
+name: 零售 Medallion 映射
 summary: 将零售日批、CDC 和事件数据映射到 Bronze、Silver、Gold 表及质量边界。
-version: 1.1.0
+version: 1.2.0
 kind: blueprint
 category: medallion
 layer: retail_sales_demo
@@ -23,21 +23,20 @@ tags:
   - delta
   - pii
 extends: medallion.standard
-is_mock: true
 official_refs:
   - https://docs.databricks.com/aws/en/lakehouse/medallion
   - https://docs.databricks.com/aws/en/ldp/concepts
 ---
 
-# 零售 Medallion 模拟映射
+# 零售 Medallion 映射
 
 ## 适用场景
 
-本资产为 `retail_sales_demo` 模拟项目补充表级分层约定，扩展通用 Medallion 设计。表名、业务键和质量阈值是设计起点，不是已上线的数据契约。
+本资产为 `retail_sales_demo` 项目补充表级分层约定，扩展通用 Medallion 设计。表名、业务键和质量阈值是设计起点，不是已上线的数据契约。
 
 ## 分层设计决策
 
-| 层 | 模拟表 | 处理职责 | 关键质量边界 |
+| 层 | 提议表 | 处理职责 | 关键质量边界 |
 | --- | --- | --- | --- |
 | Bronze | `pos_sales_raw`、`supplier_product_raw` | 保留 S3 Parquet 原始字段、文件名和摄取时间 | 可追溯文件、重复文件可识别、解析失败可隔离 |
 | Bronze | `customer_cdc_raw`、`product_cdc_raw`、`store_cdc_raw`、`inventory_cdc_raw` | 保留 AWS DMS full load + CDC 操作、提交时间和主键 | 删除事件不丢失、CDC 顺序可恢复、15 分钟延迟可测量 |

@@ -2,7 +2,7 @@
 id: code.delta_merge_sql
 name: Delta MERGE SQL 模式
 summary: 在源批次按业务键去重后，对 Delta 目标表执行可重跑的更新与插入。
-version: 1.0.0
+version: 1.1.0
 kind: code_pattern
 category: sql
 layer: core
@@ -18,7 +18,6 @@ tags:
   - sql
   - upsert
 extends: null
-is_mock: false
 official_refs:
   - https://docs.databricks.com/aws/en/delta/merge
   - https://docs.databricks.com/aws/en/sql/language-manual/delta-merge-into

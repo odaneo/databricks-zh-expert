@@ -2,7 +2,7 @@
 id: ingestion.kinesis_streaming
 name: Kinesis 流式摄取蓝图
 summary: 设计 Amazon Kinesis 事件进入 Databricks Structured Streaming 的可靠摄取边界。
-version: 1.0.0
+version: 1.1.0
 kind: blueprint
 category: ingestion
 layer: core
@@ -19,7 +19,6 @@ tags:
   - checkpoint
   - events
 extends: null
-is_mock: false
 official_refs:
   - https://docs.databricks.com/aws/en/connect/streaming/kinesis
   - https://docs.databricks.com/aws/en/structured-streaming/checkpoints

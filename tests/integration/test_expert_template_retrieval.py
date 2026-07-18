@@ -199,5 +199,5 @@ async def test_retail_retrieval_returns_overlay_with_active_core_parent(
         "retail.workflow_dag",
     ]
     assert bundle.selected_templates[0].reason == "inherited"
-    assert "AWS 零售工作流模拟 DAG" in bundle.context
+    assert "AWS 零售工作流 DAG" in bundle.context
     assert "knowledge/expert_templates" not in bundle.context

@@ -2,7 +2,7 @@
 id: checklist.cost
 name: Databricks 成本检查清单
 summary: 以工作负载归属、使用量、调度、计算和存储维护证据评审成本。
-version: 1.0.0
+version: 1.1.0
 kind: checklist
 category: cost
 layer: core
@@ -19,7 +19,6 @@ tags:
   - utilization
   - checklist
 extends: null
-is_mock: false
 official_refs:
   - https://docs.databricks.com/aws/en/admin/usage/system-tables
   - https://docs.databricks.com/aws/en/admin/system-tables/billing

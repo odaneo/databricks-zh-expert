@@ -228,7 +228,6 @@ class WorkspaceContextBuilder:
         )
         return WorkspaceContextBundle(
             workspace_id=workspace.workspace_id,
-            workspace_mode=workspace.workspace_mode,
             workspace_version=workspace.version,
             workspace_source_hash=workspace.source_hash,
             query=query.strip(),

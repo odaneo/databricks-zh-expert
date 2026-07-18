@@ -3,9 +3,9 @@
 > **执行要求：** 使用 `superpowers:executing-plans` 在当前会话逐任务执行；按用户偏好不使用子智能体。
 > 每个任务先写失败测试，再做最小实现，验证通过后按用户指示提交。不得清理任何验收数据。
 
-**目标：** 在现有顾问型 Agent 中增加受 Git 管理、独立持久化、自动检索和完整审计的 Databricks 专家模板库，并提供通用核心层与 AWS 零售销售 Mock 覆盖层。
+**目标：** 在现有顾问型 Agent 中增加受 Git 管理、独立持久化、自动检索和完整审计的 Databricks 专家模板库，并提供通用核心层与 AWS 零售销售项目覆盖层。
 
-**架构：** Markdown + YAML Front Matter 是唯一真源；显式 CLI 将模板增量、原子地同步到 PostgreSQL 独立表。ChatService 根据不可变会话 Profile 和 Prompt 策略组合官方 RAG 与专家模板上下文，官方引用与 Mock 经验保持分离，模型调用通过 Trace 1.5 和 `model_calls` JSONB 审计。
+**架构：** Markdown + YAML Front Matter 是唯一真源；显式 CLI 将模板增量、原子地同步到 PostgreSQL 独立表。ChatService 根据不可变会话 Profile 和 Prompt 策略组合官方 RAG 与专家模板上下文，官方引用与项目经验保持分离，模型调用通过 Trace 和 `model_calls` JSONB 审计。
 
 **技术栈：** Python 3.12.10、FastAPI、Pydantic 2、PyYAML、markdown-it-py、tiktoken、SQLAlchemy 2、Alembic、PostgreSQL、pgvector、OpenAI Embedding、LiteLLM、pytest、Ruff、Pyright、uv。
 
@@ -19,7 +19,7 @@ Chunk；固定评估 Recall@3 为 96.67%，Profile 泄漏和继承遗漏均为 0
 3. 模板、Profile、检索预算和 Prompt 策略都是跨环境产品行为，不新增阶段 5 环境变量。
 4. PostgreSQL 继续使用当前配置的非 `public` Schema，不新增数据库、Docker 服务或向量数据库。
 5. 专家数据只能写入 `expert_templates`、`expert_template_chunks`、`expert_template_sync_runs`，不得混入 `kb_*`。
-6. `messages.source_citations` 只能保存官方知识引用，不能保存 Mock 模板。
+6. `messages.source_citations` 只能保存官方知识引用，不能保存项目模板。
 7. 模板选择不增加分类模型或 rerank 模型；官方与专家检索复用一次查询 Embedding。
 8. 不使用 Preview 或 Experimental 功能，不执行 Databricks、AWS、SQL、PySpark、Job 或 Pipeline 操作。
 9. 所有模板、文档、API 描述和错误消息使用中文；标识符、字段、表名和命令使用英文。
@@ -104,7 +104,7 @@ alembic/versions/0007_expert_templates.py
 
 1. 固定模板契约、Profile 和 Registry。
 2. 编写通用核心专家资产。
-3. 编写 AWS 零售销售 Mock 覆盖层。
+3. 编写 AWS 零售销售项目覆盖层。
 4. 创建数据库迁移和 ORM 模型。
 5. 抽取共享 Markdown Chunk 与混合排序内核。
 6. 实现专家模板原子同步、Repository 和 CLI。
@@ -210,7 +210,6 @@ class ExpertTemplateSource:
     prompt_names: tuple[PromptName, ...]
     tags: tuple[str, ...]
     extends_template_id: str | None
-    is_mock: bool
     official_refs: tuple[str, ...]
     source_path: str
     content: str
@@ -224,7 +223,7 @@ class ExpertTemplateSource:
 1. 使用 `yaml.safe_load()` 和 Pydantic `extra="forbid"` 校验 YAML。
 2. 规范化 CRLF 为 LF，使用相对 POSIX `source_path`。
 3. 使用 markdown-it token 校验唯一 H1、原始 HTML、代码围栏和必要章节。
-4. 校验 Profile 默认值、Prompt 默认模板、layer、cloud、Mock 和继承关系。
+4. 校验 Profile 默认值、Prompt 默认模板、layer、cloud 和继承关系。
 5. 对排序后的 `profiles.yml` 与 Markdown 内容 Hash 计算稳定 `source_hash`。
 6. 抛出只包含中文安全信息的 `ExpertTemplateRegistryError`，不泄露绝对路径。
 
@@ -294,7 +293,7 @@ git commit -m "feat: add expert template registry"
 **接口：**
 
 - Consumes: 任务 1 `ExpertTemplateRegistry` 和 Front Matter 契约。
-- Produces: 29 个 `layer=core`、`is_mock=false` 的 active 源资产。
+- Produces: 29 个 `layer=core` 的 active 源资产。
 - Produces: `generic` Profile 六个专家启用 Prompt 的默认模板映射。
 - Produces: 暂时注册 `retail_sales_demo`，其默认模板先指向 core；任务 3 再切换到覆盖资产。
 
@@ -339,7 +338,7 @@ def test_production_core_template_catalog_is_complete() -> None:
     core = {template.template_id for template in registry.templates if template.layer == "core"}
 
     assert core == EXPECTED_CORE_IDS
-    assert all(not template.is_mock for template in registry.templates if template.layer == "core")
+    assert all(template.profile_id is None for template in registry.templates if template.layer == "core")
 ```
 
 另加测试保证六个专家启用 Prompt 均有默认模板、全部 `official_refs` 使用 HTTPS、代码模板含正确 fenced
@@ -400,7 +399,7 @@ git commit -m "feat: add core databricks expert templates"
 
 ---
 
-### 任务 3：编写 AWS 零售销售 Mock 覆盖层
+### 任务 3：编写 AWS 零售销售项目覆盖层
 
 **文件：**
 
@@ -418,7 +417,7 @@ git commit -m "feat: add core databricks expert templates"
 **接口：**
 
 - Consumes: 任务 2 的 core ID。
-- Produces: 八个 `layer=retail_sales_demo`、`profile=retail_sales_demo`、`cloud=aws`、`is_mock=true` 资产。
+- Produces: 八个 `layer=retail_sales_demo`、`profile=retail_sales_demo`、`cloud=aws` 资产。
 - Produces: Profile 的零售默认模板映射和六条显式 `extends` 关系。
 
 - [x] **Step 1: 写覆盖层业务契约测试**
@@ -431,7 +430,7 @@ def test_retail_profile_contains_confirmed_mock_architecture() -> None:
     )
 
     assert len(retail) == 8
-    assert all(template.is_mock and template.cloud == "aws" for template in retail)
+    assert all(template.cloud == "aws" for template in retail)
     joined = "\n".join(template.content for template in retail)
     for required_text in (
         "AWS DMS",
@@ -447,7 +446,7 @@ def test_retail_profile_contains_confirmed_mock_architecture() -> None:
         assert required_text in joined
 ```
 
-另加断言覆盖四个 Gold 数据产品、五类角色、PII 边界、全部 Mock 标识和父模板存在性。
+另加断言覆盖四个 Gold 数据产品、五类角色、PII 边界和父模板存在性。
 
 - [x] **Step 2: 运行测试并确认覆盖资产缺失**
 
@@ -1170,7 +1169,6 @@ class ExpertProfileResponse(BaseModel):
     display_name: str
     description: str
     cloud: str
-    is_mock: bool
 
 
 class ExpertTemplateMetadataResponse(BaseModel):
@@ -1185,7 +1183,6 @@ class ExpertTemplateMetadataResponse(BaseModel):
     cloud: str
     prompt_names: list[PromptName]
     tags: list[str]
-    is_mock: bool
 ```
 
 列表 API 不提供正文详情端点、同步端点、写入端点或模板选择端点。

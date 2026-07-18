@@ -14,7 +14,6 @@ class ExpertProfileResponse(BaseModel):
     display_name: str
     description: str
     cloud: str
-    is_mock: bool
 
 
 class ExpertProfileListResponse(BaseModel):
@@ -36,7 +35,6 @@ class ExpertTemplateMetadataResponse(BaseModel):
     cloud: str
     prompt_names: list[PromptName]
     tags: list[str]
-    is_mock: bool
 
 
 class ExpertTemplateIndexStatusResponse(BaseModel):

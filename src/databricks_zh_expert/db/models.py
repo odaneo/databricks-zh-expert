@@ -89,10 +89,6 @@ class ModelCall(Base):
     __table_args__ = (
         CheckConstraint("attempt_number >= 1", name="ck_model_calls_attempt_number"),
         CheckConstraint(
-            "workspace_mode IS NULL OR workspace_mode = 'greenfield'",
-            name="ck_model_calls_workspace_mode",
-        ),
-        CheckConstraint(
             "project_fact_status IS NULL OR project_fact_status = 'proposal'",
             name="ck_model_calls_project_fact_status",
         ),
@@ -133,7 +129,6 @@ class ModelCall(Base):
     )
     workspace_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
     workspace_version: Mapped[str | None] = mapped_column(String(20), nullable=True)
-    workspace_mode: Mapped[str | None] = mapped_column(String(30), nullable=True)
     workspace_source_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     workspace_context: Mapped[list[dict[str, Any]] | None] = mapped_column(
         JSONB,
@@ -402,7 +397,6 @@ class ExpertTemplateRecord(Base):
         ),
         nullable=True,
     )
-    is_mock: Mapped[bool] = mapped_column(Boolean, nullable=False)
     official_refs: Mapped[list[str]] = mapped_column(
         JSONB,
         default=list,

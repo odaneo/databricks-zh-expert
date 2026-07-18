@@ -2,7 +2,7 @@
 id: deliverable.technical_proposal
 name: Databricks 技术提案结构
 summary: 提供目标、范围、备选方案、实施、交付物、成本边界和风险的提案骨架。
-version: 1.0.0
+version: 1.1.0
 kind: deliverable
 category: delivery
 layer: core
@@ -19,7 +19,6 @@ tags:
   - roadmap
   - delivery
 extends: null
-is_mock: false
 official_refs:
   - https://docs.databricks.com/aws/en/lakehouse-architecture/reference
   - https://docs.databricks.com/aws/en/data-engineering/observability-best-practices

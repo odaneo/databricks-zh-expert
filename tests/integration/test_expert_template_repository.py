@@ -120,7 +120,6 @@ def _record_from_source(
         prompt_names=[item.value for item in source.prompt_names],
         tags=list(source.tags),
         extends_id=None,
-        is_mock=source.is_mock,
         official_refs=list(source.official_refs),
         source_path=source.source_path,
         content=source.content,

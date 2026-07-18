@@ -2,7 +2,7 @@
 id: code.kinesis_pyspark
 name: Kinesis Structured Streaming PySpark 模式
 summary: 读取 Kinesis 原始记录、解析事件 envelope 并带来源元数据写入 Bronze。
-version: 1.1.0
+version: 1.2.0
 kind: code_pattern
 category: pyspark
 layer: core
@@ -20,7 +20,6 @@ tags:
   - pyspark
   - events
 extends: null
-is_mock: false
 official_refs:
   - https://docs.databricks.com/aws/en/connect/streaming/kinesis
   - https://docs.databricks.com/aws/en/structured-streaming/checkpoints

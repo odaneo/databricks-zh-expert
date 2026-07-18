@@ -1,8 +1,8 @@
 ---
 id: retail.source_contracts
-name: AWS 零售数据源模拟契约
+name: AWS 零售数据源契约
 summary: 定义 S3 日批、DMS CDC 和 Kinesis 事件的输入粒度、控制字段与异常边界。
-version: 1.1.0
+version: 1.2.0
 kind: deliverable
 category: ingestion
 layer: retail_sales_demo
@@ -24,18 +24,17 @@ tags:
   - dms
   - kinesis
 extends: null
-is_mock: true
 official_refs:
   - https://docs.databricks.com/aws/en/ingestion/cloud-object-storage/auto-loader
   - https://docs.databricks.com/aws/en/connect/streaming/kinesis
   - https://docs.aws.amazon.com/dms/latest/userguide/CHAP_Target.S3.html
 ---
 
-# AWS 零售数据源模拟契约
+# AWS 零售数据源契约
 
 ## 适用场景
 
-本资产为 `retail_sales_demo` 模拟项目的数据源交付契约，用于生成摄取设计、表定义和核对清单。字段与频率均为占位假设，实施前必须由源系统负责人确认。
+本资产为 `retail_sales_demo` 项目的数据源交付契约，用于生成摄取设计、表定义和核对清单。字段与频率均为占位假设，实施前必须由源系统负责人确认。
 
 ## 交付契约
 

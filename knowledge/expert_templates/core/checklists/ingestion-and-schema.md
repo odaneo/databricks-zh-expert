@@ -2,7 +2,7 @@
 id: checklist.ingestion_and_schema
 name: 摄取与 Schema 演进检查清单
 summary: 在发布文件、CDC 或流式摄取前核对输入契约、恢复点和 schema 变化边界。
-version: 1.0.0
+version: 1.1.0
 kind: checklist
 category: ingestion
 layer: core
@@ -19,7 +19,6 @@ tags:
   - checkpoint
   - checklist
 extends: null
-is_mock: false
 official_refs:
   - https://docs.databricks.com/aws/en/data-engineering/schema-evolution
   - https://docs.databricks.com/aws/en/structured-streaming/checkpoints

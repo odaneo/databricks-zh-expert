@@ -2,7 +2,7 @@
 id: decision.incremental_replay_backfill
 name: 增量、重放与回填选择指南
 summary: 区分日常增量、事件重放和历史回填，并固定幂等与发布边界。
-version: 1.0.0
+version: 1.1.0
 kind: decision_guide
 category: workflow
 layer: core
@@ -19,7 +19,6 @@ tags:
   - backfill
   - idempotency
 extends: null
-is_mock: false
 official_refs:
   - https://docs.databricks.com/aws/en/structured-streaming/checkpoints
   - https://docs.databricks.com/aws/en/tables/history

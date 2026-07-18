@@ -1,6 +1,6 @@
 # 阶段 6：全新项目代码与 Schema 提案实施计划
 
-> 所有文档、Mock 内容、API 描述和错误消息使用中文。每个任务先写失败测试，再做最小实现；修改 Python 后必须
+> 所有文档、项目内容、API 描述和错误消息使用中文。每个任务先写失败测试，再做最小实现；修改 Python 后必须
 > 运行 Ruff 和 Pyright/Pylance。按用户要求不使用子智能体，不清理任何验收数据。
 
 ## 目标
@@ -32,7 +32,7 @@ Agent 提案输出
   Notebook
 ```
 
-1. `workspace_mode` 固定为 `greenfield`。
+1. Workspace 输入固定为需求、规则和源 Schema。
 2. Databricks DDL 和 Mapping 是输出，不是输入。
 3. 所有输出固定标记 `project_fact_status=proposal`。
 4. 提案不会自动写入项目，也不会加入 Workspace Context。
@@ -57,13 +57,11 @@ Agent 提案输出
 
 ```yaml
 schema_version: 1
-workspace_mode: greenfield
 id: retail_sales_demo
 display_name: AWS 零售销售分析 Demo
-description: 从源系统 Schema 开始设计 Databricks Lakehouse 的 Mock 项目。
+description: 从源系统 Schema 开始设计 Databricks Lakehouse 的零售销售项目。
 version: 1.0.0
 cloud: aws
-is_mock: true
 
 documents:
   requirements: requirements.md
@@ -181,7 +179,7 @@ SQLite 只索引用户事实，不索引 Agent 提案。
 ## 当前状态
 
 阶段 6 的八个任务已经完成实现。旧 `project.yml.sources`、预制 Databricks DDL、`tables.yml` 和 Mapping 输入
-已由 greenfield 契约替代；Mock Workspace 现在只保存需求、业务规则和三类源 Schema，目标层内容始终由 Agent 作为
+已由 greenfield 契约替代；示例 Workspace 现在只保存需求、业务规则和三类源 Schema，目标层内容始终由 Agent 作为
 proposal 生成。
 
 ## 全局约束
@@ -256,7 +254,7 @@ uv run --locked alembic check
 
 1. 新增直接依赖 `sqlparse`，版本在 `pyproject.toml` 和 `uv.lock` 可见。
 2. 删除旧 `sources/default_context` 清单模型。
-3. 新建固定 `workspace_mode=greenfield`、documents 和 source_schemas 模型。
+3. 新建固定 documents 和 source_schemas 模型。
 4. Source 类型缩减为 `requirement/source_ddl/rule`。
 5. 路径相对于 `.databricks-expert/`，只允许 `.md` 和 `.sql`。
 6. 使用 `sqlparse.split()` 校验 DDL 并拒绝数据 DML。
@@ -442,9 +440,9 @@ uv run --locked pyright
 ### 小目标
 
 1. `sessions.workspace_id` 可空且创建后不可变。
-2. `model_calls` 增加 Workspace ID、版本、模式、source Hash、选择元数据和提案状态。
+2. `model_calls` 增加 Workspace ID、版本、source Hash、选择元数据和提案状态。
 3. 创建 Session 时校验内置 Workspace。
-4. Workspace API 返回 `workspace_mode=greenfield` 和用户输入相对路径。
+4. Workspace API 返回项目元数据和用户输入相对路径。
 5. API 不返回正文、绝对路径或 SQLite 路径。
 6. 不创建项目内容、目标 DDL或 Mapping 数据表。
 
@@ -460,7 +458,7 @@ uv run --locked pyright
 
 ---
 
-## 任务 6：集成 ChatService、提案审计和 Trace 1.6
+## 任务 6：集成 ChatService、提案审计和 Trace 1.7
 
 ### 文件
 
@@ -477,7 +475,7 @@ uv run --locked pyright
 2. Prompt 顺序固定为系统、官方 RAG、专家模板、用户事实 Workspace、历史消息、本轮消息。
 3. 历史 Assistant Artifact 明确标注未确认，不进入 Workspace Context。
 4. 保存实际选中的单元和 `project_fact_status=proposal`。
-5. Trace 升级为 1.6，记录 `workspace_mode=greenfield`。
+5. Trace 记录 Workspace ID、版本、source Hash、选择元数据和提案状态。
 6. 成功和失败调用都保存 Workspace 与提案审计。
 7. 未选择 Workspace 时保持通用生成行为。
 
@@ -541,7 +539,7 @@ uv run --locked pytest --cov=databricks_zh_expert --cov-report=term-missing
 3. 生成 Customer CDC PySpark 提案。
 4. 生成 Kinesis Bronze Notebook 提案。
 
-检查 Assistant Message、`model_calls` 和 Trace 1.6，确认所有输出为 proposal，并保留全部验收数据。
+检查 Assistant Message、`model_calls` 和 Trace，确认所有输出为 proposal，并保留全部验收数据。
 
 ### 完成标准
 
@@ -553,15 +551,15 @@ uv run --locked pytest --cov=databricks_zh_expert --cov-report=term-missing
 
 ### 实施结果（2026-07-18）
 
-1. Alembic 已升级到 `0008_workspace_code_generation (head)`，`alembic check` 无新增迁移差异。
-2. Mock Workspace 只包含 `project.yml`、`requirements.md`、`business-rules.md` 和三份 `source-schema/*.sql`。
+1. Alembic 已升级到 `0009_drop_classification_fields (head)`，`alembic check` 无新增迁移差异。
+2. 示例 Workspace 只包含 `project.yml`、`requirements.md`、`business-rules.md` 和三份 `source-schema/*.sql`。
 3. Workspace 固定评估共 5 个问题、6 个期望单元，`Recall@5 = 100%`。
 4. 专家模板已补齐五类提案 Prompt 覆盖并完成版本化同步；30 个固定问题的 `Recall@3 = 96.67%`，Profile
    泄漏和继承缺失均为 0。
 5. DDL、Mapping、PySpark 和 Notebook 四条真实 API 链路均生成有效 Artifact，全部保存
    `project_fact_status=proposal`、Workspace 版本、source Hash、相对路径选择和专家模板选择。
 6. Mapping 首次 DeepSeek 调用超时后由 fallback 状态机切换到 `gpt5.4mini` 并成功；成功和失败尝试都保留在
-   `model_calls` 与 Trace 1.6 中。
+   `model_calls` 与历史 Trace 1.6 中；新调用使用 Trace 1.7。
 7. 所有真实会话、消息、模型调用、模板同步记录和本地 Trace 均保留，没有清理验收数据。
 8. Python 3.12.10 下全量测试 `494 passed`，覆盖率 `88.48%`；Ruff 全部通过，Pyright/Pylance 为 0 错误、
    0 警告。

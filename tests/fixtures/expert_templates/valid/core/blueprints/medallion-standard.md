@@ -23,7 +23,6 @@ tags:
   - silver
   - gold
 extends: null
-is_mock: false
 official_refs:
   - https://docs.databricks.com/aws/en/lakehouse/medallion
 ---

@@ -2,7 +2,7 @@
 id: ingestion.s3_auto_loader
 name: S3 Auto Loader 增量摄取蓝图
 summary: 设计从 Amazon S3 持续发现文件并写入 Bronze Delta 表的增量摄取边界。
-version: 1.0.0
+version: 1.1.0
 kind: blueprint
 category: ingestion
 layer: core
@@ -19,7 +19,6 @@ tags:
   - bronze
   - schema-evolution
 extends: null
-is_mock: false
 official_refs:
   - https://docs.databricks.com/aws/en/ingestion/cloud-object-storage/auto-loader
   - https://docs.databricks.com/aws/en/ingestion/cloud-object-storage/auto-loader/schema

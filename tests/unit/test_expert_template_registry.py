@@ -48,19 +48,24 @@ def _prompt_defaults(template_id: str = "medallion.standard") -> dict[str, list[
     return {prompt: [template_id] for prompt in EXPERT_PROMPTS}
 
 
-def _profiles_yaml(*, include_unknown_generic_field: bool = False) -> str:
+def _profiles_yaml(
+    *,
+    include_unknown_generic_field: bool = False,
+    include_legacy_is_mock: bool = False,
+) -> str:
     generic: dict[str, object] = {
         "id": "generic",
         "display_name": "通用 Databricks 顾问",
         "description": "只使用通用核心专家模板。",
         "cloud": "neutral",
         "layers": ["core"],
-        "is_mock": False,
         "default": True,
         "prompt_defaults": _prompt_defaults(),
     }
     if include_unknown_generic_field:
         generic["unexpected"] = True
+    if include_legacy_is_mock:
+        generic["is_mock"] = False
     payload = {
         "version": 1,
         "profiles": [
@@ -68,10 +73,9 @@ def _profiles_yaml(*, include_unknown_generic_field: bool = False) -> str:
             {
                 "id": "retail_sales_demo",
                 "display_name": "AWS 零售销售 Demo",
-                "description": "使用通用核心层和 AWS 零售销售模拟覆盖层。",
+                "description": "使用通用核心层和 AWS 零售销售项目覆盖层。",
                 "cloud": "aws",
                 "layers": ["core", "retail_sales_demo"],
-                "is_mock": True,
                 "default": False,
                 "prompt_defaults": _prompt_defaults(),
             },
@@ -92,8 +96,8 @@ def _template_markdown(
     cloud: str = "neutral",
     prompt_names: tuple[str, ...] = EXPERT_PROMPTS,
     extends: str | None = None,
-    is_mock: bool = False,
     include_unknown_front_matter_field: bool = False,
+    include_legacy_is_mock: bool = False,
     body: str | None = None,
 ) -> str:
     metadata: dict[str, object] = {
@@ -109,11 +113,12 @@ def _template_markdown(
         "prompt_names": list(prompt_names),
         "tags": ["bronze", "silver", "gold"],
         "extends": extends,
-        "is_mock": is_mock,
         "official_refs": ["https://docs.databricks.com/aws/en/lakehouse/medallion"],
     }
     if include_unknown_front_matter_field:
         metadata["unexpected"] = True
+    if include_legacy_is_mock:
+        metadata["is_mock"] = False
     rendered_body = dedent(
         body
         or f"""
@@ -180,7 +185,6 @@ def build_template_fixture(root: Path, *, mutation: str | None = None) -> Path:
                         layer="retail_sales_demo",
                         profile="retail_sales_demo",
                         cloud="aws",
-                        is_mock=True,
                     ),
                 ),
                 (
@@ -192,7 +196,6 @@ def build_template_fixture(root: Path, *, mutation: str | None = None) -> Path:
                         profile="retail_sales_demo",
                         cloud="aws",
                         extends="retail.parent",
-                        is_mock=True,
                     ),
                 ),
             )
@@ -268,6 +271,10 @@ def build_template_fixture(root: Path, *, mutation: str | None = None) -> Path:
         )
     elif mutation == "unknown_profile_field":
         profiles = _profiles_yaml(include_unknown_generic_field=True)
+    elif mutation == "legacy_profile_is_mock":
+        profiles = _profiles_yaml(include_legacy_is_mock=True)
+    elif mutation == "legacy_template_is_mock":
+        base = _template_markdown(include_legacy_is_mock=True)
 
     _write(root, "profiles.yml", profiles)
     _write(root, "core/blueprints/medallion-standard.md", base)
@@ -316,10 +323,12 @@ def test_registry_loads_valid_profile_and_template() -> None:
         "retail_sales_demo",
     )
     assert registry.get_profile("generic").layers == ("core",)
+    assert not hasattr(registry.get_profile("generic"), "is_mock")
     assert registry.get_profile("generic").prompt_defaults[PromptName.DATABRICKS_QA] == (
         "medallion.standard",
     )
     template = registry.get_template("medallion.standard")
+    assert not hasattr(template, "is_mock")
     assert template.version == "1.0.0"
     assert template.source_path == "core/blueprints/medallion-standard.md"
     assert template.content.startswith("# 通用 Medallion 分层设计\n")
@@ -357,6 +366,8 @@ def test_registry_hash_is_stable_across_newline_styles(tmp_path: Path) -> None:
         ("missing_required_section", "必须包含“适用场景”"),
         ("code_pattern_without_fence", "必须包含 sql 代码围栏"),
         ("unknown_profile_field", "包含未知字段"),
+        ("legacy_profile_is_mock", "包含未知字段"),
+        ("legacy_template_is_mock", "包含未知字段"),
     ],
 )
 def test_registry_rejects_invalid_assets(

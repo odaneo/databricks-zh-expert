@@ -2,7 +2,7 @@
 id: code.quality_expectations_python
 name: Lakeflow 数据质量 Expectations Python 模式
 summary: 使用可命名的 Lakeflow expectations 记录、丢弃或阻断不符合契约的记录。
-version: 1.1.0
+version: 1.2.0
 kind: code_pattern
 category: data_quality
 layer: core
@@ -20,7 +20,6 @@ tags:
   - data-quality
   - python
 extends: null
-is_mock: false
 official_refs:
   - https://docs.databricks.com/aws/en/ldp/expectations
   - https://docs.databricks.com/aws/en/ldp/developer/python-ref

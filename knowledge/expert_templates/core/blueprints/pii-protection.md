@@ -2,7 +2,7 @@
 id: governance.pii_protection
 name: PII 保护设计蓝图
 summary: 定义个人信息识别、最小化、脱敏、授权和下游发布边界。
-version: 1.0.0
+version: 1.1.0
 kind: blueprint
 category: governance
 layer: core
@@ -19,7 +19,6 @@ tags:
   - least-privilege
   - retention
 extends: null
-is_mock: false
 official_refs:
   - https://docs.databricks.com/aws/en/data-governance/unity-catalog/access-control/
   - https://docs.databricks.com/aws/en/data-governance/unity-catalog/filters-and-masks

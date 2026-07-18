@@ -2,7 +2,7 @@
 id: checklist.data_quality
 name: 数据质量检查清单
 summary: 把完整性、唯一性、有效性、一致性和新鲜度转为可执行规则与处置动作。
-version: 1.0.0
+version: 1.1.0
 kind: checklist
 category: data_quality
 layer: core
@@ -19,7 +19,6 @@ tags:
   - quarantine
   - checklist
 extends: null
-is_mock: false
 official_refs:
   - https://docs.databricks.com/aws/en/ldp/expectations
   - https://docs.databricks.com/aws/en/data-engineering/observability-best-practices

@@ -2,7 +2,7 @@
 id: decision.pipeline_dataset_type
 name: Pipeline 数据集类型选择指南
 summary: 在流表、物化视图和临时视图之间按更新语义与消费契约选型。
-version: 1.0.0
+version: 1.1.0
 kind: decision_guide
 category: pipeline
 layer: core
@@ -20,7 +20,6 @@ tags:
   - temporary-view
   - lakeflow
 extends: null
-is_mock: false
 official_refs:
   - https://docs.databricks.com/aws/en/ldp/best-practices
   - https://docs.databricks.com/aws/en/ldp/concepts

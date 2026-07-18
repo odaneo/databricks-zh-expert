@@ -79,7 +79,8 @@ def test_production_core_template_catalog_is_complete() -> None:
 
     assert {template.template_id for template in core} == EXPECTED_CORE_IDS
     assert len(core) == 29
-    assert all(not template.is_mock and template.profile_id is None for template in core)
+    assert all(template.profile_id is None for template in core)
+    assert all(not hasattr(template, "is_mock") for template in core)
     assert Counter(template.kind for template in core) == {
         ExpertTemplateKind.BLUEPRINT: 8,
         ExpertTemplateKind.DECISION_GUIDE: 4,
@@ -103,18 +104,22 @@ def test_generic_profile_defines_valid_core_defaults_for_every_expert_prompt() -
             assert template.cloud == "neutral"
 
 
-def test_retail_profile_contains_confirmed_mock_architecture() -> None:
+def test_retail_profile_contains_confirmed_project_architecture() -> None:
     registry = ExpertTemplateRegistry.create_default()
+    profile = registry.get_profile("retail_sales_demo")
     retail = tuple(
         template for template in registry.templates if template.layer == "retail_sales_demo"
     )
 
     assert {template.template_id for template in retail} == EXPECTED_RETAIL_IDS
     assert len(retail) == 8
+    assert "模拟" not in profile.description
+    assert all("模拟" not in template.name for template in retail)
     assert all(
-        template.is_mock and template.cloud == "aws" and template.profile_id == "retail_sales_demo"
+        template.cloud == "aws" and template.profile_id == "retail_sales_demo"
         for template in retail
     )
+    assert all(not hasattr(template, "is_mock") for template in retail)
     assert Counter(template.kind for template in retail) == {
         ExpertTemplateKind.BLUEPRINT: 5,
         ExpertTemplateKind.DELIVERABLE: 2,
@@ -159,7 +164,7 @@ def test_retail_assets_cover_products_roles_pii_and_core_inheritance() -> None:
     ):
         assert pii_boundary in joined
 
-    assert all("模拟项目" in template.content for template in retail)
+    assert all("模拟项目" not in template.content for template in retail)
     assert {
         template.template_id: template.extends_template_id
         for template in retail
@@ -219,9 +224,9 @@ def test_core_assets_have_versioned_metadata_and_https_maintenance_refs() -> Non
         "deliverable.table_design",
     }
     assert {
-        template.template_id for template in core if template.version == "1.1.0"
+        template.template_id for template in core if template.version == "1.2.0"
     } == upgraded_ids
-    assert all(template.version in {"1.0.0", "1.1.0"} for template in core)
+    assert all(template.version in {"1.1.0", "1.2.0"} for template in core)
     assert all(template.official_refs for template in core)
     assert all(
         reference.startswith("https://")

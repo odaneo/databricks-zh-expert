@@ -135,7 +135,7 @@ cases:
   - id: r_context
     profile: retail_sales_demo
     prompt: proposal_generation
-    query: 汇总 AWS 零售销售模拟项目的业务目标、范围、SLA 和关键假设。
+    query: 汇总 AWS 零售销售项目的业务目标、范围、SLA 和关键假设。
     expected_template_ids: [retail.project_context]
     forbidden_layers: []
   - id: r_sources
@@ -177,6 +177,6 @@ cases:
   - id: r_acceptance
     profile: retail_sales_demo
     prompt: self_check
-    query: 对 AWS 零售销售模拟平台执行生产就绪和交付验收检查。
+    query: 对 AWS 零售销售平台执行生产就绪和交付验收检查。
     expected_template_ids: [checklist.production_readiness, retail.production_acceptance]
     forbidden_layers: []

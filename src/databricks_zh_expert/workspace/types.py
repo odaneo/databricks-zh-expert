@@ -3,10 +3,6 @@ from enum import StrEnum
 from typing import Literal
 
 
-class WorkspaceMode(StrEnum):
-    GREENFIELD = "greenfield"
-
-
 class WorkspaceSourceKind(StrEnum):
     REQUIREMENT = "requirement"
     SOURCE_DDL = "source_ddl"
@@ -34,12 +30,10 @@ class WorkspaceSource:
 @dataclass(frozen=True, slots=True)
 class WorkspaceDefinition:
     workspace_id: str
-    workspace_mode: WorkspaceMode
     display_name: str
     description: str
     version: str
     cloud: str
-    is_mock: bool
     source_hash: str
     sources: tuple[WorkspaceSource, ...]
 
@@ -83,7 +77,6 @@ class WorkspaceContextSelection:
 @dataclass(frozen=True, slots=True)
 class WorkspaceContextBundle:
     workspace_id: str
-    workspace_mode: WorkspaceMode
     workspace_version: str
     workspace_source_hash: str
     query: str

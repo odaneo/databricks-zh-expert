@@ -1,11 +1,9 @@
 schema_version: 1
-workspace_mode: greenfield
 id: retail_sales_demo
 display_name: AWS 零售销售分析 Demo
-description: 用于验证全新项目输入契约的最小 AWS 零售销售模拟项目。
+description: 用于验证全新项目输入契约的最小 AWS 零售销售项目。
 version: 1.0.0
 cloud: aws
-is_mock: true
 documents:
   requirements: requirements.md
   business_rules: business-rules.md

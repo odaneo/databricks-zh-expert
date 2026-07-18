@@ -2,7 +2,7 @@
 id: medallion.standard
 name: 通用 Medallion 分层设计
 summary: 定义 Bronze、Silver、Gold 的职责、输入输出、质量门槛和发布边界。
-version: 1.1.0
+version: 1.2.0
 kind: blueprint
 category: medallion
 layer: core
@@ -21,7 +21,6 @@ tags:
   - gold
   - delta
 extends: null
-is_mock: false
 official_refs:
   - https://docs.databricks.com/aws/en/lakehouse/medallion
   - https://docs.databricks.com/aws/en/lakehouse

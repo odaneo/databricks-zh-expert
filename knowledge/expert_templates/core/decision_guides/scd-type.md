@@ -2,7 +2,7 @@
 id: decision.scd_type
 name: SCD 类型选择指南
 summary: 根据历史追溯、纠错和消费需求选择 SCD Type 1、Type 2 或事件事实表。
-version: 1.0.0
+version: 1.1.0
 kind: decision_guide
 category: medallion
 layer: core
@@ -20,7 +20,6 @@ tags:
   - history
   - cdc
 extends: null
-is_mock: false
 official_refs:
   - https://docs.databricks.com/aws/en/ldp/cdc
   - https://docs.databricks.com/aws/en/delta/merge

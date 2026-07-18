@@ -2,7 +2,7 @@
 id: deliverable.architecture_design
 name: Databricks 架构设计书结构
 summary: 提供从业务目标到数据流、组件职责、治理和非功能要求的架构交付骨架。
-version: 1.0.0
+version: 1.1.0
 kind: deliverable
 category: delivery
 layer: core
@@ -18,7 +18,6 @@ tags:
   - design-document
   - delivery
 extends: null
-is_mock: false
 official_refs:
   - https://docs.databricks.com/aws/en/lakehouse-architecture/reference
   - https://docs.databricks.com/aws/en/lakehouse/medallion
