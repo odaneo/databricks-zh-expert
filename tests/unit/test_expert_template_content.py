@@ -62,8 +62,11 @@ EXPECTED_RETAIL_EXTENDS = {
 
 EXPERT_PROMPTS = {
     PromptName.DATABRICKS_QA,
+    PromptName.DDL_GENERATION,
+    PromptName.MAPPING_GENERATION,
     PromptName.SQL_GENERATION,
     PromptName.PYSPARK_GENERATION,
+    PromptName.NOTEBOOK_GENERATION,
     PromptName.WORKFLOW_DESIGN,
     PromptName.PROPOSAL_GENERATION,
     PromptName.SELF_CHECK,
@@ -181,6 +184,18 @@ def test_retail_profile_uses_overlay_defaults_for_project_prompts() -> None:
         "retail.end_to_end_architecture",
     )
     assert profile.prompt_defaults[PromptName.SELF_CHECK] == ("retail.production_acceptance",)
+    assert profile.prompt_defaults[PromptName.DDL_GENERATION] == (
+        "retail.medallion_mapping",
+        "retail.source_contracts",
+    )
+    assert profile.prompt_defaults[PromptName.MAPPING_GENERATION] == (
+        "retail.medallion_mapping",
+        "retail.source_contracts",
+    )
+    assert profile.prompt_defaults[PromptName.NOTEBOOK_GENERATION] == (
+        "retail.source_contracts",
+        "code.autoloader_pyspark",
+    )
 
     for prompt_name, template_ids in profile.prompt_defaults.items():
         assert template_ids
@@ -195,7 +210,18 @@ def test_core_assets_have_versioned_metadata_and_https_maintenance_refs() -> Non
     registry = ExpertTemplateRegistry.create_default()
     core = tuple(template for template in registry.templates if template.layer == "core")
 
-    assert all(template.version == "1.0.0" for template in core)
+    upgraded_ids = {
+        "medallion.standard",
+        "code.autoloader_pyspark",
+        "code.dms_cdc_apply_pyspark",
+        "code.kinesis_pyspark",
+        "code.quality_expectations_python",
+        "deliverable.table_design",
+    }
+    assert {
+        template.template_id for template in core if template.version == "1.1.0"
+    } == upgraded_ids
+    assert all(template.version in {"1.0.0", "1.1.0"} for template in core)
     assert all(template.official_refs for template in core)
     assert all(
         reference.startswith("https://")

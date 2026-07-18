@@ -10,8 +10,11 @@ profile: null
 cloud: neutral
 prompt_names:
   - databricks_qa
+  - ddl_generation
+  - mapping_generation
   - sql_generation
   - pyspark_generation
+  - notebook_generation
   - workflow_design
   - proposal_generation
   - self_check

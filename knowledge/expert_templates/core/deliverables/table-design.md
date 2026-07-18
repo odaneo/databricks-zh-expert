@@ -2,7 +2,7 @@
 id: deliverable.table_design
 name: Delta 表定义书结构
 summary: 提供表级业务语义、字段、键、更新、质量、权限和运维信息的交付骨架。
-version: 1.0.0
+version: 1.1.0
 kind: deliverable
 category: delivery
 layer: core
@@ -10,6 +10,8 @@ profile: null
 cloud: neutral
 prompt_names:
   - databricks_qa
+  - ddl_generation
+  - mapping_generation
   - sql_generation
   - pyspark_generation
   - workflow_design

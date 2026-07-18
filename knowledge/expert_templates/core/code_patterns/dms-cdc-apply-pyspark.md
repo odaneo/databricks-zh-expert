@@ -2,7 +2,7 @@
 id: code.dms_cdc_apply_pyspark
 name: DMS CDC 应用 PySpark 模式
 summary: 对标准化后的 DMS CDC 批次按业务键去重，并幂等应用插入、更新和删除。
-version: 1.0.0
+version: 1.1.0
 kind: code_pattern
 category: pyspark
 layer: core
@@ -11,6 +11,7 @@ cloud: aws
 prompt_names:
   - databricks_qa
   - pyspark_generation
+  - notebook_generation
   - workflow_design
   - self_check
 tags:

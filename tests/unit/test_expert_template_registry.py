@@ -27,8 +27,11 @@ from databricks_zh_expert.prompts.registry import PromptName
 FIXTURE_ROOT = Path(__file__).parents[1] / "fixtures" / "expert_templates"
 EXPERT_PROMPTS = (
     "databricks_qa",
+    "ddl_generation",
+    "mapping_generation",
     "sql_generation",
     "pyspark_generation",
+    "notebook_generation",
     "workflow_design",
     "proposal_generation",
     "self_check",

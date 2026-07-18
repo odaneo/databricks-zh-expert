@@ -2,7 +2,7 @@
 id: retail.source_contracts
 name: AWS 零售数据源模拟契约
 summary: 定义 S3 日批、DMS CDC 和 Kinesis 事件的输入粒度、控制字段与异常边界。
-version: 1.0.0
+version: 1.1.0
 kind: deliverable
 category: ingestion
 layer: retail_sales_demo
@@ -10,8 +10,11 @@ profile: retail_sales_demo
 cloud: aws
 prompt_names:
   - databricks_qa
+  - ddl_generation
+  - mapping_generation
   - sql_generation
   - pyspark_generation
+  - notebook_generation
   - workflow_design
   - proposal_generation
   - self_check

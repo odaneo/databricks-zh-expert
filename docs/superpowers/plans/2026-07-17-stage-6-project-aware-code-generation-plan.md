@@ -180,11 +180,9 @@ SQLite 只索引用户事实，不索引 Agent 提案。
 
 ## 当前状态
 
-早期任务 1、任务 2 已提交，任务 3 有未提交实现，但都基于旧 `project.yml.sources`、预制 Databricks DDL、
-`tables.yml` 和 Mapping 输入。新 greenfield 设计不兼容旧实现。
-
-不回退或改写 Git 历史。下一次代码任务通过普通重构提交删除旧契约；当前未提交 Builder 只保留仍适用的确定性
-排序和 token 预算思路。
+阶段 6 的八个任务已经完成实现。旧 `project.yml.sources`、预制 Databricks DDL、`tables.yml` 和 Mapping 输入
+已由 greenfield 契约替代；Mock Workspace 现在只保存需求、业务规则和三类源 Schema，目标层内容始终由 Agent 作为
+proposal 生成。
 
 ## 全局约束
 
@@ -552,3 +550,18 @@ uv run --locked pytest --cov=databricks_zh_expert --cov-report=term-missing
 3. Registry、Context、Prompt、API、审计和 Trace 使用同一 greenfield 契约。
 4. 五类提案输出均可生成且不会自动成为项目事实。
 5. 全量测试、Ruff、Pyright/Pylance、Alembic 和 Recall 门禁通过。
+
+### 实施结果（2026-07-18）
+
+1. Alembic 已升级到 `0008_workspace_code_generation (head)`，`alembic check` 无新增迁移差异。
+2. Mock Workspace 只包含 `project.yml`、`requirements.md`、`business-rules.md` 和三份 `source-schema/*.sql`。
+3. Workspace 固定评估共 5 个问题、6 个期望单元，`Recall@5 = 100%`。
+4. 专家模板已补齐五类提案 Prompt 覆盖并完成版本化同步；30 个固定问题的 `Recall@3 = 96.67%`，Profile
+   泄漏和继承缺失均为 0。
+5. DDL、Mapping、PySpark 和 Notebook 四条真实 API 链路均生成有效 Artifact，全部保存
+   `project_fact_status=proposal`、Workspace 版本、source Hash、相对路径选择和专家模板选择。
+6. Mapping 首次 DeepSeek 调用超时后由 fallback 状态机切换到 `gpt5.4mini` 并成功；成功和失败尝试都保留在
+   `model_calls` 与 Trace 1.6 中。
+7. 所有真实会话、消息、模型调用、模板同步记录和本地 Trace 均保留，没有清理验收数据。
+8. Python 3.12.10 下全量测试 `494 passed`，覆盖率 `88.48%`；Ruff 全部通过，Pyright/Pylance 为 0 错误、
+   0 警告。

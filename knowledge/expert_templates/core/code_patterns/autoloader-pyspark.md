@@ -2,7 +2,7 @@
 id: code.autoloader_pyspark
 name: Auto Loader PySpark 模式
 summary: 提供 S3 文件增量读取、schema 元数据和 checkpoint 分离的最小 PySpark 草稿。
-version: 1.0.0
+version: 1.1.0
 kind: code_pattern
 category: pyspark
 layer: core
@@ -11,6 +11,7 @@ cloud: aws
 prompt_names:
   - databricks_qa
   - pyspark_generation
+  - notebook_generation
   - workflow_design
   - self_check
 tags:

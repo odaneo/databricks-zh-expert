@@ -34,13 +34,8 @@ _PROFILE_ID_PATTERN = r"^[a-z0-9](?:[a-z0-9_]*[a-z0-9])?$"
 _SEMVER_PATTERN = r"^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$"
 _JINJA_MARKERS = ("{{", "{%", "{#")
 _DELIVERY_SECTION_MARKERS = ("决策", "步骤", "检查", "交付")
-_EXPERT_ENABLED_PROMPTS = (
-    PromptName.DATABRICKS_QA,
-    PromptName.SQL_GENERATION,
-    PromptName.PYSPARK_GENERATION,
-    PromptName.WORKFLOW_DESIGN,
-    PromptName.PROPOSAL_GENERATION,
-    PromptName.SELF_CHECK,
+_EXPERT_ENABLED_PROMPTS = tuple(
+    spec.name for spec in PROMPT_SPECS if spec.available and spec.use_expert_templates
 )
 _AVAILABLE_PROMPTS = frozenset(spec.name for spec in PROMPT_SPECS if spec.available)
 

@@ -20,7 +20,7 @@ cases:
     forbidden_layers: [retail_sales_demo]
   - id: g_medallion
     profile: generic
-    prompt: workflow_design
+    prompt: ddl_generation
     query: 设计 Bronze、Silver、Gold 三层的数据职责和质量边界。
     expected_template_ids: [medallion.standard]
     forbidden_layers: [retail_sales_demo]
@@ -80,7 +80,7 @@ cases:
     forbidden_layers: [retail_sales_demo]
   - id: g_kinesis_code
     profile: generic
-    prompt: pyspark_generation
+    prompt: notebook_generation
     query: 生成读取 Kinesis 并使用 Structured Streaming 的 PySpark 代码。
     expected_template_ids: [code.kinesis_pyspark]
     forbidden_layers: [retail_sales_demo]
@@ -116,7 +116,7 @@ cases:
     forbidden_layers: [retail_sales_demo]
   - id: g_table_doc
     profile: generic
-    prompt: proposal_generation
+    prompt: mapping_generation
     query: 生成 Delta 表定义书结构，包括字段、主键、分区和质量规则。
     expected_template_ids: [deliverable.table_design]
     forbidden_layers: [retail_sales_demo]

@@ -2,7 +2,7 @@
 id: retail.medallion_mapping
 name: 零售 Medallion 模拟映射
 summary: 将零售日批、CDC 和事件数据映射到 Bronze、Silver、Gold 表及质量边界。
-version: 1.0.0
+version: 1.1.0
 kind: blueprint
 category: medallion
 layer: retail_sales_demo
@@ -10,6 +10,8 @@ profile: retail_sales_demo
 cloud: aws
 prompt_names:
   - databricks_qa
+  - ddl_generation
+  - mapping_generation
   - sql_generation
   - pyspark_generation
   - workflow_design

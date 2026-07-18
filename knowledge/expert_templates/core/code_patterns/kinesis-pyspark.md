@@ -2,7 +2,7 @@
 id: code.kinesis_pyspark
 name: Kinesis Structured Streaming PySpark 模式
 summary: 读取 Kinesis 原始记录、解析事件 envelope 并带来源元数据写入 Bronze。
-version: 1.0.0
+version: 1.1.0
 kind: code_pattern
 category: pyspark
 layer: core
@@ -11,6 +11,7 @@ cloud: aws
 prompt_names:
   - databricks_qa
   - pyspark_generation
+  - notebook_generation
   - workflow_design
   - self_check
 tags:

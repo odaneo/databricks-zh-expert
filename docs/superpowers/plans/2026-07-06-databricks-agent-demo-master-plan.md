@@ -580,12 +580,12 @@ Git Markdown / YAML
 
 ### 当前状态
 
-设计规格与八任务实施计划已经完成，尚未开始实现。
+阶段 6 的八个任务已经完成实现、固定评估和真实冒烟验收。
 
 ### 小目标
 
-让 Databricks SQL、PySpark 和 Python source Notebook 草稿能够使用具体项目的表、字段、映射、业务规则和
-既有代码风格，同时为最终本地工作区模式保留稳定接口。
+让 Databricks DDL、Mapping CSV、SQL、PySpark 和 Python source Notebook 草稿能够使用具体项目的需求、
+业务规则和源 Schema，并把所有目标层设计明确保存为未确认 proposal；同时为最终本地工作区模式保留稳定接口。
 
 ### 技术栈
 
@@ -613,20 +613,20 @@ Git Markdown / YAML
 1. S3 POS 日批。
 2. RDS PostgreSQL 经 AWS DMS 写入 S3 Parquet。
 3. Kinesis 电商事件流。
-4. 16 张 Bronze、Silver、Gold 表。
-5. 字段、业务键、CDC、PII、金额和业务日期规则。
-6. 三层 DDL、最小 `databricks.yml` 和 PySpark 风格样例。
+4. `project.yml`、需求文档和业务规则。
+5. RDS PostgreSQL、POS Parquet 和 Kinesis 三份源 Schema DDL。
+6. 不包含预制 Bronze、Silver、Gold DDL、Mapping、Notebook 或目标表定义。
 
 ### 代码生成范围
 
 第一版支持：
 
-1. SELECT / JOIN / 聚合 SQL。
-2. Delta 表读写 SQL。
-3. 基础性能优化建议。
-4. PySpark 读取、清洗、转换、写入 Delta。
+1. Databricks DDL 提案。
+2. 固定表头的源到目标 Mapping CSV 提案。
+3. SELECT、JOIN、聚合和 Delta 表读写 SQL。
+4. PySpark 读取、清洗、转换和写入 Delta。
 5. Python source 格式 Notebook 草稿。
-6. 有工作区时使用实际项目表、字段和规则。
+6. 有工作区时使用实际源表、源字段、需求和规则。
 7. 无工作区时继续生成明确标注假设的通用草稿。
 
 第一版不支持：
@@ -640,10 +640,10 @@ Git Markdown / YAML
 
 ### 完成标准
 
-1. SQL、PySpark 和 Notebook 三类 Prompt 可以使用内置零售项目上下文。
-2. 固定 Workspace Context 评估达到 `Recall@4 >= 90%`。
-3. `model_calls` 和 Trace 1.6 可以恢复实际工作区版本、Hash 和相对文件选择。
-4. 三次 `deepseek-v4-flash` 真实冒烟成功并保留验收数据。
+1. DDL、Mapping、SQL、PySpark 和 Notebook 五类 Prompt 可以使用内置零售项目上下文。
+2. 固定 Workspace Context 评估达到 `Recall@5 = 100%`，高于 90% 门禁。
+3. `model_calls` 和 Trace 1.6 可以恢复实际工作区版本、Hash、相对文件选择和 proposal 状态。
+4. 四类真实生成冒烟均成功并保留验收数据；一次 DeepSeek 超时及其 OpenAI fallback 也完整保留。
 5. 没有引入 SQLite、任意目录扫描、代码执行或 Databricks 连接。
 
 详细设计和逐任务计划见：
@@ -962,8 +962,7 @@ Agent 生成的 SQL 和 PySpark 可能存在环境差异，不能默认可执行
 
 ## 8. 近期最推荐的下一步
 
-阶段 1 至阶段 5 已完成实现和验收。阶段 6 的设计规格和实施计划已经完成，近期下一步是执行阶段 6 任务 1：
-固定 Workspace 契约、常量和 Registry。
+阶段 1 至阶段 6 已完成实现和验收。近期下一步是细化并执行阶段 7：工作流设计模块。
 
 已完成与已规划阶段的详细设计和实施步骤见：
 

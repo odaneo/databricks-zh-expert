@@ -9,8 +9,11 @@ profiles:
     default: true
     prompt_defaults:
       databricks_qa: [medallion.standard, decision.ingestion_mode]
+      ddl_generation: [deliverable.table_design, medallion.standard]
+      mapping_generation: [deliverable.table_design, medallion.standard]
       sql_generation: [code.delta_merge_sql, code.gold_aggregation_sql]
       pyspark_generation: [code.quality_expectations_python]
+      notebook_generation: [code.quality_expectations_python]
       workflow_design: [workflow.lakeflow_jobs, pipeline.lakeflow_sdp]
       proposal_generation: [deliverable.technical_proposal, deliverable.architecture_design]
       self_check: [checklist.production_readiness, checklist.data_quality]
@@ -23,8 +26,11 @@ profiles:
     default: false
     prompt_defaults:
       databricks_qa: [retail.project_context, retail.source_contracts]
+      ddl_generation: [retail.medallion_mapping, retail.source_contracts]
+      mapping_generation: [retail.medallion_mapping, retail.source_contracts]
       sql_generation: [retail.gold_data_products, code.delta_merge_sql]
       pyspark_generation: [retail.medallion_mapping, code.autoloader_pyspark]
+      notebook_generation: [retail.source_contracts, code.autoloader_pyspark]
       workflow_design: [retail.workflow_dag, retail.end_to_end_architecture]
       proposal_generation: [retail.project_context, retail.end_to_end_architecture]
       self_check: [retail.production_acceptance]

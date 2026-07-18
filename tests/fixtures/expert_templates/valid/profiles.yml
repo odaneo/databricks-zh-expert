@@ -9,8 +9,11 @@ profiles:
     default: true
     prompt_defaults:
       databricks_qa: [medallion.standard]
+      ddl_generation: [medallion.standard]
+      mapping_generation: [medallion.standard]
       sql_generation: [medallion.standard]
       pyspark_generation: [medallion.standard]
+      notebook_generation: [medallion.standard]
       workflow_design: [medallion.standard]
       proposal_generation: [medallion.standard]
       self_check: [medallion.standard]
@@ -23,8 +26,11 @@ profiles:
     default: false
     prompt_defaults:
       databricks_qa: [medallion.standard]
+      ddl_generation: [medallion.standard]
+      mapping_generation: [medallion.standard]
       sql_generation: [medallion.standard]
       pyspark_generation: [medallion.standard]
+      notebook_generation: [medallion.standard]
       workflow_design: [medallion.standard]
       proposal_generation: [medallion.standard]
       self_check: [medallion.standard]
