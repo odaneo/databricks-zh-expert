@@ -683,7 +683,11 @@ Git Markdown / YAML
 
 ### 完成标准
 
-输入“设计一个每日销售分析 Workflow”这类需求后，系统可以输出一份结构完整、能继续修改成设计书的 Markdown 草案。
+1. `workflow_design@1.1.0` 可以结合官方 RAG、专家模板和 Workspace 事实输出固定 11 章 Markdown 提案。
+2. Workspace 工作流固定评估达到 `Recall@5=100%`，没有历史提案上下文泄漏。
+3. 三类 `deepseek-v4-flash` 真实冒烟均成功，数据库和 Trace 1.7 完整保留引用、模板选择、Workspace 选择和
+   `project_fact_status=proposal`。
+4. 没有新增数据库迁移、Workflow CRUD、Databricks 连接、代码执行或部署能力。
 
 详细计划见：
 
@@ -966,7 +970,7 @@ Agent 生成的 SQL 和 PySpark 可能存在环境差异，不能默认可执行
 
 ## 8. 近期最推荐的下一步
 
-阶段 1 至阶段 6 已完成实现和验收。近期下一步是细化并执行阶段 7：工作流设计模块。
+阶段 1 至阶段 7 已完成实现和验收。近期下一步是细化阶段 8：Markdown 文档生成。
 
 已完成与已规划阶段的详细设计和实施步骤见：
 

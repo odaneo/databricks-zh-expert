@@ -12,6 +12,7 @@ from databricks_zh_expert.artifacts.types import (
 from databricks_zh_expert.prompts.registry import PromptSpec
 
 MAX_ARTIFACT_CHARS = 100_000
+_SAFE_WORKFLOW_HTML_BREAKS = frozenset({"<br>", "<br/>", "<br />"})
 MAPPING_CSV_COLUMNS = (
     "mapping_id",
     "source_table",
@@ -65,6 +66,20 @@ def _fence_language(token: Token) -> str | None:
     return info.split(maxsplit=1)[0].lower()
 
 
+def _contains_unsafe_html(spec: PromptSpec, tokens: Sequence[Token]) -> bool:
+    for token in _walk_tokens(tokens):
+        if token.type not in {"html_block", "html_inline"}:
+            continue
+        if (
+            spec.artifact_type.value == "workflow_design"
+            and token.type == "html_inline"
+            and token.content.strip().casefold() in _SAFE_WORKFLOW_HTML_BREAKS
+        ):
+            continue
+        return True
+    return False
+
+
 class MarkdownArtifactParser:
     def __init__(self) -> None:
         self._markdown = MarkdownIt("commonmark")
@@ -78,7 +93,7 @@ class MarkdownArtifactParser:
 
         tokens = self._markdown.parse(normalized)
         violations: list[str] = []
-        if any(token.type in {"html_block", "html_inline"} for token in _walk_tokens(tokens)):
+        if _contains_unsafe_html(spec, tokens):
             violations.append("raw_html_not_allowed")
 
         if spec.artifact_type.value == "csv":

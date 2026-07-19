@@ -91,7 +91,7 @@ class _EvaluationCaseModel(_StrictModel):
     @model_validator(mode="after")
     def validate_case(self) -> Self:
         if self.prompt not in _WORKSPACE_PROMPTS:
-            raise ValueError("Workspace 评估题必须使用五类提案 Prompt。")
+            raise ValueError("Workspace 评估题必须使用六类提案 Prompt。")
         if len(self.expected_unit_ids) != len(set(self.expected_unit_ids)):
             raise ValueError("评估题不能包含重复 expected_unit_ids。")
         normalized_terms = tuple(term.casefold() for term in self.forbidden_context_terms)
@@ -103,7 +103,7 @@ class _EvaluationCaseModel(_StrictModel):
 class _EvaluationDatasetModel(_StrictModel):
     version: int = Field(ge=1, le=1)
     workspace_id: StableId
-    cases: tuple[_EvaluationCaseModel, ...] = Field(min_length=5, max_length=5)
+    cases: tuple[_EvaluationCaseModel, ...] = Field(min_length=8, max_length=8)
 
     @model_validator(mode="after")
     def validate_unique_ids(self) -> Self:

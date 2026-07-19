@@ -38,6 +38,9 @@ async def test_list_prompts_exposes_catalog_without_template_text(
         }
         for prompt in payload["prompts"]
     )
+    workflow = next(prompt for prompt in payload["prompts"] if prompt["name"] == "workflow_design")
+    assert workflow["version"] == "1.1.0"
+    assert workflow["artifact_type"] == "workflow_design"
     knowledge = next(prompt for prompt in payload["prompts"] if prompt["name"] == "knowledge_qa")
     assert knowledge["available"] is True
     assert knowledge["version"] == "1.2.0"

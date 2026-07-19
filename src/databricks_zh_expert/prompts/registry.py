@@ -156,7 +156,7 @@ PROMPT_SPECS: Final[tuple[PromptSpec, ...]] = (
         display_name="Databricks 工作流设计",
         description="把业务需求拆分为分层数据设计、作业依赖、调度和监控方案。",
         template_name="workflow_design.jinja2",
-        version="1.0.1",
+        version="1.1.0",
         artifact_type=ArtifactType.WORKFLOW_DESIGN,
         required_sections=(
             "需求理解",
@@ -176,6 +176,8 @@ PROMPT_SPECS: Final[tuple[PromptSpec, ...]] = (
         use_expert_templates=True,
         available=True,
         unavailable_reason=None,
+        use_workspace_context=True,
+        project_fact_status="proposal",
     ),
     PromptSpec(
         name=PromptName.DOCUMENT_SUMMARY,

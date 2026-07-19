@@ -94,6 +94,35 @@ def test_document_artifact_allows_additional_sections() -> None:
     assert artifact.title == "测试交付物"
 
 
+def test_workflow_artifact_allows_task_table_and_mermaid_dag() -> None:
+    spec = SPECS[PromptName.WORKFLOW_DESIGN]
+    content = build_document(spec).replace(
+        "## Job 依赖关系\n内容",
+        """## Job 依赖关系
+| Task ID | 类型 | 依赖 | 输入 | 输出 |
+| --- | --- | --- | --- | --- |
+| bronze_sales | Notebook<br>批处理 | 无 | S3 | bronze.sales |
+
+```mermaid
+flowchart TD
+    bronze_sales --> silver_sales
+```""",
+    )
+
+    artifact = MarkdownArtifactParser().parse(spec, content)
+
+    assert artifact.artifact_type.value == "workflow_design"
+    assert "Notebook<br>批处理" in artifact.content
+    assert "```mermaid" in artifact.content
+
+
+def test_workflow_artifact_rejects_html_other_than_plain_line_breaks() -> None:
+    spec = SPECS[PromptName.WORKFLOW_DESIGN]
+    content = build_document(spec).replace("## 需求理解\n内容", "## 需求理解\n<span>内容</span>")
+
+    assert get_violations(spec, content) == ("raw_html_not_allowed",)
+
+
 @pytest.mark.parametrize(
     ("content", "expected"),
     [

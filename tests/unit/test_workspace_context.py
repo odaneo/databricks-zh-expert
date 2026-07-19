@@ -172,7 +172,7 @@ def test_kinesis_notebook_query_selects_event_ingestion_and_late_data_units() ->
         ),
     ],
 )
-def test_all_five_purposes_have_stable_fact_balanced_fallbacks(
+def test_all_five_code_purposes_have_stable_fact_balanced_fallbacks(
     purpose: WorkspaceContextPurpose,
     expected_first_units: tuple[str, str, str],
 ) -> None:
@@ -184,6 +184,48 @@ def test_all_five_purposes_have_stable_fact_balanced_fallbacks(
     assert first == second
     assert tuple(item.unit_id for item in first.selected_units[:3]) == expected_first_units
     assert all(item.reason == "fallback" for item in first.selected_units)
+
+
+def test_workflow_context_adds_fallback_fact_coverage_after_lexical_match() -> None:
+    workspace = _custom_workspace(
+        (
+            _source(
+                "requirements",
+                kind=WorkspaceSourceKind.REQUIREMENT,
+                dialect=None,
+                content="# 项目需求\n\n## 业务目标\n每日销售分析。",
+            ),
+            _source(
+                "rules",
+                kind=WorkspaceSourceKind.RULE,
+                dialect=None,
+                content="# 已确认规则\n\n## 源数据粒度与业务键\n每行是一笔订单。",
+            ),
+            _source(
+                "source_ddl.sales",
+                content="CREATE TABLE source.sales (order_id STRING);",
+            ),
+        )
+    )
+
+    bundle = WorkspaceContextBuilder().build_for_prompt(
+        "根据 source.sales 设计工作流",
+        workspace=workspace,
+        prompt_name="workflow_design",
+    )
+
+    assert bundle is not None
+    assert bundle.purpose.value == "workflow_design"
+    assert [item.unit_id for item in bundle.selected_units[:3]] == [
+        "source_ddl.sales:1",
+        "requirements:1",
+        "rules:1",
+    ]
+    assert [item.reason for item in bundle.selected_units[:3]] == [
+        "lexical",
+        "fallback",
+        "fallback",
+    ]
 
 
 def test_tied_scores_sort_by_source_id_and_unit_order() -> None:

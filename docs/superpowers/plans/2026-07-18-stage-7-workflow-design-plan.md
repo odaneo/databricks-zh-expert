@@ -92,7 +92,8 @@ Artifact、API 和 Trace，范围与阶段 7 匹配。
 | 11 | 后续确认事项 | 缺失事实和需要人工决定的问题 |
 
 `Job 依赖关系` 推荐同时给出任务表和 Mermaid DAG，但第一版不把 Mermaid 作为阻断性校验，避免模型格式细节导致
-整份提案无效。Artifact 仍只阻断缺少标题、缺少章节、章节顺序错误、空内容、超长内容和原始 HTML。
+整份提案无效。Artifact 仍只阻断缺少标题、缺少章节、章节顺序错误、空内容、超长内容和原始 HTML；工作流表格内
+无属性的纯 `<br>`、`<br/>` 或 `<br />` 换行除外，其他 HTML 仍然拒绝。
 
 ## 6. 上下文与权威边界
 
@@ -334,3 +335,28 @@ uv run --locked pytest --cov=databricks_zh_expert --cov-report=term-missing
 
 阶段 7 只产出并保存单次 Markdown 工作流提案。阶段 8 再负责把它整理、保存和下载为正式 Markdown 文档；阶段 11
 再决定是否使用 LangGraph 将需求检查、检索、方案、代码、自检和文档输出串成固定流程。
+
+## 13. 实施结果（2026-07-19）
+
+阶段 7 已完成实现和验收：
+
+1. `workflow_design` 已升级到 `1.1.0`，启用 Workspace Context，并固定
+   `project_fact_status=proposal`。
+2. Prompt 已覆盖事实与假设、三层职责、Notebook、稳定 Task ID、依赖、调度、重试、重放、补数、监控、风险和
+   人工确认边界。
+3. Workspace 增加工作流专用 Purpose；词法命中后补充需求、源 DDL 和规则回退单元，最多选择 8 个完整单元。
+4. 固定 Workspace 评估共 8 个查询、10 个期望单元，`Recall@5=100%`，上下文泄漏为 0。
+5. 现有 Chat API、数据库和 Trace 1.7 已完整复用，没有新增路由、数据表、字段或 Alembic 迁移。
+6. 专家模板固定评估为 30/30 命中，`Recall@3=100%`，Profile 泄漏和继承缺失均为 0。
+
+保留的真实验收数据：
+
+| 场景 | Session ID | 官方引用 | 专家模板 | Workspace 单元 | 结果 |
+| --- | --- | ---: | ---: | ---: | --- |
+| 每日销售批处理 | `9d7dc32e-5648-408e-a9dc-be7fbb14f5a4` | 5 | 4 | 8 | 成功 |
+| RDS CDC 与 Kinesis | `0f9f10dc-4272-40cb-b363-582b69497a74` | 6 | 3 | 8 | 成功 |
+| 缺失 SLA 和 Owner | `67792264-ba16-4b9e-a9cc-792747665c56` | 6 | 4 | 8 | 成功 |
+
+三次成功调用均使用 `deepseek-v4-flash`，无 fallback，Artifact 校验通过，并在 Trace 1.7 中保留完整请求和响应。
+另保留 Session `b4d52c14-aa7d-49b1-bc11-bff954411b1c` 作为低相关度诊断数据：请求未明确 Databricks 语义，官方
+知识库未达到最低相关度，因此在模型调用前返回 `knowledge_context_not_found`；没有伪造 ModelCall，也没有清理该记录。

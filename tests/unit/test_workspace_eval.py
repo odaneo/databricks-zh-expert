@@ -40,13 +40,13 @@ def _case(
     )
 
 
-def test_fixed_workspace_evaluation_set_has_five_cases_and_six_expected_units() -> None:
+def test_fixed_workspace_evaluation_set_has_eight_cases_and_ten_expected_units() -> None:
     dataset = load_workspace_evaluation_set(WORKSPACE_EVALUATION_PATH)
 
     assert dataset.workspace_id == "retail_sales_demo"
-    assert len(dataset.cases) == 5
-    assert len({case.id for case in dataset.cases}) == 5
-    assert sum(len(case.expected_unit_ids) for case in dataset.cases) == 6
+    assert len(dataset.cases) == 8
+    assert len({case.id for case in dataset.cases}) == 8
+    assert sum(len(case.expected_unit_ids) for case in dataset.cases) == 10
     missing_field = next(case for case in dataset.cases if case.id == "missing_source_field")
     assert missing_field.forbidden_context_terms == ("source_system_priority",)
 
@@ -59,9 +59,9 @@ def test_fixed_workspace_evaluation_reaches_recall_gate_without_context_leaks() 
 
     result = evaluator.evaluate_file(WORKSPACE_EVALUATION_PATH)
 
-    assert result.query_count == 5
-    assert result.expected_unit_count == 6
-    assert result.matched_unit_count == 6
+    assert result.query_count == 8
+    assert result.expected_unit_count == 10
+    assert result.matched_unit_count == 10
     assert result.recall_at_5 == 1.0
     assert result.context_leak_count == 0
     assert result.passed is True

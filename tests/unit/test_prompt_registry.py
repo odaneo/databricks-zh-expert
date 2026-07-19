@@ -101,6 +101,7 @@ def test_every_prompt_has_a_semantic_version() -> None:
     assert versions[PromptName.NOTEBOOK_GENERATION] == "1.0.0"
     assert versions[PromptName.SQL_GENERATION] == "1.1.0"
     assert versions[PromptName.PYSPARK_GENERATION] == "1.1.0"
+    assert versions[PromptName.WORKFLOW_DESIGN] == "1.1.0"
 
 
 def test_code_prompts_do_not_require_document_sections() -> None:
@@ -126,13 +127,14 @@ def test_prompt_context_policy_is_explicit() -> None:
     } == EXPECTED_CONTEXT_POLICY
 
 
-def test_only_five_generation_prompts_use_workspace_context_and_create_proposals() -> None:
+def test_only_six_generation_prompts_use_workspace_context_and_create_proposals() -> None:
     workspace_prompts = {
         PromptName.DDL_GENERATION,
         PromptName.MAPPING_GENERATION,
         PromptName.SQL_GENERATION,
         PromptName.PYSPARK_GENERATION,
         PromptName.NOTEBOOK_GENERATION,
+        PromptName.WORKFLOW_DESIGN,
     }
 
     assert {spec.name for spec in PROMPT_SPECS if spec.use_workspace_context} == workspace_prompts

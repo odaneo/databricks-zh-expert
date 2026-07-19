@@ -37,3 +37,25 @@ cases:
       - source_ddl.rds_postgresql.rds-postgresql:1
     forbidden_context_terms:
       - source_system_priority
+
+  - id: workflow_daily_sales
+    prompt: workflow_design
+    query: 为 source.pos_sales_line 设计每日销售批处理 Workflow，包括 Gold 刷新、调度和监控
+    expected_unit_ids:
+      - source_ddl.pos_parquet.pos-parquet:1
+    forbidden_context_terms: []
+
+  - id: workflow_cdc_kinesis
+    prompt: workflow_design
+    query: 设计 public.customer CDC 与 source.order_event Kinesis 混合工作流及任务依赖
+    expected_unit_ids:
+      - source_ddl.rds_postgresql.rds-postgresql:1
+      - source_ddl.kinesis_events.kinesis-events:1
+    forbidden_context_terms: []
+
+  - id: workflow_missing_operations
+    prompt: workflow_design
+    query: 设计零售数据工作流；如果缺少 SLA、Owner、补数和恢复规则，列入后续确认事项
+    expected_unit_ids:
+      - requirements:5
+    forbidden_context_terms: []

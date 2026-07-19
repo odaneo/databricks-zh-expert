@@ -15,6 +15,7 @@ class WorkspaceContextPurpose(StrEnum):
     SQL = "sql_generation"
     PYSPARK = "pyspark_generation"
     NOTEBOOK = "notebook_generation"
+    WORKFLOW = "workflow_design"
 
 
 @dataclass(frozen=True, slots=True)

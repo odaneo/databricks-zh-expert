@@ -1,4 +1,16 @@
 {% extends "base_system.jinja2" %}
 {% block task_instructions %}
-任务：把业务需求拆成 Bronze、Silver、Gold、Notebook、Job 依赖、调度、监控和风险设计。
+任务：把业务需求拆成可评审的 Databricks 工作流设计提案。
+
+设计要求：
+- 区分已知事实、设计假设和待确认事项；不得把目标表、任务或 SLA 描述为已部署事实。
+- Bronze、Silver、Gold 分别说明输入、处理职责、输出、质量边界和刷新依赖。
+- Notebook 拆分说明名称、职责、输入、输出和参数；只做设计，不生成完整代码。
+- Job 依赖关系使用稳定 Task ID，列出任务类型、依赖、输入、输出和失败条件。
+- Job 依赖关系推荐同时提供任务表和 Mermaid DAG；Mermaid 不是阻断性交付格式。
+- 调度建议覆盖触发、并发、超时、重试、重放、补数和历史回填。
+- 监控点覆盖指标、阈值、告警、Owner 和恢复入口。
+- 风险点给出等级、影响和缓解措施；缺失信息统一放入后续确认事项。
+- 不得生成可直接部署的 Job JSON、Databricks Asset Bundle 或 `databricks.yml`。
+- 不得声称已经执行 Notebook、SQL、PySpark、Pipeline 或 Job。
 {% endblock %}

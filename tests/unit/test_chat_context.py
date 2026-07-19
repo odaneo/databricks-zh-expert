@@ -214,7 +214,7 @@ async def test_document_summary_skips_indexes_embedding_and_retrievers() -> None
 
 
 @pytest.mark.asyncio
-async def test_only_proposal_prompt_builds_workspace_context() -> None:
+async def test_only_workspace_enabled_prompt_builds_workspace_context() -> None:
     service = make_service(
         embedding_client=FakeEmbeddingClient(),
         knowledge_status=FakeKnowledgeStatusProvider(),
@@ -232,6 +232,12 @@ async def test_only_proposal_prompt_builds_workspace_context() -> None:
         expert_profile="generic",
         workspace=workspace,
     )
+    workflow_bundle = await service.build(
+        "设计包含 RDS CDC 和 Kinesis 的零售工作流",
+        prompt_spec=prompt_registry.get(PromptName.WORKFLOW_DESIGN),
+        expert_profile="retail_sales_demo",
+        workspace=workspace,
+    )
     normal_bundle = await service.build(
         "解释 Delta Lake",
         prompt_spec=prompt_registry.get(PromptName.DOCUMENT_SUMMARY),
@@ -242,6 +248,9 @@ async def test_only_proposal_prompt_builds_workspace_context() -> None:
     assert proposal_bundle.workspace is not None
     assert proposal_bundle.workspace.workspace_id == "retail_sales_demo"
     assert proposal_bundle.workspace.selected_units
+    assert workflow_bundle.workspace is not None
+    assert workflow_bundle.workspace.purpose.value == "workflow_design"
+    assert workflow_bundle.workspace.selected_units
     assert normal_bundle.workspace is None
 
 

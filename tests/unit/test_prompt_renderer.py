@@ -90,12 +90,18 @@ def test_notebook_prompt_requires_python_source_notebook_format() -> None:
 def test_workflow_prompt_contains_its_document_sections() -> None:
     rendered = PromptRegistry.create_default().render(PromptName.WORKFLOW_DESIGN)
 
+    assert rendered.version == "1.1.0"
     assert "第一行必须是唯一的一级标题" in rendered.system_message
     assert "根据用户需求生成简短、具体的一级标题" in rendered.system_message
     assert "不得使用 `# 标题`" in rendered.system_message
     assert "## Bronze 层设计" in rendered.system_message
     assert "## Job 依赖关系" in rendered.system_message
     assert "## 后续确认事项" in rendered.system_message
+    assert "区分已知事实、设计假设和待确认事项" in rendered.system_message
+    assert "稳定 Task ID" in rendered.system_message
+    assert "Mermaid DAG" in rendered.system_message
+    assert "不得生成可直接部署的 Job JSON" in rendered.system_message
+    assert "project_fact_status=proposal" in rendered.system_message
 
 
 def test_knowledge_prompt_marks_context_untrusted_and_requires_citations() -> None:

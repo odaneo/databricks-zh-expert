@@ -186,7 +186,7 @@ def make_official_bundle() -> RetrievalBundle:
     )
 
 
-async def test_retail_workflow_uses_real_expert_repository_and_keeps_api_private(
+async def test_retail_workflow_combines_official_expert_and_workspace_context(
     ready_client: AsyncClient,
     test_app: FastAPI,
     test_db_session: AsyncSession,
@@ -215,6 +215,7 @@ async def test_retail_workflow_uses_real_expert_repository_and_keeps_api_private
         json={
             "title": "零售工作流集成测试",
             "expert_profile": "retail_sales_demo",
+            "workspace_id": "retail_sales_demo",
         },
     )
     session_id = UUID(create_response.json()["id"])
@@ -228,6 +229,8 @@ async def test_retail_workflow_uses_real_expert_repository_and_keeps_api_private
 
     assert response.status_code == 201
     payload = response.json()
+    assert payload["artifact"]["type"] == "workflow_design"
+    assert payload["artifact"]["project_fact_status"] == "proposal"
     assert "expert_templates" not in payload
     assert "expert_templates" not in payload["assistant_message"]
     assert payload["assistant_message"]["source_citations"][0]["url"].startswith(
@@ -235,9 +238,16 @@ async def test_retail_workflow_uses_real_expert_repository_and_keeps_api_private
     )
     assert embedding.queries == ["设计包含 S3、RDS DMS CDC 和 Kinesis 的零售工作流"]
     assert official.query_embeddings == [embedding.embedding]
-    assert [message.role for message in gateway.messages[-3:]] == ["user", "user", "user"]
-    assert gateway.messages[-3].content.startswith("【不可信资料开始】")
-    assert gateway.messages[-2].content.startswith("以下内容是内部专家模板")
+    assert [message.role for message in gateway.messages[-4:]] == [
+        "user",
+        "user",
+        "user",
+        "user",
+    ]
+    assert gateway.messages[-4].content.startswith("【不可信资料开始】")
+    assert gateway.messages[-3].content.startswith("以下内容是内部专家模板")
+    assert gateway.messages[-2].content.startswith("以下内容仅来自用户提供的全新项目事实")
+    assert gateway.messages[-1].content == "设计包含 S3、RDS DMS CDC 和 Kinesis 的零售工作流"
 
     model_call = await test_db_session.scalar(
         select(ModelCall).where(ModelCall.session_id == session_id)
@@ -245,6 +255,15 @@ async def test_retail_workflow_uses_real_expert_repository_and_keeps_api_private
     assert model_call is not None
     assert model_call.expert_profile == "retail_sales_demo"
     assert model_call.expert_template_selections
+    assert model_call.workspace_id == "retail_sales_demo"
+    assert model_call.workspace_version == "1.0.0"
+    assert model_call.workspace_source_hash
+    assert model_call.workspace_context
+    assert model_call.project_fact_status == "proposal"
+    assert all(
+        not str(selection["source_path"]).startswith(("C:\\", "/"))
+        for selection in model_call.workspace_context
+    )
     assert any(
         selection["layer"] == "retail_sales_demo"
         for selection in model_call.expert_template_selections

@@ -59,6 +59,8 @@ _CONTEXT_HEADER: Final = (
 )
 
 SelectionReason = Literal["lexical", "fallback"]
+_LEXICAL_SELECTION_REASON: Final[SelectionReason] = "lexical"
+_FALLBACK_SELECTION_REASON: Final[SelectionReason] = "fallback"
 
 
 class WorkspaceContextNotFoundError(ValueError):
@@ -104,6 +106,16 @@ _FALLBACK_SEEDS: Final = {
         _FallbackSeed(WorkspaceSourceKind.SOURCE_DDL),
         _FallbackSeed(WorkspaceSourceKind.RULE, "事件时间与迟到数据"),
     ),
+    WorkspaceContextPurpose.WORKFLOW: (
+        _FallbackSeed(WorkspaceSourceKind.REQUIREMENT, "业务目标"),
+        _FallbackSeed(WorkspaceSourceKind.SOURCE_DDL),
+        _FallbackSeed(WorkspaceSourceKind.RULE, "源数据粒度与业务键"),
+        _FallbackSeed(WorkspaceSourceKind.REQUIREMENT, "期望数据产品"),
+        _FallbackSeed(WorkspaceSourceKind.REQUIREMENT, "摄取需求"),
+        _FallbackSeed(WorkspaceSourceKind.RULE, "CDC 与去重"),
+        _FallbackSeed(WorkspaceSourceKind.RULE, "事件时间与迟到数据"),
+        _FallbackSeed(WorkspaceSourceKind.RULE, "指标口径"),
+    ),
 }
 _FALLBACK_KIND_ORDER: Final = {
     WorkspaceContextPurpose.DDL: (
@@ -127,6 +139,11 @@ _FALLBACK_KIND_ORDER: Final = {
         WorkspaceSourceKind.RULE,
     ),
     WorkspaceContextPurpose.NOTEBOOK: (
+        WorkspaceSourceKind.REQUIREMENT,
+        WorkspaceSourceKind.SOURCE_DDL,
+        WorkspaceSourceKind.RULE,
+    ),
+    WorkspaceContextPurpose.WORKFLOW: (
         WorkspaceSourceKind.REQUIREMENT,
         WorkspaceSourceKind.SOURCE_DDL,
         WorkspaceSourceKind.RULE,
@@ -191,13 +208,27 @@ class WorkspaceContextBuilder:
         normalized_query = _normalize_text(query)
         ranked_units = _rank_units(normalized_query, units)
         positive_units = tuple(item for item in ranked_units if item.score > 0)
+        ranked_by_id = {item.unit.unit_id: item for item in ranked_units}
         planned: tuple[tuple[_ScoredUnit, SelectionReason], ...]
         if positive_units:
-            planned = tuple((item, "lexical") for item in positive_units)
+            lexical_plan: tuple[tuple[_ScoredUnit, SelectionReason], ...] = tuple(
+                (item, _LEXICAL_SELECTION_REASON) for item in positive_units
+            )
+            if purpose is WorkspaceContextPurpose.WORKFLOW:
+                positive_ids = {item.unit.unit_id for item in positive_units}
+                fallback_plan: tuple[tuple[_ScoredUnit, SelectionReason], ...] = tuple(
+                    (ranked_by_id[unit.unit_id], _FALLBACK_SELECTION_REASON)
+                    for unit in _fallback_units(units, purpose)
+                    if unit.unit_id not in positive_ids
+                )
+                planned = (*lexical_plan, *fallback_plan)
+            else:
+                planned = lexical_plan
         else:
-            ranked_by_id = {item.unit.unit_id: item for item in ranked_units}
             fallback_units = _fallback_units(units, purpose)
-            planned = tuple((ranked_by_id[unit.unit_id], "fallback") for unit in fallback_units)
+            planned = tuple(
+                (ranked_by_id[unit.unit_id], _FALLBACK_SELECTION_REASON) for unit in fallback_units
+            )
 
         selected, context, context_token_count = self._fit_units(planned)
         selected_ids = frozenset(item.unit.unit_id for item, _ in selected)
