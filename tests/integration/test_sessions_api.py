@@ -70,24 +70,24 @@ async def test_create_session_persists_immutable_workspace_in_list_and_detail(
     create_response = await client.post(
         "/api/chat/sessions",
         json={
-            "title": "零售 Greenfield 设计",
-            "workspace_id": "retail_sales_demo",
+            "title": "Northwind Greenfield 设计",
+            "workspace_id": "northwind_psql",
         },
     )
 
     assert create_response.status_code == 201
-    assert create_response.json()["workspace_id"] == "retail_sales_demo"
+    assert create_response.json()["workspace_id"] == "northwind_psql"
     session_id = UUID(create_response.json()["id"])
     stored_workspace = await test_db_session.scalar(
         select(ChatSession.workspace_id).where(ChatSession.id == session_id)
     )
-    assert stored_workspace == "retail_sales_demo"
+    assert stored_workspace == "northwind_psql"
 
     list_response = await client.get("/api/chat/sessions")
     detail_response = await client.get(f"/api/chat/sessions/{session_id}")
 
-    assert list_response.json()[0]["workspace_id"] == "retail_sales_demo"
-    assert detail_response.json()["workspace_id"] == "retail_sales_demo"
+    assert list_response.json()[0]["workspace_id"] == "northwind_psql"
+    assert detail_response.json()["workspace_id"] == "northwind_psql"
     update_response = await client.patch(
         f"/api/chat/sessions/{session_id}",
         json={"workspace_id": None},

@@ -223,19 +223,19 @@ async def test_only_workspace_enabled_prompt_builds_workspace_context() -> None:
         expert_retriever=FakeExpertRetriever(make_expert_bundle()),
     )
     registry = WorkspaceRegistry.create_default()
-    workspace = registry.get("retail_sales_demo")
+    workspace = registry.get("northwind_psql")
     prompt_registry = PromptRegistry.create_default()
 
     proposal_bundle = await service.build(
-        "根据 public.customers 生成客户 CDC DDL",
+        "根据 orders 生成订单 CDC DDL",
         prompt_spec=prompt_registry.get(PromptName.DDL_GENERATION),
         expert_profile="generic",
         workspace=workspace,
     )
     workflow_bundle = await service.build(
-        "设计包含 RDS CDC 和 Kinesis 的零售工作流",
+        "设计 RDS DMS、S3 Parquet 与 Auto Loader 的 Northwind 工作流",
         prompt_spec=prompt_registry.get(PromptName.WORKFLOW_DESIGN),
-        expert_profile="retail_sales_demo",
+        expert_profile="generic",
         workspace=workspace,
     )
     normal_bundle = await service.build(
@@ -246,7 +246,7 @@ async def test_only_workspace_enabled_prompt_builds_workspace_context() -> None:
     )
 
     assert proposal_bundle.workspace is not None
-    assert proposal_bundle.workspace.workspace_id == "retail_sales_demo"
+    assert proposal_bundle.workspace.workspace_id == "northwind_psql"
     assert proposal_bundle.workspace.selected_units
     assert workflow_bundle.workspace is not None
     assert workflow_bundle.workspace.purpose.value == "workflow_design"

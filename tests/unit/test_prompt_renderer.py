@@ -39,6 +39,7 @@ def test_default_prompt_renders_a_chinese_system_message() -> None:
 def test_sql_prompt_uses_a_compact_code_contract() -> None:
     rendered = PromptRegistry.create_default().render(PromptName.SQL_GENERATION)
 
+    assert rendered.version == "1.2.0"
     assert rendered.artifact_type is ArtifactType.SQL
     assert "语言标识为 `sql`" in rendered.system_message
     assert "不输出一级标题或固定文档章节" in rendered.system_message
@@ -47,16 +48,30 @@ def test_sql_prompt_uses_a_compact_code_contract() -> None:
     assert "## 使用场景" not in rendered.system_message
     assert "Workspace Context 只包含用户事实" in rendered.system_message
     assert "project_fact_status=proposal" in rendered.system_message
+    assert "只输出 SQL 注释" in rendered.system_message
+    assert "同名占位列" in rendered.system_message
 
 
 def test_pyspark_prompt_uses_a_compact_code_contract() -> None:
     rendered = PromptRegistry.create_default().render(PromptName.PYSPARK_GENERATION)
 
+    assert rendered.version == "1.2.0"
     assert rendered.artifact_type is ArtifactType.PYSPARK
     assert "语言标识为 `python`" in rendered.system_message
     assert "不输出一级标题或固定文档章节" in rendered.system_message
     assert "## PySpark 代码" not in rendered.system_message
     assert "目标表和目标字段是待确认提案" in rendered.system_message
+    assert "用户明确点名的每个字段" in rendered.system_message
+
+
+def test_proposal_prompt_separates_facts_assumptions_and_acceptance() -> None:
+    rendered = PromptRegistry.create_default().render(PromptName.PROPOSAL_GENERATION)
+
+    assert rendered.version == "1.1.0"
+    assert "`已知事实`" in rendered.system_message
+    assert "`设计假设`" in rendered.system_message
+    assert "里程碑" in rendered.system_message
+    assert "验收条件" in rendered.system_message
 
 
 def test_ddl_prompt_generates_compact_databricks_schema_proposals() -> None:

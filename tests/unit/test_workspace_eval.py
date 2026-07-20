@@ -1,4 +1,5 @@
 import json
+from dataclasses import replace
 from pathlib import Path
 
 from databricks_zh_expert.prompts.registry import PromptName
@@ -40,15 +41,15 @@ def _case(
     )
 
 
-def test_fixed_workspace_evaluation_set_has_eight_cases_and_ten_expected_units() -> None:
+def test_fixed_workspace_evaluation_set_has_eight_northwind_cases() -> None:
     dataset = load_workspace_evaluation_set(WORKSPACE_EVALUATION_PATH)
 
-    assert dataset.workspace_id == "retail_sales_demo"
+    assert dataset.workspace_id == "northwind_psql"
     assert len(dataset.cases) == 8
     assert len({case.id for case in dataset.cases}) == 8
-    assert sum(len(case.expected_unit_ids) for case in dataset.cases) == 10
-    missing_field = next(case for case in dataset.cases if case.id == "missing_source_field")
-    assert missing_field.forbidden_context_terms == ("source_system_priority",)
+    assert sum(len(case.expected_unit_ids) for case in dataset.cases) == 19
+    missing_field = next(case for case in dataset.cases if case.id == "missing_orders_store_id")
+    assert missing_field.forbidden_context_terms == ("store_id",)
 
 
 def test_fixed_workspace_evaluation_reaches_recall_gate_without_context_leaks() -> None:
@@ -60,30 +61,54 @@ def test_fixed_workspace_evaluation_reaches_recall_gate_without_context_leaks() 
     result = evaluator.evaluate_file(WORKSPACE_EVALUATION_PATH)
 
     assert result.query_count == 8
-    assert result.expected_unit_count == 10
-    assert result.matched_unit_count == 10
+    assert result.expected_unit_count == 19
+    assert result.matched_unit_count == 19
     assert result.recall_at_5 == 1.0
     assert result.context_leak_count == 0
     assert result.passed is True
     assert result.failures == ()
 
 
+def test_default_recall_gate_requires_every_expected_unit() -> None:
+    dataset = load_workspace_evaluation_set(WORKSPACE_EVALUATION_PATH)
+    first_case = dataset.cases[0]
+    degraded = replace(
+        dataset,
+        cases=(
+            replace(
+                first_case,
+                expected_unit_ids=("source_ddl.northwind.northwind-schema:99",),
+            ),
+            *dataset.cases[1:],
+        ),
+    )
+    evaluator = WorkspaceEvaluator(
+        registry=WorkspaceRegistry.create_default(),
+        context_builder=WorkspaceContextBuilder(),
+    )
+
+    result = evaluator.evaluate(degraded)
+
+    assert result.recall_at_5 == 0.9474
+    assert result.passed is False
+
+
 def test_evaluator_calculates_unit_recall_and_forbidden_context_terms() -> None:
     dataset = WorkspaceEvaluationDataset(
         version=1,
-        workspace_id="retail_sales_demo",
+        workspace_id="northwind_psql",
         cases=(
             _case(
                 "partial_customer",
-                "根据 public.customer 生成 DDL",
-                "source_ddl.rds_postgresql.rds-postgresql:1",
-                "source_ddl.rds_postgresql.rds-postgresql:99",
+                "根据 customers 生成 DDL",
+                "source_ddl.northwind.northwind-schema:4",
+                "source_ddl.northwind.northwind-schema:99",
                 forbidden_context_terms=("CREATE TABLE",),
             ),
             _case(
                 "sales_hit",
-                "根据 source.pos_sales_line 生成 DDL",
-                "source_ddl.pos_parquet.pos-parquet:1",
+                "根据 orders 生成 DDL",
+                "source_ddl.northwind.northwind-schema:8",
             ),
         ),
     )

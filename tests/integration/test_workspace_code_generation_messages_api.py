@@ -159,7 +159,7 @@ async def test_workspace_ddl_request_persists_proposal_context_and_relative_path
         "/api/chat/sessions",
         json={
             "title": "客户 CDC DDL",
-            "workspace_id": "retail_sales_demo",
+            "workspace_id": "northwind_psql",
         },
     )
     session_id = UUID(create_response.json()["id"])
@@ -167,7 +167,7 @@ async def test_workspace_ddl_request_persists_proposal_context_and_relative_path
     response = await client.post(
         f"/api/chat/sessions/{session_id}/messages",
         json={
-            "content": "根据 public.customers 生成客户 CDC Databricks DDL",
+            "content": "根据 orders 生成订单 CDC Databricks DDL",
             "prompt": "ddl_generation",
         },
     )
@@ -175,12 +175,12 @@ async def test_workspace_ddl_request_persists_proposal_context_and_relative_path
     assert response.status_code == 201
     assert response.json()["artifact"]["project_fact_status"] == "proposal"
     assert "仅来自用户提供的全新项目事实" in gateway.messages[1].content
-    assert gateway.messages[-1].content == "根据 public.customers 生成客户 CDC Databricks DDL"
+    assert gateway.messages[-1].content == "根据 orders 生成订单 CDC Databricks DDL"
     model_call = await test_db_session.scalar(
         select(ModelCall).where(ModelCall.session_id == session_id)
     )
     assert model_call is not None
-    assert model_call.workspace_id == "retail_sales_demo"
+    assert model_call.workspace_id == "northwind_psql"
     assert not hasattr(model_call, "workspace_mode")
     assert model_call.project_fact_status == "proposal"
     assert model_call.workspace_context
@@ -213,13 +213,13 @@ async def test_all_workspace_generation_artifacts_are_proposals(
     test_app.dependency_overrides[get_chat_context_service] = WorkspaceContextService
     create_response = await client.post(
         "/api/chat/sessions",
-        json={"title": prompt, "workspace_id": "retail_sales_demo"},
+        json={"title": prompt, "workspace_id": "northwind_psql"},
     )
     session_id = UUID(create_response.json()["id"])
 
     response = await client.post(
         f"/api/chat/sessions/{session_id}/messages",
-        json={"content": "根据 public.customer 生成项目提案", "prompt": prompt},
+        json={"content": "根据 orders 生成项目提案", "prompt": prompt},
     )
 
     assert response.status_code == 201
@@ -243,7 +243,7 @@ async def test_bound_workspace_is_not_injected_for_normal_prompt(
     test_app.dependency_overrides[get_chat_context_service] = WorkspaceContextService
     create_response = await client.post(
         "/api/chat/sessions",
-        json={"title": "普通问答", "workspace_id": "retail_sales_demo"},
+        json={"title": "普通问答", "workspace_id": "northwind_psql"},
     )
     session_id = UUID(create_response.json()["id"])
 
@@ -258,7 +258,7 @@ async def test_bound_workspace_is_not_injected_for_normal_prompt(
         select(ModelCall).where(ModelCall.session_id == session_id)
     )
     assert model_call is not None
-    assert model_call.workspace_id == "retail_sales_demo"
+    assert model_call.workspace_id == "northwind_psql"
     assert model_call.workspace_context == []
     assert model_call.project_fact_status is None
 

@@ -215,14 +215,14 @@ async def test_retail_workflow_combines_official_expert_and_workspace_context(
         json={
             "title": "零售工作流集成测试",
             "expert_profile": "retail_sales_demo",
-            "workspace_id": "retail_sales_demo",
+            "workspace_id": "northwind_psql",
         },
     )
     session_id = UUID(create_response.json()["id"])
     response = await ready_client.post(
         f"/api/chat/sessions/{session_id}/messages",
         json={
-            "content": "设计包含 S3、RDS DMS CDC 和 Kinesis 的零售工作流",
+            "content": "基于 orders 与 order_details 设计 RDS DMS、S3 和 Auto Loader 工作流",
             "prompt": "workflow_design",
         },
     )
@@ -236,7 +236,9 @@ async def test_retail_workflow_combines_official_expert_and_workspace_context(
     assert payload["assistant_message"]["source_citations"][0]["url"].startswith(
         "https://docs.databricks.com/"
     )
-    assert embedding.queries == ["设计包含 S3、RDS DMS CDC 和 Kinesis 的零售工作流"]
+    assert embedding.queries == [
+        "基于 orders 与 order_details 设计 RDS DMS、S3 和 Auto Loader 工作流"
+    ]
     assert official.query_embeddings == [embedding.embedding]
     assert [message.role for message in gateway.messages[-4:]] == [
         "user",
@@ -247,7 +249,9 @@ async def test_retail_workflow_combines_official_expert_and_workspace_context(
     assert gateway.messages[-4].content.startswith("【不可信资料开始】")
     assert gateway.messages[-3].content.startswith("以下内容是内部专家模板")
     assert gateway.messages[-2].content.startswith("以下内容仅来自用户提供的全新项目事实")
-    assert gateway.messages[-1].content == "设计包含 S3、RDS DMS CDC 和 Kinesis 的零售工作流"
+    assert gateway.messages[-1].content == (
+        "基于 orders 与 order_details 设计 RDS DMS、S3 和 Auto Loader 工作流"
+    )
 
     model_call = await test_db_session.scalar(
         select(ModelCall).where(ModelCall.session_id == session_id)
@@ -255,7 +259,7 @@ async def test_retail_workflow_combines_official_expert_and_workspace_context(
     assert model_call is not None
     assert model_call.expert_profile == "retail_sales_demo"
     assert model_call.expert_template_selections
-    assert model_call.workspace_id == "retail_sales_demo"
+    assert model_call.workspace_id == "northwind_psql"
     assert model_call.workspace_version == "1.0.0"
     assert model_call.workspace_source_hash
     assert model_call.workspace_context

@@ -518,3 +518,65 @@ git diff --check
 
 阶段 10 Web UI 可以读取现有 Chat API 展示 Session、Markdown 和引用；阶段 9 的本地报告只服务开发验收，第一版不增加
 评估页面。原阶段 8 的 Markdown 预览与下载能力合并到阶段 10，不单独建设 Artifact CRUD。
+
+---
+
+## 10. 执行结果（2026-07-20）
+
+### 10.1 实现状态
+
+任务 1 至任务 7 已全部实现并执行。阶段 9 没有增加业务 API、数据库表、字段或 Alembic 迁移；真实评估通过正式
+Chat API 创建独立 Session，并完整保留 Message、ModelCall、Trace 和本地报告。
+
+Northwind 上游原件、Schema-only 输入、项目需求、业务规则、Workspace Registry、16 道端到端题、确定性评分器、
+真实 Runner、CLI 和双模型对比报告均已落地。`retail_sales_demo` 已从 Workspace 移除，只保留为专家模板 Profile。
+
+### 10.2 固定门禁
+
+| 门禁 | 结果 |
+| --- | --- |
+| Databricks 官方知识库 | `Recall@5=92.86%`，通过 |
+| 专家模板 | `Recall@3=100%`，Profile 泄漏 `0`，通过 |
+| Northwind Workspace | `Recall@5=100%`，上下文泄漏 `0`，通过 |
+| 端到端预检 | 数据集、模型配置、知识索引和专家模板索引均通过 |
+| 数据集 Hash | `486f6814733387bf86a7c7fcfacd5e8108b78d2fdc2adc39b075523f5b9d9899` |
+| Workspace Source Hash | `1ccd08bf4eea92bdd40533ab68c86b186f448c47d0fa1dc89b113629701a1c92` |
+
+### 10.3 真实双模型基线
+
+最终 Run ID 为 `stage9-final-v2-20260720`，输出保存在
+`.local/evaluations/stage9-final-v2-20260720/`。此前的冒烟、诊断和规则校准 Run 也全部保留，没有清理。
+
+| 模型 | Case | Hard Pass | Soft 平均 | Fallback | 自动门禁 | 总延迟 |
+| --- | ---: | ---: | ---: | ---: | --- | ---: |
+| `deepseek-v4-flash` | 16 | 100.00% | 96.88% | 0 | 通过 | 327,666 ms |
+| `deepseek-v4-pro` | 16 | 87.50% | 89.58% | 0 | 未通过 | 698,983 ms |
+
+Pro 的两个 Hard 失败均为真实模型输出问题，不是评分误判：
+
+1. `nw_mapping_order_sales` 漏掉用户明确要求的 `products` 来源。
+2. `nw_sql_missing_field` 已识别 `store_id` 不存在，但仍生成 `NULL AS store_id` 的可执行 `SELECT`。
+
+Pro 另有两个非事实性 Soft 未达标：`nw_workflow_daily_sales` 和 `generic_delta_slow_sql`。对比报告已经区分
+`Hard` 与 `Soft` 原因，不用单一通过率掩盖失败类型。
+
+### 10.4 人工抽查状态
+
+Flash 和 Pro 的 SQL、PySpark、Workflow 共 6 份输出均已生成。用户已于 `2026-07-20` 完成人工抽查并全部批准，
+评价为“很完美”。人工审核记录保存在
+`.local/evaluations/stage9-final-v2-20260720/manual-review.md`。技术预审结论：
+
+1. 两份每日销售 SQL 均正确使用连接键、日期和净销售额口径，可继续评审。
+2. 两份 PySpark 都需要人工确认 NULL 处理；当前布尔条件可能使含 NULL 的业务字段同时落在 valid/invalid 之外。
+3. Pro 的 PySpark 还需确认隔离表重复写入和重跑幂等性。
+4. 两份 Workflow 的稳定 Task ID 和依赖结构基本完整，但调度时间、阈值、容量、Owner、SLA 和回填策略仍是提案。
+
+### 10.5 工程验收
+
+1. Ruff format 和 lint 通过。
+2. Pyright/Pylance 为 `0 errors, 0 warnings`。
+3. Alembic 位于 `0009_drop_classification_fields (head)`，`alembic check` 无新增操作。
+4. 完整测试为 `525 passed`，覆盖率 `87.88%`。
+
+因此，阶段 9 的功能实现、真实运行、人工抽查和审计材料已经完成；Flash 满足自动门禁，Pro 如实保留为未通过基线。
+原完成标准中“两个模型均通过自动门禁”尚未满足，不能标记为全模型自动质量验收通过。

@@ -1,0 +1,537 @@
+schema_version: 1
+dataset_id: stage9_northwind_end_to_end
+version: 1.0.0
+workspace_id: northwind_psql
+expert_profile: generic
+models:
+  - deepseek-v4-flash
+  - deepseek-v4-pro
+cases:
+  - id: nw_ddl_orders_bronze
+    title: Northwind orders Bronze DDL
+    group: northwind
+    prompt: ddl_generation
+    content: >-
+      根据 Northwind 源表 orders 生成 Bronze Delta DDL 草稿。只使用源 Schema 中真实存在的字段，
+      保留 order_id 业务键和源日期字段；DMS 审计列如果尚未提供，请参数化或明确列为待确认，不要虚构 store_id。
+    expected:
+      artifact_type: sql
+      project_fact_status: proposal
+      require_official_citations: true
+      require_workspace_context: true
+      workspace_unit_ids: [source_ddl.northwind.northwind-schema:8]
+      required_terms: [orders, order_id, customer_id, order_date]
+      required_any_term_groups: []
+      forbidden_terms: []
+      required_patterns: []
+      forbidden_patterns: []
+      code_required_terms: [order_id, customer_id, order_date]
+      code_forbidden_terms: [store_id, order_line_id]
+      required_sections: []
+      code_fence_language: sql
+    soft_checks:
+      suggested_terms: [delta, timestamp]
+      minimum_score: 0.5
+    manual_review:
+      required: false
+      questions: []
+
+  - id: nw_ddl_sales_silver
+    title: Northwind 销售 Silver DDL
+    group: northwind
+    prompt: ddl_generation
+    content: >-
+      根据 orders 与 order_details 设计 Silver 订单和订单商品明细 DDL 草稿。保留 order_id，
+      订单商品粒度使用源组合业务键 order_id 与 product_id，不要虚构 order_line_id、store_id、退货或币种字段。
+    expected:
+      artifact_type: sql
+      project_fact_status: proposal
+      require_official_citations: true
+      require_workspace_context: true
+      workspace_unit_ids:
+        - source_ddl.northwind.northwind-schema:7
+        - source_ddl.northwind.northwind-schema:8
+      required_terms: [orders, order_details, order_id, product_id]
+      required_any_term_groups: []
+      forbidden_terms: []
+      required_patterns: []
+      forbidden_patterns: []
+      code_required_terms: [order_id, product_id]
+      code_forbidden_terms: [order_line_id, store_id, currency_code]
+      required_sections: []
+      code_fence_language: sql
+    soft_checks:
+      suggested_terms: [delta, primary key]
+      minimum_score: 0.5
+    manual_review:
+      required: false
+      questions: []
+
+  - id: nw_mapping_order_sales
+    title: Northwind 订单销售 Mapping
+    group: northwind
+    prompt: mapping_generation
+    content: >-
+      根据 orders、order_details 与 products 生成源到目标 Mapping CSV 草稿，覆盖订单日期、客户、员工、商品、
+      数量、单价和折扣。目标字段可以作为提案，但源表和源字段必须与 Northwind Schema 一致。
+    expected:
+      artifact_type: csv
+      project_fact_status: proposal
+      require_official_citations: true
+      require_workspace_context: true
+      workspace_unit_ids:
+        - source_ddl.northwind.northwind-schema:7
+        - source_ddl.northwind.northwind-schema:8
+        - source_ddl.northwind.northwind-schema:9
+      required_terms: [orders, order_details, products, order_id, product_id]
+      required_any_term_groups: []
+      forbidden_terms: []
+      required_patterns: []
+      forbidden_patterns: []
+      code_required_terms: [orders, order_details, products]
+      code_forbidden_terms: [order_line_id, store_id]
+      required_sections: []
+      code_fence_language: csv
+    soft_checks:
+      suggested_terms: [unit_price, quantity, discount]
+      minimum_score: 0.67
+    manual_review:
+      required: false
+      questions: []
+
+  - id: nw_sql_daily_sales
+    title: Northwind 每日净销售 SQL
+    group: northwind
+    prompt: sql_generation
+    content: >-
+      生成 Northwind 每日净销售额 Databricks SQL 草稿。连接 orders 与 order_details，按 orders.order_date 归属日期，
+      行净销售额严格使用 unit_price * quantity * (1 - discount)，freight 不计入净销售额。
+    expected:
+      artifact_type: sql
+      project_fact_status: proposal
+      require_official_citations: true
+      require_workspace_context: true
+      workspace_unit_ids:
+        - source_ddl.northwind.northwind-schema:7
+        - source_ddl.northwind.northwind-schema:8
+        - rules:4
+      required_terms: [orders, order_details, order_date, unit_price, quantity, discount]
+      required_any_term_groups: []
+      forbidden_terms: []
+      required_patterns:
+        - '(?is)unit_price\s*\*\s*[^\n;]*quantity\s*\*\s*\(\s*1\s*-\s*[^\n;]*discount\s*\)'
+      forbidden_patterns: []
+      code_required_terms: [order_id, order_date, unit_price, quantity, discount]
+      code_forbidden_terms: [store_id, order_line_id, currency_code]
+      required_sections: []
+      code_fence_language: sql
+    soft_checks:
+      suggested_terms: [SUM, GROUP BY]
+      minimum_score: 1.0
+    manual_review:
+      required: true
+      questions:
+        - 是否正确连接 orders 与 order_details？
+        - 是否严格遵守折扣、日期和 freight 口径？
+        - SQL 是否适合继续进行人工项目评审？
+
+  - id: nw_sql_customer_value
+    title: Northwind 客户价值 SQL
+    group: northwind
+    prompt: sql_generation
+    content: >-
+      生成客户价值 Databricks SQL 草稿。按照 fk_orders_customers，orders 表通过 customer_id 引用 customers 表，
+      再连接 order_details，输出每个客户的订单数和净销售额；不要使用源 Schema 不存在的 email 字段。
+    expected:
+      artifact_type: sql
+      project_fact_status: proposal
+      require_official_citations: true
+      require_workspace_context: true
+      workspace_unit_ids:
+        - source_ddl.northwind.northwind-schema:4
+        - source_ddl.northwind.northwind-schema:8
+        - source_ddl.northwind.northwind-schema:29
+      required_terms: [customers, orders, order_details, customer_id]
+      required_any_term_groups: []
+      forbidden_terms: []
+      required_patterns: []
+      forbidden_patterns: []
+      code_required_terms: [customer_id, order_id, unit_price, quantity, discount]
+      code_forbidden_terms: [email, store_id]
+      required_sections: []
+      code_fence_language: sql
+    soft_checks:
+      suggested_terms: [COUNT, SUM]
+      minimum_score: 1.0
+    manual_review:
+      required: false
+      questions: []
+
+  - id: nw_sql_missing_field
+    title: Northwind 不存在字段处理
+    group: northwind
+    prompt: sql_generation
+    content: >-
+      请按 orders.store_id 汇总门店销售。如果 Northwind 源 Schema 没有 store_id，必须明确说明字段不存在，
+      不得静默生成依赖该字段的查询；可以在 SQL 注释中给出需要业务补充的信息。
+    expected:
+      artifact_type: sql
+      project_fact_status: proposal
+      require_official_citations: true
+      require_workspace_context: true
+      workspace_unit_ids: [source_ddl.northwind.northwind-schema:8]
+      required_terms: [store_id]
+      required_any_term_groups:
+        - [不存在, 未定义, 未提供, 无法确认]
+      forbidden_terms: []
+      required_patterns: []
+      forbidden_patterns:
+        - '(?is)select\s+[^;]*\bstore_id\b'
+        - '(?is)group\s+by\s+[^;]*\bstore_id\b'
+      code_required_terms: []
+      code_forbidden_terms: []
+      required_sections: []
+      code_fence_language: sql
+    soft_checks:
+      suggested_terms: [待确认, 源 Schema]
+      minimum_score: 0.5
+    manual_review:
+      required: false
+      questions: []
+
+  - id: nw_pyspark_order_cleaning
+    title: Northwind 订单明细清洗 PySpark
+    group: northwind
+    prompt: pyspark_generation
+    content: >-
+      生成 PySpark 草稿，清洗 order_details 并计算行毛额、折扣金额和净销售额。使用真实列 order_id、product_id、
+      unit_price、quantity、discount；在代码中显式选择并保留这五个字段，检查数量和价格，并把 discount 限定在 0 到
+      1；不要声称代码已经执行。
+    expected:
+      artifact_type: pyspark
+      project_fact_status: proposal
+      require_official_citations: true
+      require_workspace_context: true
+      workspace_unit_ids:
+        - source_ddl.northwind.northwind-schema:7
+        - rules:4
+        - rules:5
+      required_terms: [order_id, product_id, unit_price, quantity, discount]
+      required_any_term_groups: []
+      forbidden_terms: []
+      required_patterns: []
+      forbidden_patterns: ['已执行成功', '运行结果如下']
+      code_required_terms: [order_id, product_id, unit_price, quantity, discount]
+      code_forbidden_terms: [order_line_id, store_id]
+      required_sections: []
+      code_fence_language: python
+    soft_checks:
+      suggested_terms: [withColumn, filter]
+      minimum_score: 0.5
+    manual_review:
+      required: true
+      questions:
+        - 是否正确实现三个销售金额口径？
+        - 是否处理数量、价格和折扣质量问题？
+        - PySpark 是否适合继续进行人工项目评审？
+
+  - id: nw_pyspark_referential_quality
+    title: Northwind 外键质量 PySpark
+    group: northwind
+    prompt: pyspark_generation
+    content: >-
+      生成 PySpark 草稿，检查 order_details 对 orders 和 products 的外键引用质量。使用真实主键与外键，
+      输出孤立订单明细的检查结果；不要执行代码，也不要声称检查已经通过。
+    expected:
+      artifact_type: pyspark
+      project_fact_status: proposal
+      require_official_citations: true
+      require_workspace_context: true
+      workspace_unit_ids:
+        - source_ddl.northwind.northwind-schema:7
+        - source_ddl.northwind.northwind-schema:8
+        - source_ddl.northwind.northwind-schema:9
+      required_terms: [order_details, orders, products, order_id, product_id]
+      required_any_term_groups: []
+      forbidden_terms: []
+      required_patterns: []
+      forbidden_patterns: ['检查已经通过', '已执行成功']
+      code_required_terms: [order_id, product_id]
+      code_forbidden_terms: [order_line_id]
+      required_sections: []
+      code_fence_language: python
+    soft_checks:
+      suggested_terms: [left_anti, join]
+      minimum_score: 0.5
+    manual_review:
+      required: false
+      questions: []
+
+  - id: nw_notebook_dms_bronze
+    title: Northwind DMS Bronze Notebook
+    group: northwind
+    prompt: notebook_generation
+    content: >-
+      生成 Databricks Python source Notebook 草稿，通过 Auto Loader 摄取 AWS DMS 写入 S3 的 orders Parquet 文件。
+      S3 路径、Checkpoint、目标表和 DMS 审计列必须参数化，不写凭据，不使用 Preview 功能，也不声称已连接环境。
+    expected:
+      artifact_type: notebook
+      project_fact_status: proposal
+      require_official_citations: true
+      require_workspace_context: true
+      workspace_unit_ids:
+        - source_ddl.northwind.northwind-schema:8
+        - requirements:4
+      required_terms: [Auto Loader, orders, Parquet]
+      required_any_term_groups: []
+      forbidden_terms: [password, secret_key, access_key]
+      required_patterns: []
+      forbidden_patterns: ['已连接', '连接成功']
+      code_required_terms: [cloudFiles, parquet, checkpointLocation]
+      code_forbidden_terms: [store_id]
+      required_sections: []
+      code_fence_language: python
+    soft_checks:
+      suggested_terms: [schemaLocation, availableNow]
+      minimum_score: 0.5
+    manual_review:
+      required: false
+      questions: []
+
+  - id: nw_notebook_sales_quality
+    title: Northwind 销售质量 Notebook
+    group: northwind
+    prompt: notebook_generation
+    content: >-
+      生成 Databricks Python source Notebook 草稿，对 orders 与 order_details 做销售质量检查：主键空值、
+      订单引用、quantity 和 unit_price 合理性、discount 的 0 到 1 范围。只生成检查代码，不声称已经运行。
+    expected:
+      artifact_type: notebook
+      project_fact_status: proposal
+      require_official_citations: true
+      require_workspace_context: true
+      workspace_unit_ids:
+        - source_ddl.northwind.northwind-schema:7
+        - source_ddl.northwind.northwind-schema:8
+        - rules:5
+      required_terms: [orders, order_details, order_id, quantity, unit_price, discount]
+      required_any_term_groups: []
+      forbidden_terms: []
+      required_patterns: []
+      forbidden_patterns: ['已经运行', '检查通过']
+      code_required_terms: [order_id, quantity, unit_price, discount]
+      code_forbidden_terms: [order_line_id]
+      required_sections: []
+      code_fence_language: python
+    soft_checks:
+      suggested_terms: [主键空值, 外键]
+      minimum_score: 0.5
+    manual_review:
+      required: false
+      questions: []
+
+  - id: nw_workflow_daily_sales
+    title: Northwind 每日销售 Workflow
+    group: northwind
+    prompt: workflow_design
+    content: >-
+      设计 Northwind 每日销售 Databricks Workflow 草案，链路为 RDS PostgreSQL、AWS DMS、S3 Parquet、
+      Auto Loader、Bronze、Silver、Gold。使用 orders 与 order_details，净销售额采用
+      unit_price * quantity * (1 - discount)，给出稳定 Task ID、依赖、调度、监控、重跑和风险，
+      并把 SLA、Owner、路径和时区列为待确认项。
+    expected:
+      artifact_type: workflow_design
+      project_fact_status: proposal
+      require_official_citations: true
+      require_workspace_context: true
+      workspace_unit_ids:
+        - source_ddl.northwind.northwind-schema:7
+        - source_ddl.northwind.northwind-schema:8
+        - rules:4
+      required_terms: [orders, order_details, Bronze, Silver, Gold, SLA, Owner]
+      required_any_term_groups: []
+      forbidden_terms: [store_id, order_line_id]
+      required_patterns: []
+      forbidden_patterns: ['已经部署', '已上线']
+      code_required_terms: []
+      code_forbidden_terms: []
+      required_sections:
+        - 需求理解
+        - 数据源假设
+        - Bronze 层设计
+        - Silver 层设计
+        - Gold 层设计
+        - Notebook 拆分
+        - Job 依赖关系
+        - 调度建议
+        - 监控点
+        - 风险点
+        - 后续确认事项
+      code_fence_language: null
+    soft_checks:
+      suggested_terms: [Task ID, 重试, 告警]
+      minimum_score: 0.67
+    manual_review:
+      required: true
+      questions:
+        - Task ID 和依赖关系是否稳定且可实施？
+        - 监控、重跑、风险和待确认项是否完整？
+        - Workflow 是否适合继续进行人工项目评审？
+
+  - id: nw_workflow_customer_product
+    title: Northwind 客户商品分析 Workflow
+    group: northwind
+    prompt: workflow_design
+    content: >-
+      设计客户价值与商品品类表现的 Databricks Workflow 草案。使用 customers、orders、order_details、products
+      和 categories 的真实关系，给出任务依赖、调度与监控，并把 SLA、Owner 和业务阈值列为待确认项。
+    expected:
+      artifact_type: workflow_design
+      project_fact_status: proposal
+      require_official_citations: true
+      require_workspace_context: true
+      workspace_unit_ids:
+        - source_ddl.northwind.northwind-schema:4
+        - source_ddl.northwind.northwind-schema:7
+        - source_ddl.northwind.northwind-schema:8
+        - source_ddl.northwind.northwind-schema:9
+      required_terms: [customers, orders, order_details, products, categories, SLA, Owner]
+      required_any_term_groups: []
+      forbidden_terms: [store_id, order_line_id]
+      required_patterns: []
+      forbidden_patterns: ['(?i)\bcustomers?[._ ]email\b', '已经部署', '已上线']
+      code_required_terms: []
+      code_forbidden_terms: []
+      required_sections:
+        - 需求理解
+        - 数据源假设
+        - Bronze 层设计
+        - Silver 层设计
+        - Gold 层设计
+        - Notebook 拆分
+        - Job 依赖关系
+        - 调度建议
+        - 监控点
+        - 风险点
+        - 后续确认事项
+      code_fence_language: null
+    soft_checks:
+      suggested_terms: [重试, 告警, 质量]
+      minimum_score: 0.67
+    manual_review:
+      required: false
+      questions: []
+
+  - id: generic_unity_catalog
+    title: Unity Catalog 最小权限
+    group: generic
+    prompt: knowledge_qa
+    content: 解释 Unity Catalog 最小权限设计，并区分 Catalog、Schema、Table 权限与待确认的组织角色，必须引用官方文档。
+    expected:
+      artifact_type: answer
+      project_fact_status: null
+      require_official_citations: true
+      require_workspace_context: false
+      workspace_unit_ids: []
+      required_terms: [Unity Catalog, 最小权限]
+      required_any_term_groups: []
+      forbidden_terms: []
+      required_patterns: []
+      forbidden_patterns: ['已经授予', '已配置完成']
+      code_required_terms: []
+      code_forbidden_terms: []
+      required_sections: [结论, 适用场景, 详细说明, 注意事项, 人工确认事项, 引用来源]
+      code_fence_language: null
+    soft_checks:
+      suggested_terms: [USE CATALOG, USE SCHEMA, SELECT]
+      minimum_score: 0.67
+    manual_review:
+      required: false
+      questions: []
+
+  - id: generic_delta_slow_sql
+    title: Delta 慢 SQL 分析
+    group: generic
+    prompt: databricks_qa
+    content: 分析一条 Delta Lake 慢 SQL 时应收集哪些信息，并给出从执行计划、数据布局、统计信息到验证的排查顺序；不要声称已执行。
+    expected:
+      artifact_type: answer
+      project_fact_status: null
+      require_official_citations: false
+      require_workspace_context: false
+      workspace_unit_ids: []
+      required_terms: [执行计划, 统计信息]
+      required_any_term_groups: []
+      forbidden_terms: []
+      required_patterns: []
+      forbidden_patterns: ['已经执行', '验证通过']
+      code_required_terms: []
+      code_forbidden_terms: []
+      required_sections: [结论, 适用场景, 详细说明, 注意事项, 人工确认事项]
+      code_fence_language: null
+    soft_checks:
+      suggested_terms: [数据布局, 数据倾斜, 基线]
+      minimum_score: 0.67
+    manual_review:
+      required: false
+      questions: []
+
+  - id: generic_project_proposal
+    title: Databricks 项目提案
+    group: generic
+    prompt: proposal_generation
+    content: >-
+      为一个尚未完成需求确认的 AWS Databricks 数据分析项目生成提案草稿。必须区分已知事实、设计假设和待确认事项，
+      覆盖范围、实施步骤、交付物、风险与人工确认，不得声称项目已经部署。
+    expected:
+      artifact_type: proposal
+      project_fact_status: null
+      require_official_citations: true
+      require_workspace_context: false
+      workspace_unit_ids: []
+      required_terms: [设计假设, 待确认]
+      required_any_term_groups: []
+      forbidden_terms: []
+      required_patterns: []
+      forbidden_patterns: ['项目已完成']
+      code_required_terms: []
+      code_forbidden_terms: []
+      required_sections: [项目背景, 目标与范围, 方案设计, 实施计划, 交付物, 风险与应对, 待确认事项]
+      code_fence_language: null
+    soft_checks:
+      suggested_terms: [已知事实, 里程碑, 验收]
+      minimum_score: 0.67
+    manual_review:
+      required: false
+      questions: []
+
+  - id: generic_self_check
+    title: 错误 SQL 自检
+    group: generic
+    prompt: self_check
+    content: >-
+      检查以下 SQL 草稿并给出问题与修改建议：
+      SELECT o.customer_id, SUM(od.unit_price * od.quantity) AS net_sales
+      FROM orders o JOIN order_details od ON o.order_id = od.order_id;
+      重点检查聚合、折扣口径、字段来源和未执行声明，不需要项目 Workspace 隐式事实。
+    expected:
+      artifact_type: checklist
+      project_fact_status: null
+      require_official_citations: false
+      require_workspace_context: false
+      workspace_unit_ids: []
+      required_terms: [GROUP BY, discount]
+      required_any_term_groups: []
+      forbidden_terms: []
+      required_patterns: []
+      forbidden_patterns: ['已经执行', '验证通过']
+      code_required_terms: []
+      code_forbidden_terms: []
+      required_sections: [检查对象, 通过项, 问题项, 修改建议, 人工确认事项]
+      code_fence_language: null
+    soft_checks:
+      suggested_terms: [customer_id, unit_price, quantity]
+      minimum_score: 0.67
+    manual_review:
+      required: false
+      questions: []

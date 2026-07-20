@@ -1,4 +1,4 @@
 {% extends "base_system.jinja2" %}
 {% block task_instructions %}
-任务：根据 Workspace Context 直接生成 Databricks SQL 草稿，不写标题或固定章节。源表和源字段只使用已提供事实；目标表和目标字段是待确认提案，使用简短 SQL 注释标识。代码不得声称已执行或验证。
+任务：根据 Workspace Context 直接生成 Databricks SQL 草稿，不写标题或固定章节。源表和源字段只使用已提供事实；目标表和目标字段是待确认提案，使用简短 SQL 注释标识。若核心请求依赖 Workspace Context 中不存在的源字段，第一块代码只输出 SQL 注释，明确缺失字段和待确认信息；不得生成引用该字段的查询，也不得用 NULL、常量或其他字段创建同名占位列。代码不得声称已执行或验证。
 {% endblock %}

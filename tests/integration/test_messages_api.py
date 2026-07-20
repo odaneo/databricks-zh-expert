@@ -253,7 +253,7 @@ async def test_send_message_accepts_sql_prompt_and_returns_artifact_metadata(
     assert response.status_code == 201
     payload = response.json()
     assert payload["prompt_name"] == "sql_generation"
-    assert payload["prompt_version"] == "1.1.0"
+    assert payload["prompt_version"] == "1.2.0"
     assert payload["artifact"] == {
         "type": "sql",
         "format": "markdown",

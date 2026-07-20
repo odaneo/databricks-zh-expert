@@ -1,0 +1,14 @@
+schema_version: 1
+id: northwind_psql
+display_name: Northwind AWS 销售分析
+description: 基于公开 Northwind PostgreSQL Schema 设计 AWS Databricks 销售分析项目。
+version: 1.0.0
+cloud: aws
+documents:
+  requirements: requirements.md
+  business_rules: business-rules.md
+source_schemas:
+  - id: northwind
+    dialect: postgresql
+    files:
+      - source-schema/northwind-schema.sql

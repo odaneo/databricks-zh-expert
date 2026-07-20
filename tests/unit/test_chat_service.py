@@ -592,7 +592,7 @@ def build_service(
 @pytest.mark.asyncio
 async def test_workspace_proposal_orders_context_and_audits_every_attempt() -> None:
     session = make_session()
-    session.workspace_id = "retail_sales_demo"
+    session.workspace_id = "northwind_psql"
     historical_user = make_message(session.id, "user", "历史需求", 0)
     historical_artifact = make_message(session.id, "assistant", VALID_SQL, 1)
     historical_artifact.artifact_type = "sql"
@@ -617,9 +617,9 @@ async def test_workspace_proposal_orders_context_and_audits_every_attempt() -> N
         ]
     )
     registry = WorkspaceRegistry.create_default()
-    workspace = registry.get("retail_sales_demo")
+    workspace = registry.get("northwind_psql")
     workspace_bundle = WorkspaceContextBuilder().build_for_prompt(
-        "根据 public.customers 生成客户 CDC DDL",
+        "根据 orders 生成订单 CDC DDL",
         workspace=workspace,
         prompt_name=PromptName.DDL_GENERATION.value,
     )
@@ -639,7 +639,7 @@ async def test_workspace_proposal_orders_context_and_audits_every_attempt() -> N
 
     result = await service.send_message(
         session.id,
-        "根据 public.customers 生成客户 CDC DDL",
+        "根据 orders 生成订单 CDC DDL",
         requested_prompt=PromptName.DDL_GENERATION,
     )
 
@@ -652,15 +652,15 @@ async def test_workspace_proposal_orders_context_and_audits_every_attempt() -> N
     assert gateway.received_messages[4].content == "历史需求"
     assert "未确认提案" in gateway.received_messages[5].content
     assert VALID_SQL in gateway.received_messages[5].content
-    assert gateway.received_messages[6].content == "根据 public.customers 生成客户 CDC DDL"
+    assert gateway.received_messages[6].content == "根据 orders 生成订单 CDC DDL"
     assert result.project_fact_status == "proposal"
     assert [call.project_fact_status for call in repository.model_calls] == [
         "proposal",
         "proposal",
     ]
     assert [call.workspace_id for call in repository.model_calls] == [
-        "retail_sales_demo",
-        "retail_sales_demo",
+        "northwind_psql",
+        "northwind_psql",
     ]
     assert repository.model_calls[0].workspace_context == (
         repository.model_calls[1].workspace_context
@@ -893,12 +893,12 @@ async def test_explicit_sql_prompt_persists_sql_artifact_audit() -> None:
     assert gateway.received_messages[0].role == "system"
     assert "语言标识为 `sql`" in gateway.received_messages[0].content
     assert result.prompt_name is PromptName.SQL_GENERATION
-    assert result.prompt_version == "1.1.0"
+    assert result.prompt_version == "1.2.0"
     assert result.artifact.artifact_type is ArtifactType.SQL
     assert result.artifact.content == VALID_SQL
     assert result.assistant_message.artifact_type == "sql"
     assert repository.model_calls[0].prompt_name == "sql_generation"
-    assert repository.model_calls[0].prompt_version == "1.1.0"
+    assert repository.model_calls[0].prompt_version == "1.2.0"
     assert repository.model_calls[0].artifact_type == "sql"
     assert repository.model_calls[0].artifact_valid is True
     assert repository.model_calls[0].artifact_error_code is None

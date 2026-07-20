@@ -32,6 +32,7 @@ databricks-zh-expert = "databricks_zh_expert.main:run"
 databricks-zh-expert-kb = "databricks_zh_expert.rag.cli:main"
 databricks-zh-expert-templates = "databricks_zh_expert.expert_templates.cli:main"
 databricks-zh-expert-workspaces = "databricks_zh_expert.workspace.cli:main"
+databricks-zh-expert-evals = "databricks_zh_expert.evaluation.cli:main"
 
 [dependency-groups]
 dev = [

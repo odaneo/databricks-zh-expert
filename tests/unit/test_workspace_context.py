@@ -20,7 +20,7 @@ from databricks_zh_expert.workspace.types import (
 
 
 def _workspace() -> WorkspaceDefinition:
-    return WorkspaceRegistry.create_default().get("retail_sales_demo")
+    return WorkspaceRegistry.create_default().get("northwind_psql")
 
 
 def _source(
@@ -60,7 +60,7 @@ def test_builder_splits_markdown_sections_and_sql_statements_into_stable_units()
     second = builder.build_units(_workspace())
 
     assert first == second
-    assert len(first) == 23
+    assert len(first) == 56
     assert [unit.title for unit in first if unit.source_id == "requirements"] == [
         "业务目标",
         "源系统",
@@ -72,57 +72,52 @@ def test_builder_splits_markdown_sections_and_sql_statements_into_stable_units()
         "待确认事项",
     ]
     assert [
-        unit.unit_id
-        for unit in first
-        if unit.source_id == "source_ddl.rds_postgresql.rds-postgresql"
-    ] == [
-        "source_ddl.rds_postgresql.rds-postgresql:1",
-        "source_ddl.rds_postgresql.rds-postgresql:2",
-        "source_ddl.rds_postgresql.rds-postgresql:3",
-        "source_ddl.rds_postgresql.rds-postgresql:4",
-    ]
+        unit.unit_id for unit in first if unit.source_id == "source_ddl.northwind.northwind-schema"
+    ] == [f"source_ddl.northwind.northwind-schema:{index}" for index in range(1, 42)]
     assert all(len(unit.content_hash) == 64 for unit in first)
     assert all(unit.content.endswith("\n") for unit in first)
 
 
-def test_customer_cdc_query_selects_rds_ddl_and_cdc_rule() -> None:
+def test_order_cdc_query_selects_orders_ddl_and_cdc_rule() -> None:
     bundle = WorkspaceContextBuilder().build(
-        "根据 public.customer 的 customer_id 和 updated_at 设计 CDC 去重 DDL",
+        "根据 orders 的 order_id、customer_id 和 order_date 设计 AWS DMS CDC 去重 DDL",
         workspace=_workspace(),
         purpose=WorkspaceContextPurpose.DDL,
     )
     selected_ids = [item.unit_id for item in bundle.selected_units]
 
-    assert "source_ddl.rds_postgresql.rds-postgresql:1" in selected_ids[:3]
+    assert "source_ddl.northwind.northwind-schema:8" in selected_ids[:3]
     assert "rules:2" in selected_ids
     assert bundle.selected_units[0].reason == "lexical"
-    assert "CREATE TABLE public.customer" in bundle.context
+    assert "CREATE TABLE orders" in bundle.context
     assert "## CDC 与去重" in bundle.context
 
 
-def test_pos_mapping_query_selects_schema_product_requirement_and_amount_rule() -> None:
+def test_sales_mapping_query_selects_order_schemas_product_requirement_and_amount_rule() -> None:
     bundle = WorkspaceContextBuilder().build(
-        "根据 source.pos_sales_line 的 order_id、quantity、unit_price 和 discount_amount "
-        "生成每日销售 Mapping，并确认净销售金额口径",
+        "根据 orders、order_details 和 products 的 order_id、product_id、quantity、"
+        "unit_price、discount 生成每日销售 Mapping，并确认净销售额口径",
         workspace=_workspace(),
         purpose=WorkspaceContextPurpose.MAPPING,
     )
     selected_ids = {item.unit_id for item in bundle.selected_units}
 
-    assert "source_ddl.pos_parquet.pos-parquet:1" in selected_ids
-    assert "requirements:3" in selected_ids
+    assert "source_ddl.northwind.northwind-schema:7" in selected_ids
+    assert "source_ddl.northwind.northwind-schema:8" in selected_ids
+    assert "source_ddl.northwind.northwind-schema:9" in selected_ids
     assert "rules:4" in selected_ids
 
 
-def test_kinesis_notebook_query_selects_event_ingestion_and_late_data_units() -> None:
+def test_dms_notebook_query_selects_orders_ingestion_and_late_data_units() -> None:
     bundle = WorkspaceContextBuilder().build(
-        "为 source.order_event 使用 Kinesis 生成实时摄取 Notebook，并按 event_ts 处理迟到事件",
+        "为 orders 使用 AWS DMS、S3 Parquet 和 Auto Loader 生成 CDC 摄取 Notebook，"
+        "并使用 order_date、required_date、shipped_date 说明事件时间与迟到数据处理",
         workspace=_workspace(),
         purpose=WorkspaceContextPurpose.NOTEBOOK,
     )
     selected_ids = {item.unit_id for item in bundle.selected_units}
 
-    assert "source_ddl.kinesis_events.kinesis-events:1" in selected_ids
+    assert "source_ddl.northwind.northwind-schema:8" in selected_ids
     assert "requirements:4" in selected_ids
     assert "rules:3" in selected_ids
 
@@ -134,14 +129,14 @@ def test_kinesis_notebook_query_selects_event_ingestion_and_late_data_units() ->
             WorkspaceContextPurpose.DDL,
             (
                 "requirements:3",
-                "source_ddl.kinesis_events.kinesis-events:1",
+                "source_ddl.northwind.northwind-schema:1",
                 "rules:1",
             ),
         ),
         (
             WorkspaceContextPurpose.MAPPING,
             (
-                "source_ddl.kinesis_events.kinesis-events:1",
+                "source_ddl.northwind.northwind-schema:1",
                 "rules:1",
                 "requirements:3",
             ),
@@ -150,7 +145,7 @@ def test_kinesis_notebook_query_selects_event_ingestion_and_late_data_units() ->
             WorkspaceContextPurpose.SQL,
             (
                 "requirements:3",
-                "source_ddl.kinesis_events.kinesis-events:1",
+                "source_ddl.northwind.northwind-schema:1",
                 "rules:4",
             ),
         ),
@@ -158,7 +153,7 @@ def test_kinesis_notebook_query_selects_event_ingestion_and_late_data_units() ->
             WorkspaceContextPurpose.PYSPARK,
             (
                 "requirements:4",
-                "source_ddl.kinesis_events.kinesis-events:1",
+                "source_ddl.northwind.northwind-schema:1",
                 "rules:2",
             ),
         ),
@@ -166,7 +161,7 @@ def test_kinesis_notebook_query_selects_event_ingestion_and_late_data_units() ->
             WorkspaceContextPurpose.NOTEBOOK,
             (
                 "requirements:4",
-                "source_ddl.kinesis_events.kinesis-events:1",
+                "source_ddl.northwind.northwind-schema:1",
                 "rules:3",
             ),
         ),
@@ -315,7 +310,7 @@ def test_non_proposal_prompt_does_not_build_workspace_context() -> None:
 
 def test_context_contains_only_relative_user_fact_metadata() -> None:
     bundle = WorkspaceContextBuilder().build(
-        "public.customer customer_id",
+        "customers customer_id",
         workspace=_workspace(),
         purpose=WorkspaceContextPurpose.DDL,
     )

@@ -99,9 +99,10 @@ def test_every_prompt_has_a_semantic_version() -> None:
     assert versions[PromptName.DDL_GENERATION] == "1.0.0"
     assert versions[PromptName.MAPPING_GENERATION] == "1.0.0"
     assert versions[PromptName.NOTEBOOK_GENERATION] == "1.0.0"
-    assert versions[PromptName.SQL_GENERATION] == "1.1.0"
-    assert versions[PromptName.PYSPARK_GENERATION] == "1.1.0"
+    assert versions[PromptName.SQL_GENERATION] == "1.2.0"
+    assert versions[PromptName.PYSPARK_GENERATION] == "1.2.0"
     assert versions[PromptName.WORKFLOW_DESIGN] == "1.1.0"
+    assert versions[PromptName.PROPOSAL_GENERATION] == "1.1.0"
 
 
 def test_code_prompts_do_not_require_document_sections() -> None:

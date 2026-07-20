@@ -13,7 +13,7 @@ from databricks_zh_expert.workspace.types import WorkspaceContextPurpose
 
 WORKSPACE_EVALUATION_PATH = Path("tests/evals/workspace_context.yml")
 WORKSPACE_EVALUATION_TOP_K = 5
-WORKSPACE_MINIMUM_RECALL = 0.90
+WORKSPACE_MINIMUM_RECALL = 1.0
 
 StableId = Annotated[
     str,

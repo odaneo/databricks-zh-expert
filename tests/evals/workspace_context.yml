@@ -1,61 +1,77 @@
 version: 1
-workspace_id: retail_sales_demo
+workspace_id: northwind_psql
 cases:
-  - id: ddl_customer
+  - id: ddl_orders
     prompt: ddl_generation
-    query: 根据 RDS PostgreSQL public.customer Schema 生成客户 CDC Databricks DDL
+    query: 根据 PostgreSQL orders 表的 order_id、customer_id、order_date 和 shipped_date 生成 Bronze Databricks DDL
     expected_unit_ids:
-      - source_ddl.rds_postgresql.rds-postgresql:1
-    forbidden_context_terms: []
-
-  - id: ddl_sales
-    prompt: ddl_generation
-    query: 根据 POS Parquet source.pos_sales_line Schema 生成销售事实和每日销售 Gold DDL
-    expected_unit_ids:
-      - source_ddl.pos_parquet.pos-parquet:1
-    forbidden_context_terms: []
-
-  - id: source_mapping
-    prompt: mapping_generation
-    query: 根据 public.customer 和 source.pos_sales_line Schema 生成源到目标 Mapping CSV
-    expected_unit_ids:
-      - source_ddl.rds_postgresql.rds-postgresql:1
-      - source_ddl.pos_parquet.pos-parquet:1
-    forbidden_context_terms: []
-
-  - id: kinesis_notebook
-    prompt: notebook_generation
-    query: 根据 Kinesis source.order_event Schema 生成 Bronze PySpark 与 Notebook
-    expected_unit_ids:
-      - source_ddl.kinesis_events.kinesis-events:1
-    forbidden_context_terms: []
-
-  - id: missing_source_field
-    prompt: ddl_generation
-    query: 使用 public.customer.source_system_priority 字段生成客户去重 DDL；如果源 Schema 不存在该字段，明确说明缺失
-    expected_unit_ids:
-      - source_ddl.rds_postgresql.rds-postgresql:1
+      - source_ddl.northwind.northwind-schema:8
     forbidden_context_terms:
-      - source_system_priority
+      - store_id
+      - order_line_id
+      - email
+
+  - id: sql_daily_sales
+    prompt: sql_generation
+    query: 使用 orders 和 order_details 的 order_id、unit_price、quantity、discount 与 order_date 生成每日净销售 SQL
+    expected_unit_ids:
+      - source_ddl.northwind.northwind-schema:7
+      - source_ddl.northwind.northwind-schema:8
+      - rules:4
+    forbidden_context_terms:
+      - store_id
+
+  - id: mapping_order_product
+    prompt: mapping_generation
+    query: 根据 orders、order_details 和 products 的 order_id 与 product_id 生成订单商品 Mapping CSV
+    expected_unit_ids:
+      - source_ddl.northwind.northwind-schema:7
+      - source_ddl.northwind.northwind-schema:8
+      - source_ddl.northwind.northwind-schema:9
+    forbidden_context_terms:
+      - order_line_id
+
+  - id: pyspark_referential_quality
+    prompt: pyspark_generation
+    query: 使用 order_details.order_id、order_details.product_id 检查 orders 和 products 外键引用质量
+    expected_unit_ids:
+      - source_ddl.northwind.northwind-schema:7
+      - source_ddl.northwind.northwind-schema:8
+      - source_ddl.northwind.northwind-schema:9
+    forbidden_context_terms: []
+
+  - id: missing_orders_store_id
+    prompt: sql_generation
+    query: 使用 orders.store_id 生成门店销售 SQL；如果源 Schema 不存在该字段，必须明确说明缺失
+    expected_unit_ids:
+      - source_ddl.northwind.northwind-schema:8
+    forbidden_context_terms:
+      - store_id
 
   - id: workflow_daily_sales
     prompt: workflow_design
-    query: 为 source.pos_sales_line 设计每日销售批处理 Workflow，包括 Gold 刷新、调度和监控
+    query: 基于 orders 和 order_details 设计每日销售 Workflow，使用已确认折扣口径并列出 SLA 与 Owner 待确认项
     expected_unit_ids:
-      - source_ddl.pos_parquet.pos-parquet:1
+      - source_ddl.northwind.northwind-schema:7
+      - source_ddl.northwind.northwind-schema:8
+    forbidden_context_terms:
+      - order_line_id
+
+  - id: shipping_relationship
+    prompt: sql_generation
+    query: 使用 orders.ship_via 与 shippers.shipper_id 及 fk_orders_shippers 分析配送表现和延期发货
+    expected_unit_ids:
+      - source_ddl.northwind.northwind-schema:8
+      - source_ddl.northwind.northwind-schema:11
+      - source_ddl.northwind.northwind-schema:31
     forbidden_context_terms: []
 
-  - id: workflow_cdc_kinesis
-    prompt: workflow_design
-    query: 设计 public.customer CDC 与 source.order_event Kinesis 混合工作流及任务依赖
+  - id: customer_value_relationship
+    prompt: sql_generation
+    query: 使用 customers.customer_id、orders.customer_id 和 fk_orders_customers 设计客户价值 SQL
     expected_unit_ids:
-      - source_ddl.rds_postgresql.rds-postgresql:1
-      - source_ddl.kinesis_events.kinesis-events:1
-    forbidden_context_terms: []
-
-  - id: workflow_missing_operations
-    prompt: workflow_design
-    query: 设计零售数据工作流；如果缺少 SLA、Owner、补数和恢复规则，列入后续确认事项
-    expected_unit_ids:
-      - requirements:5
-    forbidden_context_terms: []
+      - source_ddl.northwind.northwind-schema:4
+      - source_ddl.northwind.northwind-schema:8
+      - source_ddl.northwind.northwind-schema:29
+    forbidden_context_terms:
+      - email
