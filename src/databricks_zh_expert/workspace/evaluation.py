@@ -46,6 +46,8 @@ class WorkspaceEvaluationDataset:
     version: int
     workspace_id: str
     cases: tuple[WorkspaceEvaluationCase, ...]
+    workspace_version: str | None = None
+    workspace_source_hash: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -101,15 +103,29 @@ class _EvaluationCaseModel(_StrictModel):
 
 
 class _EvaluationDatasetModel(_StrictModel):
-    version: int = Field(ge=1, le=1)
+    version: int = Field(ge=1, le=2)
     workspace_id: StableId
-    cases: tuple[_EvaluationCaseModel, ...] = Field(min_length=8, max_length=8)
+    workspace_version: str | None = Field(
+        default=None,
+        pattern=r"^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$",
+    )
+    workspace_source_hash: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    cases: tuple[_EvaluationCaseModel, ...] = Field(min_length=8, max_length=12)
 
     @model_validator(mode="after")
     def validate_unique_ids(self) -> Self:
         case_ids = tuple(case.id for case in self.cases)
         if len(case_ids) != len(set(case_ids)):
             raise ValueError("Workspace 评估集 case id 不能重复。")
+        expected_case_count = 8 if self.version == 1 else 12
+        if len(self.cases) != expected_case_count:
+            raise ValueError(
+                f"Workspace 评估集 v{self.version} 必须包含 {expected_case_count} 道题。"
+            )
+        if self.version == 2 and (
+            self.workspace_version is None or self.workspace_source_hash is None
+        ):
+            raise ValueError("Workspace 评估集 v2 必须固定 Workspace 版本和 Source Hash。")
         return self
 
 
@@ -130,6 +146,8 @@ def load_workspace_evaluation_set(path: Path) -> WorkspaceEvaluationDataset:
     return WorkspaceEvaluationDataset(
         version=model.version,
         workspace_id=model.workspace_id,
+        workspace_version=model.workspace_version,
+        workspace_source_hash=model.workspace_source_hash,
         cases=tuple(
             WorkspaceEvaluationCase(
                 id=case.id,
@@ -175,6 +193,13 @@ class WorkspaceEvaluator:
             workspace = self._registry.get(dataset.workspace_id)
         except WorkspaceRegistryError:
             raise WorkspaceEvaluationError("Workspace 评估集引用了未注册工作区。") from None
+        if dataset.workspace_version is not None and workspace.version != dataset.workspace_version:
+            raise WorkspaceEvaluationError("Workspace 版本与固定评估基线不一致。")
+        if (
+            dataset.workspace_source_hash is not None
+            and workspace.source_hash != dataset.workspace_source_hash
+        ):
+            raise WorkspaceEvaluationError("Workspace Source Hash 与固定评估基线不一致。")
 
         results = []
         for case in dataset.cases:

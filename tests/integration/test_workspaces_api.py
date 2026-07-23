@@ -15,12 +15,18 @@ async def test_list_workspaces_returns_safe_northwind_metadata(client: AsyncClie
             "description": (
                 "基于公开 Northwind PostgreSQL Schema 设计 AWS Databricks 销售分析项目。"
             ),
-            "version": "1.0.0",
+            "version": "2.0.0",
             "cloud": "aws",
-            "source_count": 3,
+            "source_count": 9,
             "source_hash": response.json()[0]["source_hash"],
             "source_paths": [
                 ".databricks-expert/business-rules.md",
+                ".databricks-expert/glossary/business-glossary.md",
+                ".databricks-expert/project/architecture.md",
+                ".databricks-expert/project/data-products.md",
+                ".databricks-expert/project/data-quality.md",
+                ".databricks-expert/project/governance-and-operations.md",
+                ".databricks-expert/project/source-system.md",
                 ".databricks-expert/requirements.md",
                 ".databricks-expert/source-schema/northwind-schema.sql",
             ],
@@ -39,7 +45,7 @@ async def test_get_workspace_returns_detail_without_source_content(client: Async
     assert response.json()["id"] == "northwind_psql"
     assert "workspace_mode" not in response.json()
     assert "is_mock" not in response.json()
-    assert response.json()["source_count"] == 3
+    assert response.json()["source_count"] == 9
     assert "content" not in response.text
 
 

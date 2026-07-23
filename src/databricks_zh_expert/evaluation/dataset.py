@@ -41,12 +41,20 @@ class _DatasetSourceModel(BaseModel):
     dataset_id: str
     version: str
     workspace_id: str
+    workspace_version: str | None = None
+    workspace_source_hash: str | None = None
     expert_profile: str
     models: tuple[ModelAlias, ...]
     cases: tuple[EvaluationCase, ...] = Field(min_length=16, max_length=16)
 
     @model_validator(mode="after")
     def validate_contract(self) -> Self:
+        if self.schema_version not in {1, 2}:
+            raise ValueError("端到端评估 schema_version 不受支持。")
+        if self.schema_version == 2 and (
+            self.workspace_version is None or self.workspace_source_hash is None
+        ):
+            raise ValueError("端到端评估 v2 必须固定 Workspace 版本和 Source Hash。")
         case_ids = tuple(case.id for case in self.cases)
         if len(case_ids) != len(set(case_ids)):
             raise ValueError("case id 不能重复。")

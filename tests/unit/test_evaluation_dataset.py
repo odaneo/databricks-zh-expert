@@ -30,9 +30,14 @@ def _write_payload(tmp_path: Path, payload: dict[str, object]) -> Path:
 def test_fixed_dataset_has_sixteen_cases_and_two_deepseek_models() -> None:
     dataset = load_evaluation_dataset(END_TO_END_EVALUATION_PATH)
 
-    assert dataset.dataset_id == "stage9_northwind_end_to_end"
-    assert dataset.version == "1.0.0"
+    assert dataset.schema_version == 2
+    assert dataset.dataset_id == "stage10_northwind_end_to_end"
+    assert dataset.version == "2.0.0"
     assert dataset.workspace_id == "northwind_psql"
+    assert dataset.workspace_version == "2.0.0"
+    assert dataset.workspace_source_hash == (
+        "3dfa0751cf9ef2aa26d8b7d7728d4b60e4bcc394420544ba2df55d4a6cf6b3fb"
+    )
     assert dataset.expert_profile == "generic"
     assert dataset.models == (
         ModelAlias.DEEPSEEK_V4_FLASH,
@@ -61,11 +66,12 @@ def test_fixed_dataset_prompt_and_artifact_contracts_match_registry() -> None:
     assert by_id["generic_unity_catalog"].expected.require_official_citations is True
     assert by_id["generic_self_check"].expected.require_workspace_context is False
     assert by_id["nw_notebook_sales_quality"].soft_checks.suggested_terms == (
-        "主键空值",
-        "外键",
+        "隔离",
+        "质量结果",
+        "_dms_change_seq",
     )
     assert by_id["nw_workflow_daily_sales"].soft_checks.suggested_terms[0] == "Task ID"
-    assert by_id["nw_workflow_customer_product"].soft_checks.suggested_terms[-1] == "质量"
+    assert by_id["nw_workflow_customer_product"].soft_checks.suggested_terms[-1] == "质量门禁"
 
 
 @pytest.mark.parametrize(
@@ -90,6 +96,10 @@ def test_fixed_dataset_prompt_and_artifact_contracts_match_registry() -> None:
         (
             lambda payload: payload["cases"][0]["expected"].update({"required_patterns": ["("]}),
             "正则表达式无效",
+        ),
+        (
+            lambda payload: payload.pop("workspace_source_hash"),
+            "必须固定 Workspace 版本和 Source Hash",
         ),
     ],
 )

@@ -16,6 +16,7 @@ from databricks_zh_expert.evaluation.dataset import (
 from databricks_zh_expert.evaluation.report import (
     EvaluationReportError,
     write_comparison_report,
+    write_longitudinal_comparison_report,
     write_run_report,
 )
 from databricks_zh_expert.evaluation.runner import EVALUATION_OUTPUT_ROOT, EvaluationRunner
@@ -35,6 +36,13 @@ class EvaluationCliRuntime(Protocol):
     ) -> tuple[EvaluationRunResult, Path]: ...
 
     def compare(self, *, run_id: str) -> Path: ...
+
+    def compare_longitudinal(
+        self,
+        *,
+        baseline_run_id: str,
+        current_run_id: str,
+    ) -> Path: ...
 
 
 class DefaultEvaluationCliRuntime:
@@ -59,6 +67,18 @@ class DefaultEvaluationCliRuntime:
     def compare(self, *, run_id: str) -> Path:
         return write_comparison_report(run_id, output_root=self._output_root)
 
+    def compare_longitudinal(
+        self,
+        *,
+        baseline_run_id: str,
+        current_run_id: str,
+    ) -> Path:
+        return write_longitudinal_comparison_report(
+            baseline_run_id,
+            current_run_id,
+            output_root=self._output_root,
+        )
+
 
 def create_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="databricks-zh-expert-evals")
@@ -76,6 +96,12 @@ def create_parser() -> argparse.ArgumentParser:
 
     compare_parser = commands.add_parser("compare", help="生成两个固定模型的对比报告")
     compare_parser.add_argument("--run-id", required=True)
+    longitudinal_parser = commands.add_parser(
+        "longitudinal",
+        help="比较两个已完成 Run 的双模型结果",
+    )
+    longitudinal_parser.add_argument("--baseline-run-id", required=True)
+    longitudinal_parser.add_argument("--current-run-id", required=True)
     return parser
 
 
@@ -107,6 +133,13 @@ async def run(argv: Sequence[str], runtime: EvaluationCliRuntime) -> int:
         if arguments.command == "compare":
             path = runtime.compare(run_id=arguments.run_id)
             print(json.dumps({"comparison_path": path.as_posix()}, ensure_ascii=False))
+            return 0
+        if arguments.command == "longitudinal":
+            path = runtime.compare_longitudinal(
+                baseline_run_id=arguments.baseline_run_id,
+                current_run_id=arguments.current_run_id,
+            )
+            print(json.dumps({"longitudinal_path": path.as_posix()}, ensure_ascii=False))
             return 0
         raise RuntimeError("不支持的端到端评估命令。")
     except (EvaluationDatasetError, EvaluationReportError, ValueError) as error:

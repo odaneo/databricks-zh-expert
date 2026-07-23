@@ -174,7 +174,7 @@ async def test_workspace_ddl_request_persists_proposal_context_and_relative_path
 
     assert response.status_code == 201
     assert response.json()["artifact"]["project_fact_status"] == "proposal"
-    assert "仅来自用户提供的全新项目事实" in gateway.messages[1].content
+    assert "仅来自用户提供的项目事实" in gateway.messages[1].content
     assert gateway.messages[-1].content == "根据 orders 生成订单 CDC Databricks DDL"
     model_call = await test_db_session.scalar(
         select(ModelCall).where(ModelCall.session_id == session_id)
@@ -253,7 +253,7 @@ async def test_bound_workspace_is_not_injected_for_normal_prompt(
     )
 
     assert response.status_code == 201
-    assert all("仅来自用户提供的全新项目事实" not in item.content for item in gateway.messages)
+    assert all("仅来自用户提供的项目事实" not in item.content for item in gateway.messages)
     model_call = await test_db_session.scalar(
         select(ModelCall).where(ModelCall.session_id == session_id)
     )

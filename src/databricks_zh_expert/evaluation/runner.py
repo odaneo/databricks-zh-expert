@@ -34,6 +34,7 @@ from databricks_zh_expert.observability.model_trace import (
 from databricks_zh_expert.prompts.registry import PromptName, PromptRegistry
 from databricks_zh_expert.workspace.context import WorkspaceContextBuilder
 from databricks_zh_expert.workspace.registry import WorkspaceRegistry
+from databricks_zh_expert.workspace.types import WorkspaceDefinition
 
 EVALUATION_OUTPUT_ROOT = Path(".local/evaluations")
 EVALUATION_MINIMUM_AVERAGE_SOFT_SCORE = 0.9
@@ -60,6 +61,7 @@ class EvaluationRunner:
         issues: list[str] = []
         workspace_registry = WorkspaceRegistry.create_default()
         workspace = workspace_registry.get(self._dataset.workspace_id)
+        issues.extend(_workspace_baseline_issues(self._dataset, workspace))
         prompt_registry = PromptRegistry.create_default()
         prompt_registry.validate_all()
         model_registry = ModelRegistry.from_settings(self._settings)
@@ -151,6 +153,9 @@ class EvaluationRunner:
         trace_path = model_directory / "trace.jsonl"
         app = self._app_factory(self._settings, JsonlModelTraceSink(trace_path))
         workspace = WorkspaceRegistry.create_default().get(self._dataset.workspace_id)
+        baseline_issues = _workspace_baseline_issues(self._dataset, workspace)
+        if baseline_issues:
+            raise ValueError(" ".join(baseline_issues))
         started_at = datetime.now(UTC)
         results: list[EvaluationCaseResult] = []
         async with app.router.lifespan_context(app):
@@ -497,3 +502,18 @@ def _run_gate_passed(summary: EvaluationRunSummary) -> bool:
         and summary.hard_pass_rate == 1.0
         and summary.average_soft_score >= EVALUATION_MINIMUM_AVERAGE_SOFT_SCORE
     )
+
+
+def _workspace_baseline_issues(
+    dataset: EvaluationDataset,
+    workspace: WorkspaceDefinition,
+) -> tuple[str, ...]:
+    issues = []
+    if dataset.workspace_version is not None and workspace.version != dataset.workspace_version:
+        issues.append("Workspace 版本与固定端到端评估基线不一致。")
+    if (
+        dataset.workspace_source_hash is not None
+        and workspace.source_hash != dataset.workspace_source_hash
+    ):
+        issues.append("Workspace Source Hash 与固定端到端评估基线不一致。")
+    return tuple(issues)

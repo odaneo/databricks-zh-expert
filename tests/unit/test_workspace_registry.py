@@ -126,6 +126,12 @@ def test_fixed_workspace_constants_and_source_kinds() -> None:
         WorkspaceSourceKind.REQUIREMENT,
         WorkspaceSourceKind.SOURCE_DDL,
         WorkspaceSourceKind.RULE,
+        WorkspaceSourceKind.SOURCE_SYSTEM,
+        WorkspaceSourceKind.ARCHITECTURE,
+        WorkspaceSourceKind.DATA_PRODUCT,
+        WorkspaceSourceKind.DATA_QUALITY,
+        WorkspaceSourceKind.GOVERNANCE,
+        WorkspaceSourceKind.GLOSSARY,
     )
 
 
@@ -239,3 +245,55 @@ def test_registry_rejects_unknown_workspace_id() -> None:
 
     with pytest.raises(WorkspaceRegistryError, match="项目工作区未注册"):
         registry.get("unknown")
+
+
+def test_registry_loads_v2_northwind_document_contract() -> None:
+    workspace = WorkspaceRegistry.create_default().get("northwind_psql")
+
+    assert workspace.version == "2.0.0"
+    assert [
+        (source.source_id, source.kind, source.source_path) for source in workspace.sources
+    ] == [
+        (
+            "architecture",
+            WorkspaceSourceKind.ARCHITECTURE,
+            ".databricks-expert/project/architecture.md",
+        ),
+        (
+            "business_glossary",
+            WorkspaceSourceKind.GLOSSARY,
+            ".databricks-expert/glossary/business-glossary.md",
+        ),
+        (
+            "data_products",
+            WorkspaceSourceKind.DATA_PRODUCT,
+            ".databricks-expert/project/data-products.md",
+        ),
+        (
+            "data_quality",
+            WorkspaceSourceKind.DATA_QUALITY,
+            ".databricks-expert/project/data-quality.md",
+        ),
+        (
+            "governance_and_operations",
+            WorkspaceSourceKind.GOVERNANCE,
+            ".databricks-expert/project/governance-and-operations.md",
+        ),
+        (
+            "requirements",
+            WorkspaceSourceKind.REQUIREMENT,
+            ".databricks-expert/requirements.md",
+        ),
+        ("rules", WorkspaceSourceKind.RULE, ".databricks-expert/business-rules.md"),
+        (
+            "source_ddl.northwind.northwind-schema",
+            WorkspaceSourceKind.SOURCE_DDL,
+            ".databricks-expert/source-schema/northwind-schema.sql",
+        ),
+        (
+            "source_system",
+            WorkspaceSourceKind.SOURCE_SYSTEM,
+            ".databricks-expert/project/source-system.md",
+        ),
+    ]
+    assert all("upstream/northwind.sql" not in source.source_path for source in workspace.sources)

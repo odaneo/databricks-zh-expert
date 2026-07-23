@@ -158,6 +158,26 @@ uv run --locked databricks-zh-expert-evals validate
 6. 新旧数据集、Workspace、Prompt、模型、Run 和日志可以独立比较。
 7. 全量测试、Ruff、Pyright/Pylance 和 Alembic 检查通过。
 
-## 8. 当前停止点
+## 8. 当前状态（2026-07-23）
 
-本轮建立文档骨架后停止。下一步由用户手动完善 Workspace；用户通知“Workspace 已完成”后，Agent 才从第 5 节开始继续。
+Agent 侧实现、离线验收和真实双模型再基线均已完成：
+
+1. Northwind Workspace 已冻结为 `2.0.0`，Source Hash 为
+   `3dfa0751cf9ef2aa26d8b7d7728d4b60e4bcc394420544ba2df55d4a6cf6b3fb`。
+2. 最终 9 份项目输入已注册；Context 共生成 519 个可追溯单元。
+3. Workspace 固定评估命中 `45/45`，`Recall@5=100%`，上下文泄漏为 `0`。
+4. 端到端数据集已冻结为 `stage10_northwind_end_to_end` `2.0.0`，数据集 Hash 为
+   `afc66e4d68511d9d40dc545700442434c75abecf0ecaa4688dd0f10a6e8e15f0`。
+5. 正式 Run ID 为 `stage10-final-20260723`。Flash 的 Hard Pass 为 `87.50%`、Soft 平均为
+   `85.42%`；Pro 的 Hard Pass 为 `81.25%`、Soft 平均为 `80.21%`。两种模型各发生一次
+   fallback，所有原始调用和结果均已保留。
+6. 横向报告、相对 `stage9-final-v2-20260720` 的纵向报告，以及两个模型各 3 份人工抽查输出均已生成。
+7. Ruff、Pyright/Pylance、Alembic 和全量测试均通过；测试结果为 `538 passed`，覆盖率为 `87.99%`。
+
+第 6 节规定的 6 份代表性输出已于 `2026-07-23` 完成审核。最终状态为 `rejected`，中文结论为
+“需要修改”：这些输出可作为讨论和修改底稿，但不应原样进入项目开发或交付。审核记录保存在
+`.local/evaluations/stage10-final-20260723/manual-review.md`，只追加结论，不覆盖原始模型输出、自动评分、
+Trace 或数据库审计。
+
+因此，阶段 10 的 Workspace 冻结、程序适配、固定评估、双模型真实运行和人工审核均已完成；输出质量问题作为
+后续精度提升工作的已知基线保留。

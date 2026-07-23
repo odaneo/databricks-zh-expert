@@ -41,13 +41,18 @@ def _case(
     )
 
 
-def test_fixed_workspace_evaluation_set_has_eight_northwind_cases() -> None:
+def test_fixed_workspace_evaluation_set_has_twelve_realistic_northwind_cases() -> None:
     dataset = load_workspace_evaluation_set(WORKSPACE_EVALUATION_PATH)
 
+    assert dataset.version == 2
     assert dataset.workspace_id == "northwind_psql"
-    assert len(dataset.cases) == 8
-    assert len({case.id for case in dataset.cases}) == 8
-    assert sum(len(case.expected_unit_ids) for case in dataset.cases) == 19
+    assert dataset.workspace_version == "2.0.0"
+    assert dataset.workspace_source_hash == (
+        "3dfa0751cf9ef2aa26d8b7d7728d4b60e4bcc394420544ba2df55d4a6cf6b3fb"
+    )
+    assert len(dataset.cases) == 12
+    assert len({case.id for case in dataset.cases}) == 12
+    assert sum(len(case.expected_unit_ids) for case in dataset.cases) == 45
     missing_field = next(case for case in dataset.cases if case.id == "missing_orders_store_id")
     assert missing_field.forbidden_context_terms == ("store_id",)
 
@@ -60,9 +65,9 @@ def test_fixed_workspace_evaluation_reaches_recall_gate_without_context_leaks() 
 
     result = evaluator.evaluate_file(WORKSPACE_EVALUATION_PATH)
 
-    assert result.query_count == 8
-    assert result.expected_unit_count == 19
-    assert result.matched_unit_count == 19
+    assert result.query_count == 12
+    assert result.expected_unit_count == 45
+    assert result.matched_unit_count == 45
     assert result.recall_at_5 == 1.0
     assert result.context_leak_count == 0
     assert result.passed is True
@@ -89,7 +94,7 @@ def test_default_recall_gate_requires_every_expected_unit() -> None:
 
     result = evaluator.evaluate(degraded)
 
-    assert result.recall_at_5 == 0.9474
+    assert result.recall_at_5 == 0.9762
     assert result.passed is False
 
 
@@ -125,6 +130,22 @@ def test_evaluator_calculates_unit_recall_and_forbidden_context_terms() -> None:
     assert result.context_leak_count == 1
     assert result.passed is False
     assert {failure.id for failure in result.failures} == {"partial_customer"}
+
+
+def test_evaluator_rejects_workspace_hash_drift() -> None:
+    dataset = load_workspace_evaluation_set(WORKSPACE_EVALUATION_PATH)
+    drifted = replace(dataset, workspace_source_hash="0" * 64)
+    evaluator = WorkspaceEvaluator(
+        registry=WorkspaceRegistry.create_default(),
+        context_builder=WorkspaceContextBuilder(),
+    )
+
+    try:
+        evaluator.evaluate(drifted)
+    except ValueError as error:
+        assert "Workspace Source Hash" in str(error)
+    else:
+        raise AssertionError("Workspace Hash 漂移必须阻止评估。")
 
 
 def test_workspace_cli_evaluate_uses_fixed_path_and_quality_exit_code(

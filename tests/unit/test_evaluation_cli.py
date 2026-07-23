@@ -32,6 +32,15 @@ class FakeRuntime:
         self.calls.append(("compare", run_id))
         return Path("comparison.md")
 
+    def compare_longitudinal(
+        self,
+        *,
+        baseline_run_id: str,
+        current_run_id: str,
+    ) -> Path:
+        self.calls.append(("longitudinal", baseline_run_id, current_run_id))
+        return Path("longitudinal.md")
+
 
 @pytest.mark.asyncio
 async def test_cli_validate_does_not_run_models(capsys) -> None:
@@ -85,6 +94,26 @@ async def test_cli_compare_reads_completed_results_only(capsys) -> None:
     assert exit_code == 0
     assert runtime.calls == [("compare", "stage9-baseline")]
     assert "comparison.md" in capsys.readouterr().out
+
+
+@pytest.mark.asyncio
+async def test_cli_longitudinal_compares_two_completed_runs(capsys) -> None:
+    runtime = FakeRuntime()
+
+    exit_code = await run(
+        (
+            "longitudinal",
+            "--baseline-run-id",
+            "stage9-baseline",
+            "--current-run-id",
+            "stage10-baseline",
+        ),
+        runtime,
+    )
+
+    assert exit_code == 0
+    assert runtime.calls == [("longitudinal", "stage9-baseline", "stage10-baseline")]
+    assert "longitudinal.md" in capsys.readouterr().out
 
 
 def test_runtime_protocol_accepts_fake_runtime() -> None:

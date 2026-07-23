@@ -13,10 +13,17 @@ PACKAGE_ROOT = NORTHWIND_ROOT / ".databricks-expert"
 UPSTREAM_SQL = NORTHWIND_ROOT / "upstream" / "northwind.sql"
 SCHEMA_SQL = PACKAGE_ROOT / "source-schema" / "northwind-schema.sql"
 UPSTREAM_SHA256 = "0ee30c01ba282f7194f38bf7f99cd6be0470b7ee5f67d0f7ca41fb058d735e0c"
+WORKSPACE_SOURCE_HASH = "3dfa0751cf9ef2aa26d8b7d7728d4b60e4bcc394420544ba2df55d4a6cf6b3fb"
 EXPECTED_FILES = {
     ".databricks-expert/project.yml",
     ".databricks-expert/requirements.md",
     ".databricks-expert/business-rules.md",
+    ".databricks-expert/project/source-system.md",
+    ".databricks-expert/project/architecture.md",
+    ".databricks-expert/project/data-products.md",
+    ".databricks-expert/project/data-quality.md",
+    ".databricks-expert/project/governance-and-operations.md",
+    ".databricks-expert/glossary/business-glossary.md",
     ".databricks-expert/source-schema/northwind-schema.sql",
     "upstream/northwind.sql",
     "UPSTREAM.md",
@@ -68,17 +75,30 @@ def test_upstream_sql_is_preserved_with_the_pinned_hash() -> None:
 def test_registry_loads_only_project_fact_sources() -> None:
     workspace = WorkspaceRegistry.create_default().get("northwind_psql")
 
-    assert workspace.version == "1.0.0"
+    assert workspace.version == "2.0.0"
+    assert workspace.source_hash == WORKSPACE_SOURCE_HASH
     assert workspace.cloud == "aws"
     assert [source.source_id for source in workspace.sources] == [
+        "architecture",
+        "business_glossary",
+        "data_products",
+        "data_quality",
+        "governance_and_operations",
         "requirements",
         "rules",
         "source_ddl.northwind.northwind-schema",
+        "source_system",
     ]
     assert {source.kind for source in workspace.sources} == {
+        WorkspaceSourceKind.ARCHITECTURE,
+        WorkspaceSourceKind.DATA_PRODUCT,
+        WorkspaceSourceKind.DATA_QUALITY,
+        WorkspaceSourceKind.GLOSSARY,
+        WorkspaceSourceKind.GOVERNANCE,
         WorkspaceSourceKind.REQUIREMENT,
         WorkspaceSourceKind.RULE,
         WorkspaceSourceKind.SOURCE_DDL,
+        WorkspaceSourceKind.SOURCE_SYSTEM,
     }
     assert all("upstream/northwind.sql" not in source.source_path for source in workspace.sources)
 
@@ -112,7 +132,9 @@ def test_schema_only_file_excludes_upstream_data_and_session_statements() -> Non
 def test_requirements_fix_architecture_and_five_data_products() -> None:
     content = (PACKAGE_ROOT / "requirements.md").read_text(encoding="utf-8")
 
-    assert "RDS PostgreSQL → AWS DMS → S3 Parquet → Auto Loader" in content
+    assert "Amazon RDS for PostgreSQL" in content
+    assert "AWS DMS Serverless" in content
+    assert "Auto Loader" in content
     assert all(
         product in content
         for product in (
@@ -129,11 +151,11 @@ def test_requirements_fix_architecture_and_five_data_products() -> None:
 def test_business_rules_fix_sales_and_shipping_definitions() -> None:
     content = (PACKAGE_ROOT / "business-rules.md").read_text(encoding="utf-8")
 
-    assert "unit_price * quantity" in content
-    assert "unit_price * quantity * discount" in content
-    assert "unit_price * quantity * (1 - discount)" in content
+    assert "行毛额" in content
+    assert "行折扣额" in content
+    assert "行净销售额" in content
     assert "orders.order_date" in content
     assert "freight" in content
-    assert "shipped_date > required_date" in content
-    assert "默认统计全部订单" in content
-    assert "只统计已发货订单" in content
+    assert "`shipped_date` 晚于 `required_date` 时记录正数" in content
+    assert "只有 `orders.shipped_date` 非空的订单进入认证销售口径" in content
+    assert "没有已发货订单的当前客户保留一行" in content

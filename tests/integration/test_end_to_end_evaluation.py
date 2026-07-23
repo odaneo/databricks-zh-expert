@@ -35,12 +35,39 @@ from databricks_zh_expert.workspace.types import WorkspaceDefinition
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
 VALID_DAILY_SALES_SQL = """```sql
+-- HALF_UP 四位小数由 Databricks SQL ROUND 对 DECIMAL 值完成。
+CREATE OR REPLACE VIEW gold.daily_sales AS
+WITH line_amounts AS (
+  SELECT
+    o.order_id,
+    o.shipped_date AS sales_date,
+    o.freight,
+    CAST(ROUND(
+      CAST(od.unit_price AS DECIMAL(18, 4))
+      * CAST(od.quantity AS DECIMAL(18, 4))
+      * (1 - CAST(od.discount AS DECIMAL(9, 6))),
+      4
+    ) AS DECIMAL(20, 4)) AS line_net_sales
+  FROM orders AS o
+  JOIN order_details AS od ON o.order_id = od.order_id
+  WHERE o.shipped_date IS NOT NULL
+),
+order_totals AS (
+  SELECT
+    order_id,
+    sales_date,
+    MAX(freight) AS freight,
+    SUM(line_net_sales) AS order_net_sales
+  FROM line_amounts
+  GROUP BY order_id, sales_date
+)
 SELECT
-  o.order_date,
-  SUM(od.unit_price * od.quantity * (1 - od.discount)) AS net_sales
-FROM orders AS o
-JOIN order_details AS od ON o.order_id = od.order_id
-GROUP BY o.order_date;
+  sales_date,
+  SUM(order_net_sales) AS net_sales,
+  SUM(COALESCE(freight, 0)) AS freight_amount,
+  SUM(CASE WHEN freight IS NULL THEN 1 ELSE 0 END) AS freight_missing_order_count
+FROM order_totals
+GROUP BY sales_date;
 ```"""
 
 
@@ -159,7 +186,7 @@ async def test_runner_uses_formal_chat_api_and_preserves_database_and_trace(
 
     with caplog.at_level(logging.INFO, logger="databricks_zh_expert.evaluation.runner"):
         result = await runner.run(
-            run_id="stage9-integration",
+            run_id="stage10-integration",
             model=ModelAlias.DEEPSEEK_V4_FLASH,
             case_id="nw_sql_daily_sales",
         )
@@ -175,7 +202,7 @@ async def test_runner_uses_formal_chat_api_and_preserves_database_and_trace(
     assert case.citation_urls == ("https://docs.databricks.com/aws/en/sql/",)
     assert case.manual_review.status.value == "pending"
 
-    trace_path = tmp_path / "stage9-integration" / "deepseek-v4-flash" / "trace.jsonl"
+    trace_path = tmp_path / "stage10-integration" / "deepseek-v4-flash" / "trace.jsonl"
     traces = [json.loads(line) for line in trace_path.read_text(encoding="utf-8").splitlines()]
     assert len(traces) == 1
     assert traces[0]["schema_version"] == "1.7"
@@ -188,7 +215,7 @@ async def test_runner_uses_formal_chat_api_and_preserves_database_and_trace(
         select(ModelCall).where(ModelCall.id == case.model_call_ids[0])
     )
     assert stored_session is not None
-    assert "stage9-integration" in stored_session.title
+    assert "stage10-integration" in stored_session.title
     assert stored_call is not None
     assert stored_call.workspace_id == "northwind_psql"
     assert stored_call.workspace_context

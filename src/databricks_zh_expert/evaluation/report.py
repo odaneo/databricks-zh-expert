@@ -1,5 +1,7 @@
+import re
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Final
 
 from databricks_zh_expert.evaluation.types import EvaluationCaseResult, EvaluationRunResult
 from databricks_zh_expert.llm.model_registry import ModelAlias
@@ -7,6 +9,9 @@ from databricks_zh_expert.llm.model_registry import ModelAlias
 
 class EvaluationReportError(ValueError):
     pass
+
+
+_RUN_ID_PATTERN: Final = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$")
 
 
 @dataclass(frozen=True, slots=True)
@@ -30,14 +35,46 @@ def write_run_report(
 
 
 def write_comparison_report(run_id: str, *, output_root: Path) -> Path:
+    results = _load_run_results(run_id, output_root=output_root)
+    path = output_root / run_id / "comparison.md"
+    _write_text_atomic(path, _render_comparison(results))
+    return path
+
+
+def write_longitudinal_comparison_report(
+    baseline_run_id: str,
+    current_run_id: str,
+    *,
+    output_root: Path,
+) -> Path:
+    baseline = _load_run_results(baseline_run_id, output_root=output_root)
+    current = _load_run_results(current_run_id, output_root=output_root)
+    if baseline[0].workspace_id != current[0].workspace_id:
+        raise EvaluationReportError("纵向比较的 Workspace ID 不一致。")
+    path = output_root / current_run_id / f"longitudinal-vs-{baseline_run_id}.md"
+    _write_text_atomic(path, _render_longitudinal_comparison(baseline, current))
+    return path
+
+
+def _load_run_results(
+    run_id: str,
+    *,
+    output_root: Path,
+) -> tuple[EvaluationRunResult, EvaluationRunResult]:
+    _validate_report_run_id(run_id)
     results = (
         _load_result(output_root / run_id / ModelAlias.DEEPSEEK_V4_FLASH.value / "result.json"),
         _load_result(output_root / run_id / ModelAlias.DEEPSEEK_V4_PRO.value / "result.json"),
     )
     _validate_comparable(run_id, results)
-    path = output_root / run_id / "comparison.md"
-    _write_text_atomic(path, _render_comparison(results))
-    return path
+    return results
+
+
+def _validate_report_run_id(run_id: str) -> None:
+    if _RUN_ID_PATTERN.fullmatch(run_id) is None:
+        raise EvaluationReportError(
+            "Run ID 只能包含字母、数字、点、下划线和连字符，长度不能超过 100。"
+        )
 
 
 def _load_result(path: Path) -> EvaluationRunResult:
@@ -79,7 +116,7 @@ def _validate_comparable(
 def _render_run_report(result: EvaluationRunResult) -> str:
     status = "通过" if result.automated_passed else "未通过"
     lines = [
-        "# 阶段 9 端到端评估报告",
+        "# 端到端评估报告",
         "",
         "## 运行信息",
         "",
@@ -154,7 +191,7 @@ def _render_comparison(
 ) -> str:
     first = results[0]
     lines = [
-        "# 阶段 9 模型对比报告",
+        "# 模型横向对比报告",
         "",
         f"- Run ID：`{first.run_id}`",
         f"- 数据集：`{first.dataset_id}` `{first.dataset_version}`",
@@ -188,6 +225,104 @@ def _render_comparison(
     return "\n".join(lines).rstrip() + "\n"
 
 
+def _render_longitudinal_comparison(
+    baseline: tuple[EvaluationRunResult, EvaluationRunResult],
+    current: tuple[EvaluationRunResult, EvaluationRunResult],
+) -> str:
+    baseline_first = baseline[0]
+    current_first = current[0]
+    lines = [
+        "# 端到端评估纵向对比报告",
+        "",
+        "## 基线信息",
+        "",
+        "| 项目 | 基线 | 当前 |",
+        "| --- | --- | --- |",
+        f"| Run ID | `{baseline_first.run_id}` | `{current_first.run_id}` |",
+        (
+            f"| 数据集 | `{baseline_first.dataset_id}` `{baseline_first.dataset_version}` | "
+            f"`{current_first.dataset_id}` `{current_first.dataset_version}` |"
+        ),
+        (f"| 数据集 Hash | `{baseline_first.dataset_hash}` | `{current_first.dataset_hash}` |"),
+        (
+            f"| Workspace | `{baseline_first.workspace_id}` "
+            f"`{baseline_first.workspace_version}` | `{current_first.workspace_id}` "
+            f"`{current_first.workspace_version}` |"
+        ),
+        (
+            f"| Workspace Source Hash | `{baseline_first.workspace_source_hash}` | "
+            f"`{current_first.workspace_source_hash}` |"
+        ),
+        "",
+        "## 模型指标变化",
+        "",
+        "| 模型 | Hard 基线 | Hard 当前 | Hard 变化 | Soft 基线 | Soft 当前 | "
+        "Soft 变化 | 失败变化 | Fallback 变化 | Token 变化 | 延迟变化 ms |",
+        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+    ]
+    for baseline_result, current_result in zip(baseline, current, strict=True):
+        if baseline_result.model is not current_result.model:
+            raise EvaluationReportError("纵向比较的模型顺序不一致。")
+        baseline_summary = baseline_result.summary
+        current_summary = current_result.summary
+        baseline_tokens = baseline_summary.prompt_tokens + baseline_summary.completion_tokens
+        current_tokens = current_summary.prompt_tokens + current_summary.completion_tokens
+        hard_pass_delta = current_summary.hard_pass_rate - baseline_summary.hard_pass_rate
+        soft_score_delta = current_summary.average_soft_score - baseline_summary.average_soft_score
+        failed_delta = current_summary.failed_count - baseline_summary.failed_count
+        fallback_delta = current_summary.fallback_count - baseline_summary.fallback_count
+        latency_delta = current_summary.latency_ms - baseline_summary.latency_ms
+        lines.append(
+            f"| `{baseline_result.model.value}` | "
+            f"{_percent(baseline_summary.hard_pass_rate)} | "
+            f"{_percent(current_summary.hard_pass_rate)} | "
+            f"{_signed_percent(hard_pass_delta)} | "
+            f"{_percent(baseline_summary.average_soft_score)} | "
+            f"{_percent(current_summary.average_soft_score)} | "
+            f"{_signed_percent(soft_score_delta)} | "
+            f"{_signed_integer(failed_delta)} | "
+            f"{_signed_integer(fallback_delta)} | "
+            f"{_signed_integer(current_tokens - baseline_tokens)} | "
+            f"{_signed_integer(latency_delta)} |"
+        )
+
+    baseline_case_ids = tuple(case.case_id for case in baseline_first.cases)
+    current_case_ids = tuple(case.case_id for case in current_first.cases)
+    baseline_case_set = set(baseline_case_ids)
+    current_case_set = set(current_case_ids)
+    common_case_ids = tuple(case_id for case_id in current_case_ids if case_id in baseline_case_set)
+    added_case_ids = tuple(
+        case_id for case_id in current_case_ids if case_id not in baseline_case_set
+    )
+    removed_case_ids = tuple(
+        case_id for case_id in baseline_case_ids if case_id not in current_case_set
+    )
+
+    lines.extend(
+        (
+            "",
+            "## Case 变化",
+            "",
+            f"- 共同 Case：{len(common_case_ids)}",
+            f"- 新增 Case：{_render_case_ids(added_case_ids)}",
+            f"- 移除 Case：{_render_case_ids(removed_case_ids)}",
+            "",
+            "| 模型 | Case | 基线 | 当前 |",
+            "| --- | --- | --- | --- |",
+        )
+    )
+    for baseline_result, current_result in zip(baseline, current, strict=True):
+        baseline_by_id = {case.case_id: case for case in baseline_result.cases}
+        current_by_id = {case.case_id: case for case in current_result.cases}
+        for case_id in common_case_ids:
+            lines.append(
+                f"| `{current_result.model.value}` | `{case_id}` | "
+                f"{_case_outcome(baseline_by_id[case_id])} | "
+                f"{_case_outcome(current_by_id[case_id])} |"
+            )
+    return "\n".join(lines).rstrip() + "\n"
+
+
 def _case_outcome(case: EvaluationCaseResult) -> str:
     failed_hard_rules = tuple(rule.rule_id for rule in case.hard_rules if not rule.passed)
     if failed_hard_rules:
@@ -206,3 +341,15 @@ def _write_text_atomic(path: Path, content: str) -> None:
 
 def _percent(value: float) -> str:
     return f"{value:.2%}"
+
+
+def _signed_percent(value: float) -> str:
+    return f"{value:+.2%}"
+
+
+def _signed_integer(value: int) -> str:
+    return f"{value:+d}"
+
+
+def _render_case_ids(case_ids: tuple[str, ...]) -> str:
+    return "、".join(f"`{case_id}`" for case_id in case_ids) or "无"

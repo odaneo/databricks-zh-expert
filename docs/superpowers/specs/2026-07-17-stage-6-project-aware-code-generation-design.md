@@ -282,8 +282,8 @@ API 和 Trace 只暴露输入包相对路径，不暴露绝对路径。
 
 ### 12.1 上下文单元
 
-1. `requirements.md` 按二级标题切分。
-2. `business-rules.md` 按二级标题切分。
+1. Markdown 项目文件按二级和三级标题切分；三级标题保留父标题作为完整标题。
+2. 只有标题、没有正文的二级父章节不生成单元；后续三级标题仍保留原章节序号，避免 Unit ID 无意义漂移。
 3. 源 SQL 按语句切分。
 
 每个单元包含 Source ID、kind、方言、输入包相对路径、标题、正文、Hash 和稳定顺序。
@@ -293,12 +293,15 @@ API 和 Trace 只暴露输入包相对路径，不暴露绝对路径。
 1. 支持 `ddl_generation`、`mapping_generation`、`sql_generation`、`pyspark_generation`、
    `notebook_generation`。
 2. Query 对 Source ID、文件名、标题和正文做确定性词法匹配。
-3. 完整源表名和字段名匹配权重最高。
-4. 相同分数按 Source ID 和单元顺序排序。
-5. 最多选择 8 个完整单元，总预算 8,000 token。
-6. 单元不截断；预算不足时跳过并继续。
-7. 无匹配时按 Prompt 固定回退到需求、相关源 DDL 和规则。
-8. 不调用 LLM、Embedding、rerank 或 LangGraph。
+3. 完整源表名和字段名匹配权重最高；普通词使用文档频率和内容长度归一化，降低宽泛长章节对精确子章节的挤占。
+4. 标题、父标题、子标题关键词分别加权；相同分数按 Source ID 和原章节顺序排序。
+5. 首轮结果限制同一普通 Markdown 来源重复占位；源 DDL 允许多张明确命中的表同时进入。
+6. 按 Prompt 的事实类型配额补足最相关的 DDL、规则、架构、质量、治理或数据产品单元；固定 seed 只在相关性足够时优先。
+7. `mapping_generation` 和 `pyspark_generation` 首轮最多选择 4 个词法单元，其余提案 Prompt 首轮最多选择 3 个。
+8. 最终最多选择 8 个完整单元，总预算 8,000 token。
+9. 单元不截断；预算不足时跳过并继续。
+10. 无匹配时按 Prompt 固定回退到有正文的需求、相关源 DDL 和规则子章节。
+11. 不调用 LLM、Embedding、rerank 或 LangGraph。
 
 ### 12.3 三类上下文检索对比
 

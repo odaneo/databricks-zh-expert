@@ -1,15 +1,22 @@
 # 文件用途：声明当前 Northwind Workspace 的标识、版本以及程序允许读取的项目输入文件。
 # 维护责任：由 Agent 按用户确认后的文件结构维护；文档增删或职责变化时必须同步更新并执行启动预检。
-# 当前状态：schema_version 1 仍只注册 requirements.md、business-rules.md 和源 Schema；已完善的 project 与 glossary 文档将在阶段 10 的受控适配任务中注册。
-schema_version: 1
+# 当前状态：schema_version 2 注册全部已确认项目文档和源 Schema；上游完整 SQL 仅作审计与样例验收，不进入 Agent 上下文。
+# 冻结 Source Hash：3dfa0751cf9ef2aa26d8b7d7728d4b60e4bcc394420544ba2df55d4a6cf6b3fb
+schema_version: 2
 id: northwind_psql
 display_name: Northwind AWS 销售分析
 description: 基于公开 Northwind PostgreSQL Schema 设计 AWS Databricks 销售分析项目。
-version: 1.0.0
+version: 2.0.0
 cloud: aws
 documents:
   requirements: requirements.md
   business_rules: business-rules.md
+  source_system: project/source-system.md
+  architecture: project/architecture.md
+  data_products: project/data-products.md
+  data_quality: project/data-quality.md
+  governance_and_operations: project/governance-and-operations.md
+  business_glossary: glossary/business-glossary.md
 source_schemas:
   - id: northwind
     dialect: postgresql

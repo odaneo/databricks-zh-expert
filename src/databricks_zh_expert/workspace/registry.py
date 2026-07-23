@@ -1,6 +1,7 @@
 import hashlib
 import json
 import re
+from dataclasses import dataclass
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from types import MappingProxyType
 from typing import Annotated, Any, Literal, cast
@@ -80,9 +81,18 @@ class _StrictModel(BaseModel):
     )
 
 
-class _DocumentsModel(_StrictModel):
+class _DocumentsV1Model(_StrictModel):
     requirements: Literal["requirements.md"]
     business_rules: Literal["business-rules.md"]
+
+
+class _DocumentsV2Model(_DocumentsV1Model):
+    source_system: Literal["project/source-system.md"]
+    architecture: Literal["project/architecture.md"]
+    data_products: Literal["project/data-products.md"]
+    data_quality: Literal["project/data-quality.md"]
+    governance_and_operations: Literal["project/governance-and-operations.md"]
+    business_glossary: Literal["glossary/business-glossary.md"]
 
 
 class _SourceSchemaModel(_StrictModel):
@@ -91,15 +101,168 @@ class _SourceSchemaModel(_StrictModel):
     files: tuple[str, ...] = Field(min_length=1)
 
 
-class _ManifestModel(_StrictModel):
-    schema_version: Literal[1]
+class _ManifestBaseModel(_StrictModel):
     workspace_id: WorkspaceId = Field(alias="id")
     display_name: str = Field(min_length=1, max_length=200)
     description: str = Field(min_length=1, max_length=500)
     version: str = Field(pattern=_SEMVER_PATTERN)
     cloud: Literal["aws"]
-    documents: _DocumentsModel
     source_schemas: tuple[_SourceSchemaModel, ...] = Field(min_length=1)
+
+
+class _ManifestV1Model(_ManifestBaseModel):
+    schema_version: Literal[1]
+    documents: _DocumentsV1Model
+
+
+class _ManifestV2Model(_ManifestBaseModel):
+    schema_version: Literal[2]
+    documents: _DocumentsV2Model
+
+
+ManifestModel = _ManifestV1Model | _ManifestV2Model
+
+
+@dataclass(frozen=True, slots=True)
+class _MarkdownDocumentSpec:
+    source_id: str
+    kind: WorkspaceSourceKind
+    source_path: str
+    expected_h1: str
+    required_sections: tuple[str, ...]
+
+
+_V2_DOCUMENT_SPECS = (
+    _MarkdownDocumentSpec(
+        source_id="requirements",
+        kind=WorkspaceSourceKind.REQUIREMENT,
+        source_path="requirements.md",
+        expected_h1="项目需求",
+        required_sections=(
+            "业务目标",
+            "源系统与事实边界",
+            "已确认目标架构",
+            "数据产品与认证口径",
+            "SLA 与恢复目标",
+            "治理与安全",
+            "变更控制",
+        ),
+    ),
+    _MarkdownDocumentSpec(
+        source_id="rules",
+        kind=WorkspaceSourceKind.RULE,
+        source_path="business-rules.md",
+        expected_h1="已确认业务与数据规则",
+        required_sections=(
+            "源数据粒度与业务键",
+            "CDC、去重与删除",
+            "认证销售范围",
+            "金额、折扣、数量与运费",
+            "数据产品归属规则",
+            "数据质量与异常处置",
+            "敏感数据与权限",
+        ),
+    ),
+    _MarkdownDocumentSpec(
+        source_id="source_system",
+        kind=WorkspaceSourceKind.SOURCE_SYSTEM,
+        source_path="project/source-system.md",
+        expected_h1="源系统说明",
+        required_sections=(
+            "系统身份与职责",
+            "数据范围",
+            "主键与关联关系",
+            "更新与抽取方式",
+            "已知限制",
+            "变更控制",
+        ),
+    ),
+    _MarkdownDocumentSpec(
+        source_id="architecture",
+        kind=WorkspaceSourceKind.ARCHITECTURE,
+        source_path="project/architecture.md",
+        expected_h1="项目架构与摄取约束",
+        required_sections=(
+            "当前架构决定",
+            "源摄取范围",
+            "全量初始化与 CDC",
+            "S3 文件与目录约定",
+            "Auto Loader 摄取要求",
+            "Bronze、Silver、Gold 分层原则",
+            "调度、重跑与补数",
+            "质量门禁与架构验收",
+        ),
+    ),
+    _MarkdownDocumentSpec(
+        source_id="data_products",
+        kind=WorkspaceSourceKind.DATA_PRODUCT,
+        source_path="project/data-products.md",
+        expected_h1="数据产品定义",
+        required_sections=(
+            "产品组合总览",
+            "共同事实边界",
+            "每日销售",
+            "客户价值",
+            "商品与品类表现",
+            "员工销售表现",
+            "配送表现",
+            "跨产品公共维度与指标",
+            "刷新与交付要求",
+        ),
+    ),
+    _MarkdownDocumentSpec(
+        source_id="data_quality",
+        kind=WorkspaceSourceKind.DATA_QUALITY,
+        source_path="project/data-quality.md",
+        expected_h1="数据质量要求",
+        required_sections=(
+            "质量原则",
+            "源结构与摄取合同",
+            "主键完整性",
+            "外键引用完整性",
+            "金额计算与数值精度",
+            "CDC、重复与顺序异常",
+            "产品级质量要求",
+            "对账要求",
+            "异常隔离与处置",
+            "发布门禁",
+        ),
+    ),
+    _MarkdownDocumentSpec(
+        source_id="governance_and_operations",
+        kind=WorkspaceSourceKind.GOVERNANCE,
+        source_path="project/governance-and-operations.md",
+        expected_h1="治理与运维要求",
+        required_sections=(
+            "数据分类与敏感字段",
+            "Unity Catalog 权限原则",
+            "数据保留与删除要求",
+            "调度、SLA 与 Owner",
+            "监控、告警与升级路径",
+            "重跑、补数与故障恢复",
+            "成本边界与监控",
+            "变更控制与状态边界",
+        ),
+    ),
+    _MarkdownDocumentSpec(
+        source_id="business_glossary",
+        kind=WorkspaceSourceKind.GLOSSARY,
+        source_path="glossary/business-glossary.md",
+        expected_h1="业务词汇表",
+        required_sections=(
+            "术语使用规则",
+            "术语总览",
+            "订单",
+            "订单明细",
+            "已发货订单、开放订单与认证销售",
+            "销售日期",
+            "交易单价与当前目录单价",
+            "客户价值",
+            "数据产品",
+            "同义词与禁止误用",
+        ),
+    ),
+)
 
 
 class WorkspaceRegistry:
@@ -221,13 +384,23 @@ def _read_manifest(path: Path, package_root: Path) -> str:
         raise WorkspaceRegistryError("无法读取项目工作区清单。") from None
 
 
-def _parse_manifest(source: str) -> _ManifestModel:
+def _parse_manifest(source: str) -> ManifestModel:
     try:
         payload = yaml.safe_load(source)
     except YAMLError:
         raise WorkspaceRegistryError("项目工作区清单不是合法 YAML。") from None
+    if not isinstance(payload, dict):
+        raise WorkspaceRegistryError("项目工作区清单根节点必须是对象。")
+    schema_version = payload.get("schema_version")
+    model_type: type[_ManifestV1Model] | type[_ManifestV2Model]
+    if schema_version == 1:
+        model_type = _ManifestV1Model
+    elif schema_version == 2:
+        model_type = _ManifestV2Model
+    else:
+        raise WorkspaceRegistryError("项目工作区清单 schema_version 不受支持。")
     try:
-        return _ManifestModel.model_validate(payload)
+        return model_type.model_validate(payload)
     except ValidationError as error:
         raise WorkspaceRegistryError(_validation_message(error)) from None
 
@@ -250,7 +423,7 @@ def _validation_message(error: ValidationError) -> str:
     return f"项目工作区清单字段无效：{fields}。"
 
 
-def _validate_manifest_contract(manifest: _ManifestModel) -> None:
+def _validate_manifest_contract(manifest: ManifestModel) -> None:
     source_schema_ids = tuple(item.source_schema_id for item in manifest.source_schemas)
     if len(source_schema_ids) != len(set(source_schema_ids)):
         raise WorkspaceRegistryError("源 Schema ID 不能重复。")
@@ -262,25 +435,39 @@ def _validate_manifest_contract(manifest: _ManifestModel) -> None:
 
 def _load_sources(
     package_root: Path,
-    manifest: _ManifestModel,
+    manifest: ManifestModel,
 ) -> tuple[WorkspaceSource, ...]:
+    if isinstance(manifest, _ManifestV1Model):
+        document_specs = (
+            _MarkdownDocumentSpec(
+                source_id="requirements",
+                kind=WorkspaceSourceKind.REQUIREMENT,
+                source_path=manifest.documents.requirements,
+                expected_h1=_REQUIREMENTS_H1,
+                required_sections=_REQUIREMENTS_SECTIONS,
+            ),
+            _MarkdownDocumentSpec(
+                source_id="rules",
+                kind=WorkspaceSourceKind.RULE,
+                source_path=manifest.documents.business_rules,
+                expected_h1=_BUSINESS_RULES_H1,
+                required_sections=_BUSINESS_RULES_SECTIONS,
+            ),
+        )
+    else:
+        document_specs = _V2_DOCUMENT_SPECS
+
     sources = [
         _load_markdown_source(
             package_root,
-            manifest.documents.requirements,
-            source_id="requirements",
-            kind=WorkspaceSourceKind.REQUIREMENT,
-            expected_h1=_REQUIREMENTS_H1,
-            required_sections=_REQUIREMENTS_SECTIONS,
-        ),
-        _load_markdown_source(
-            package_root,
-            manifest.documents.business_rules,
-            source_id="rules",
-            kind=WorkspaceSourceKind.RULE,
-            expected_h1=_BUSINESS_RULES_H1,
-            required_sections=_BUSINESS_RULES_SECTIONS,
-        ),
+            spec.source_path,
+            source_id=spec.source_id,
+            kind=spec.kind,
+            expected_h1=spec.expected_h1,
+            required_sections=spec.required_sections,
+            expected_path=spec.source_path,
+        )
+        for spec in document_specs
     ]
     for source_schema in manifest.source_schemas:
         for source_path in source_schema.files:
@@ -314,8 +501,13 @@ def _load_markdown_source(
     kind: WorkspaceSourceKind,
     expected_h1: str,
     required_sections: tuple[str, ...],
+    expected_path: str,
 ) -> WorkspaceSource:
-    relative_path = _validate_markdown_path(source_path, source_id=source_id)
+    relative_path = _validate_markdown_path(
+        source_path,
+        source_id=source_id,
+        expected_path=expected_path,
+    )
     content = _read_registered_source(package_root, relative_path, source_id=source_id)
     _validate_markdown_contract(
         content,
@@ -332,11 +524,15 @@ def _load_markdown_source(
     )
 
 
-def _validate_markdown_path(source_path: str, *, source_id: str) -> PurePosixPath:
+def _validate_markdown_path(
+    source_path: str,
+    *,
+    source_id: str,
+    expected_path: str,
+) -> PurePosixPath:
     relative_path = _validate_relative_path(source_path)
-    expected = _REQUIREMENTS_PATH if source_id == "requirements" else _BUSINESS_RULES_PATH
-    if relative_path.as_posix() != expected or relative_path.suffix.casefold() != ".md":
-        raise WorkspaceRegistryError(f"{expected} 必须使用固定输入包相对路径。")
+    if relative_path.as_posix() != expected_path or relative_path.suffix.casefold() != ".md":
+        raise WorkspaceRegistryError(f"{source_id} 必须使用固定输入包相对路径。")
     return relative_path
 
 
@@ -460,7 +656,7 @@ def _make_source(
 
 
 def _source_hash(
-    manifest: _ManifestModel,
+    manifest: ManifestModel,
     sources: tuple[WorkspaceSource, ...],
 ) -> str:
     manifest_payload = cast(dict[str, Any], manifest.model_dump(mode="json", by_alias=True))

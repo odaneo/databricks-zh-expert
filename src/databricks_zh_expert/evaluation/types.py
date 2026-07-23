@@ -78,7 +78,7 @@ class EvaluationCase(_StrictFrozenModel):
 
 
 class EvaluationDataset(_StrictFrozenModel):
-    schema_version: Literal[1]
+    schema_version: Literal[1, 2]
     dataset_id: str = Field(min_length=3, max_length=100, pattern=r"^[a-z][a-z0-9_]*$")
     version: str = Field(pattern=r"^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$")
     workspace_id: str = Field(min_length=1, max_length=100)
@@ -86,6 +86,19 @@ class EvaluationDataset(_StrictFrozenModel):
     models: tuple[ModelAlias, ...]
     cases: tuple[EvaluationCase, ...]
     source_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    workspace_version: str | None = Field(
+        default=None,
+        pattern=r"^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$",
+    )
+    workspace_source_hash: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+
+    @model_validator(mode="after")
+    def validate_workspace_baseline(self) -> "EvaluationDataset":
+        if self.schema_version == 2 and (
+            self.workspace_version is None or self.workspace_source_hash is None
+        ):
+            raise ValueError("端到端评估 v2 必须固定 Workspace 版本和 Source Hash。")
+        return self
 
 
 class EvaluationEvidence(_StrictFrozenModel):

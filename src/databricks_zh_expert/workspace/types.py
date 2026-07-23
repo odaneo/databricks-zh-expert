@@ -7,6 +7,12 @@ class WorkspaceSourceKind(StrEnum):
     REQUIREMENT = "requirement"
     SOURCE_DDL = "source_ddl"
     RULE = "rule"
+    SOURCE_SYSTEM = "source_system"
+    ARCHITECTURE = "architecture"
+    DATA_PRODUCT = "data_product"
+    DATA_QUALITY = "data_quality"
+    GOVERNANCE = "governance"
+    GLOSSARY = "glossary"
 
 
 class WorkspaceContextPurpose(StrEnum):

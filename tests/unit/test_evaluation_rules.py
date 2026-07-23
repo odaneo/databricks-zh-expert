@@ -29,10 +29,28 @@ def _evidence(**overrides: object) -> EvaluationEvidence:
         "artifact_type": ArtifactType.SQL,
         "project_fact_status": "proposal",
         "assistant_content": (
-            "```sql\nSELECT o.order_date, "
-            "SUM(od.unit_price * od.quantity * (1 - od.discount)) AS net_sales\n"
-            "FROM orders o JOIN order_details od ON o.order_id = od.order_id\n"
-            "GROUP BY o.order_date;\n```"
+            "```sql\n"
+            "-- gold.daily_sales 使用 DECIMAL 与 HALF_UP 四位小数口径。\n"
+            "WITH order_sales AS (\n"
+            "  SELECT CAST(o.shipped_date AS DATE) AS sales_date,\n"
+            "         o.order_id,\n"
+            "         od.unit_price,\n"
+            "         od.quantity,\n"
+            "         od.discount,\n"
+            "         o.freight,\n"
+            "         od.unit_price * od.quantity * (1 - od.discount) AS net_sales\n"
+            "  FROM orders o\n"
+            "  JOIN order_details od ON o.order_id = od.order_id\n"
+            "  WHERE o.shipped_date IS NOT NULL\n"
+            ")\n"
+            "SELECT sales_date,\n"
+            "       SUM(net_sales) AS net_sales,\n"
+            "       SUM(freight) AS freight,\n"
+            "       SUM(CASE WHEN freight IS NULL THEN 1 ELSE 0 END)\n"
+            "         AS freight_missing_order_count\n"
+            "FROM order_sales\n"
+            "GROUP BY sales_date;\n"
+            "```"
         ),
         "citation_urls": ("https://docs.databricks.com/aws/en/sql/",),
         "model_call_ids": (model_call_id,),
@@ -40,16 +58,24 @@ def _evidence(**overrides: object) -> EvaluationEvidence:
         "model_call_success": True,
         "artifact_valid": True,
         "workspace_id": "northwind_psql",
-        "workspace_version": "1.0.0",
-        "workspace_source_hash": "a" * 64,
+        "workspace_version": "2.0.0",
+        "workspace_source_hash": (
+            "3dfa0751cf9ef2aa26d8b7d7728d4b60e4bcc394420544ba2df55d4a6cf6b3fb"
+        ),
         "workspace_unit_ids": (
             "source_ddl.northwind.northwind-schema:7",
             "source_ddl.northwind.northwind-schema:8",
-            "rules:4",
+            "business_glossary:44",
+            "data_products:45",
+            "rules:22",
+            "data_quality:41",
         ),
         "workspace_source_paths": (
             ".databricks-expert/source-schema/northwind-schema.sql",
+            ".databricks-expert/business-glossary.md",
+            ".databricks-expert/data-products.md",
             ".databricks-expert/business-rules.md",
+            ".databricks-expert/data-quality.md",
         ),
         "prompt_tokens": 100,
         "completion_tokens": 50,
@@ -124,18 +150,27 @@ def test_score_case_ignores_forbidden_terms_in_sql_comments() -> None:
         assistant_content=(
             "```sql\n"
             "-- email 不在源 Schema 中，不得使用。\n"
-            "SELECT c.customer_id, COUNT(DISTINCT o.order_id),\n"
-            "       SUM(od.unit_price * od.quantity * (1 - od.discount)) AS net_sales\n"
+            "CREATE OR REPLACE VIEW gold.customer_value AS\n"
+            "SELECT CURRENT_DATE() AS snapshot_date,\n"
+            "       c.customer_id, COUNT(DISTINCT o.order_id) AS order_count,\n"
+            "       SUM(od.unit_price * od.quantity * (1 - od.discount)) AS net_sales,\n"
+            "       NULLIF(SUM(od.unit_price), 0) AS average_net_order_value,\n"
+            "       SUM(CASE WHEN o.freight IS NULL THEN 1 ELSE 0 END)\n"
+            "         AS freight_missing_order_count,\n"
+            "       MIN(o.shipped_date) AS first_sales_date,\n"
+            "       MAX(o.shipped_date) AS last_sales_date\n"
             "FROM customers c\n"
-            "JOIN orders o ON o.customer_id = c.customer_id\n"
-            "JOIN order_details od ON od.order_id = o.order_id\n"
-            "GROUP BY c.customer_id;\n"
+            "LEFT JOIN orders o ON o.customer_id = c.customer_id\n"
+            "  AND o.shipped_date IS NOT NULL\n"
+            "LEFT JOIN order_details od ON od.order_id = o.order_id\n"
+            "GROUP BY snapshot_date, c.customer_id;\n"
             "```"
         ),
         workspace_unit_ids=(
             "source_ddl.northwind.northwind-schema:4",
-            "source_ddl.northwind.northwind-schema:8",
-            "source_ddl.northwind.northwind-schema:29",
+            "requirements:42",
+            "rules:29",
+            "data_quality:57",
         ),
     )
     unsafe = safe.model_copy(

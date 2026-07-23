@@ -1,4 +1,5 @@
 import hashlib
+from collections import Counter
 
 import pytest
 
@@ -60,22 +61,72 @@ def test_builder_splits_markdown_sections_and_sql_statements_into_stable_units()
     second = builder.build_units(_workspace())
 
     assert first == second
-    assert len(first) == 56
-    assert [unit.title for unit in first if unit.source_id == "requirements"] == [
+    assert len(first) == 519
+    assert Counter(unit.source_id for unit in first) == {
+        "architecture": 50,
+        "business_glossary": 83,
+        "data_products": 52,
+        "data_quality": 67,
+        "governance_and_operations": 65,
+        "requirements": 74,
+        "rules": 39,
+        "source_ddl.northwind.northwind-schema": 41,
+        "source_system": 48,
+    }
+    requirement_titles = [unit.title for unit in first if unit.source_id == "requirements"]
+    assert requirement_titles[:3] == [
+        "文档定位",
         "业务目标",
-        "源系统",
-        "期望数据产品",
-        "摄取需求",
-        "数据量与 SLA 假设",
-        "治理与安全",
-        "技术约束",
-        "待确认事项",
+        "源系统与事实边界",
     ]
+    assert "AWS DMS 设计决策 / PostgreSQL CDC 前置条件" in requirement_titles
+    assert "调度与运行 / 每日认证" in requirement_titles
+    assert requirement_titles[-1] == "设计依据"
     assert [
         unit.unit_id for unit in first if unit.source_id == "source_ddl.northwind.northwind-schema"
     ] == [f"source_ddl.northwind.northwind-schema:{index}" for index in range(1, 42)]
     assert all(len(unit.content_hash) == 64 for unit in first)
     assert all(unit.content.endswith("\n") for unit in first)
+
+
+def test_builder_splits_h3_sections_with_parent_heading_context() -> None:
+    source = _source(
+        "requirements",
+        kind=WorkspaceSourceKind.REQUIREMENT,
+        dialect=None,
+        content=(
+            "# 项目需求\n\n"
+            "## 摄取设计\n\n总体说明。\n\n"
+            "### CDC\n\nCDC 规则。\n\n"
+            "### 重跑\n\n重跑规则。"
+        ),
+    )
+
+    units = WorkspaceContextBuilder().build_units(_custom_workspace((source,)))
+
+    assert [unit.title for unit in units] == [
+        "摄取设计",
+        "摄取设计 / CDC",
+        "摄取设计 / 重跑",
+    ]
+    assert "总体说明" in units[0].content
+    assert "CDC 规则" in units[1].content
+    assert "重跑规则" in units[2].content
+    assert "CDC 规则" not in units[0].content
+
+
+def test_builder_skips_heading_only_parent_without_renumbering_child() -> None:
+    source = _source(
+        "requirements",
+        kind=WorkspaceSourceKind.REQUIREMENT,
+        dialect=None,
+        content="# 项目需求\n\n## 摄取设计\n\n### CDC\n\nCDC 规则。",
+    )
+
+    units = WorkspaceContextBuilder().build_units(_custom_workspace((source,)))
+
+    assert [unit.unit_id for unit in units] == ["requirements:2"]
+    assert [unit.title for unit in units] == ["摄取设计 / CDC"]
 
 
 def test_order_cdc_query_selects_orders_ddl_and_cdc_rule() -> None:
@@ -87,10 +138,10 @@ def test_order_cdc_query_selects_orders_ddl_and_cdc_rule() -> None:
     selected_ids = [item.unit_id for item in bundle.selected_units]
 
     assert "source_ddl.northwind.northwind-schema:8" in selected_ids[:3]
-    assert "rules:2" in selected_ids
+    assert "rules:8" in selected_ids
     assert bundle.selected_units[0].reason == "lexical"
     assert "CREATE TABLE orders" in bundle.context
-    assert "## CDC 与去重" in bundle.context
+    assert "### 元数据地位" in bundle.context
 
 
 def test_sales_mapping_query_selects_order_schemas_product_requirement_and_amount_rule() -> None:
@@ -100,12 +151,14 @@ def test_sales_mapping_query_selects_order_schemas_product_requirement_and_amoun
         workspace=_workspace(),
         purpose=WorkspaceContextPurpose.MAPPING,
     )
-    selected_ids = {item.unit_id for item in bundle.selected_units}
+    selected_ids = [item.unit_id for item in bundle.selected_units]
 
-    assert "source_ddl.northwind.northwind-schema:7" in selected_ids
-    assert "source_ddl.northwind.northwind-schema:8" in selected_ids
-    assert "source_ddl.northwind.northwind-schema:9" in selected_ids
-    assert "rules:4" in selected_ids
+    assert {
+        "source_ddl.northwind.northwind-schema:7",
+        "source_ddl.northwind.northwind-schema:8",
+        "source_ddl.northwind.northwind-schema:9",
+    }.issubset(set(selected_ids[:5]))
+    assert "rules:22" in selected_ids
 
 
 def test_dms_notebook_query_selects_orders_ingestion_and_late_data_units() -> None:
@@ -118,8 +171,8 @@ def test_dms_notebook_query_selects_orders_ingestion_and_late_data_units() -> No
     selected_ids = {item.unit_id for item in bundle.selected_units}
 
     assert "source_ddl.northwind.northwind-schema:8" in selected_ids
-    assert "requirements:4" in selected_ids
-    assert "rules:3" in selected_ids
+    assert "architecture:32" in selected_ids
+    assert "rules:18" in selected_ids
 
 
 @pytest.mark.parametrize(
@@ -128,41 +181,41 @@ def test_dms_notebook_query_selects_orders_ingestion_and_late_data_units() -> No
         (
             WorkspaceContextPurpose.DDL,
             (
-                "requirements:3",
+                "data_products:3",
                 "source_ddl.northwind.northwind-schema:1",
-                "rules:1",
+                "rules:8",
             ),
         ),
         (
             WorkspaceContextPurpose.MAPPING,
             (
                 "source_ddl.northwind.northwind-schema:1",
-                "rules:1",
-                "requirements:3",
+                "source_system:9",
+                "rules:3",
             ),
         ),
         (
             WorkspaceContextPurpose.SQL,
             (
-                "requirements:3",
+                "data_products:42",
+                "rules:21",
                 "source_ddl.northwind.northwind-schema:1",
-                "rules:4",
             ),
         ),
         (
             WorkspaceContextPurpose.PYSPARK,
             (
-                "requirements:4",
+                "architecture:28",
                 "source_ddl.northwind.northwind-schema:1",
-                "rules:2",
+                "rules:8",
             ),
         ),
         (
             WorkspaceContextPurpose.NOTEBOOK,
             (
-                "requirements:4",
+                "architecture:28",
                 "source_ddl.northwind.northwind-schema:1",
-                "rules:3",
+                "rules:13",
             ),
         ),
     ],
@@ -221,6 +274,84 @@ def test_workflow_context_adds_fallback_fact_coverage_after_lexical_match() -> N
         "fallback",
         "fallback",
     ]
+
+
+def test_customer_value_query_selects_cross_file_project_evidence() -> None:
+    bundle = WorkspaceContextBuilder().build(
+        "生成客户价值 SQL，必须保留没有已发货订单的当前客户，平均商品净订单金额分母为零时为 null，"
+        "并统计 freight 为空的运费缺失订单数",
+        workspace=_workspace(),
+        purpose=WorkspaceContextPurpose.SQL,
+    )
+
+    selected_source_ids = {item.source_id for item in bundle.selected_units}
+
+    assert {"data_products", "data_quality", "rules", "business_glossary"}.issubset(
+        selected_source_ids
+    )
+    assert all(item.source_path.startswith(".databricks-expert/") for item in bundle.selected_units)
+    assert all(len(item.content_hash) == 64 for item in bundle.selected_units)
+
+
+def test_qualified_foreign_key_query_keeps_child_parents_and_quality_rule() -> None:
+    bundle = WorkspaceContextBuilder().build(
+        "根据外键引用完整性，使用 order_details.order_id、order_details.product_id 检查 "
+        "orders 和 products 孤儿记录",
+        workspace=_workspace(),
+        purpose=WorkspaceContextPurpose.PYSPARK,
+    )
+
+    assert {
+        "source_ddl.northwind.northwind-schema:7",
+        "source_ddl.northwind.northwind-schema:8",
+        "source_ddl.northwind.northwind-schema:9",
+        "data_quality:23",
+    }.issubset({item.unit_id for item in bundle.selected_units[:4]})
+
+
+def test_qualified_target_table_name_maps_back_to_registered_source_table() -> None:
+    bundle = WorkspaceContextBuilder().build(
+        "以 silver.customers 当前客户全集为基础生成客户价值 SQL",
+        workspace=_workspace(),
+        purpose=WorkspaceContextPurpose.SQL,
+    )
+
+    assert "source_ddl.northwind.northwind-schema:4" in {
+        item.unit_id for item in bundle.selected_units
+    }
+
+
+def test_amount_cleaning_query_keeps_specific_formula_and_quality_evidence() -> None:
+    bundle = WorkspaceContextBuilder().build(
+        "生成 PySpark 草稿清洗 order_details。显式选择 order_id、product_id、unit_price、"
+        "quantity、discount；将金额和折扣转换为定点小数，按 HALF_UP 四位小数计算行毛额、"
+        "折扣额和行净销售额。quantity 或 unit_price 非正、discount 不在 0 到 1 时标记为"
+        "关键异常。",
+        workspace=_workspace(),
+        purpose=WorkspaceContextPurpose.PYSPARK,
+    )
+
+    selected_ids = {item.unit_id for item in bundle.selected_units}
+    selected_kinds = {item.kind for item in bundle.selected_units}
+
+    assert "source_ddl.northwind.northwind-schema:7" in selected_ids
+    assert "rules:22" in selected_ids
+    assert WorkspaceSourceKind.DATA_QUALITY in selected_kinds
+
+
+def test_autoloader_notebook_query_keeps_managed_state_constraints() -> None:
+    bundle = WorkspaceContextBuilder().build(
+        "生成 Lakeflow Declarative Pipeline Notebook，使用 Auto Loader 从 External Volume "
+        "读取 AWS DMS orders Parquet，启用 cloudFiles.useManagedFileEvents，并由 Lakeflow "
+        "托管 Checkpoint 与 Schema State，不得手写 checkpointLocation 或 schemaLocation。",
+        workspace=_workspace(),
+        purpose=WorkspaceContextPurpose.NOTEBOOK,
+    )
+
+    selected_ids = {item.unit_id for item in bundle.selected_units}
+
+    assert "architecture:29" in selected_ids
+    assert "architecture:31" in selected_ids
 
 
 def test_tied_scores_sort_by_source_id_and_unit_order() -> None:
@@ -315,7 +446,7 @@ def test_context_contains_only_relative_user_fact_metadata() -> None:
         purpose=WorkspaceContextPurpose.DDL,
     )
 
-    assert "以下内容仅来自用户提供的全新项目事实" in bundle.context
+    assert "以下内容仅来自用户提供的项目事实" in bundle.context
     assert "Agent 历史提案不会进入此上下文" in bundle.context
     assert "输入包相对路径：.databricks-expert/" in bundle.context
     assert "project_fact_status=proposal" not in bundle.context
